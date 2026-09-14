@@ -1,0 +1,82 @@
+{
+  "name": "evidence-layer",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Checks that turn a review's assertions into claims that could be proved wrong.",
+  "keywords": [
+    "code-review",
+    "ai-code-review",
+    "evidence",
+    "falsifiable",
+    "claims",
+    "governance",
+    "provenance",
+    "ci",
+    "llm"
+  ],
+  "license": "MIT",
+  "author": "Andrii Bohdanov",
+  "homepage": "https://github.com/AndrewBogdanovTSS/evidence-layer#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AndrewBogdanovTSS/evidence-layer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AndrewBogdanovTSS/evidence-layer/issues"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "packageManager": "pnpm@12.2.1",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./adapters/node-default": {
+      "types": "./dist/adapters/node-default.d.mts",
+      "import": "./dist/adapters/node-default.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "evidence-layer": "./dist/bin/evidence-layer.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "test": "pnpm run build && vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm run build",
+    "test:unit": "vitest run",
+    "check:docs": "tsx scripts/check-docs.ts",
+    "check:claims": "tsx bin/evidence-layer.ts claims",
+    "check:receipt": "tsx bin/evidence-layer.ts receipt",
+    "check:all": "tsx scripts/governance.ts",
+    "ci:summary": "tsx bin/evidence-layer.ts ci-summary",
+    "evidence": "tsx scripts/gather-evidence.ts",
+    "journal:report": "tsx bin/evidence-layer.ts journal report",
+    "journal:tag": "tsx bin/evidence-layer.ts journal tag",
+    "hooks:install": "git config core.hooksPath .githooks"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "devDependencies": {
+    "@arethetypeswrong/core": "^0.18.1",
+    "@types/node": "^26.4.0",
+    "publint": "^0.3.8",
+    "tsdown": "^0.23.0",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

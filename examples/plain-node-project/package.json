@@ -1,0 +1,11 @@
+{
+  "name": "widget-counter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A deliberately unrelated fixture project - plain JS, no TypeScript, no Vue, no monorepo - used only to prove evidence-layer/core has no coupling to the game it happens to live next to.",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test test/run.test.js",
+    "lint": "echo no linter configured && exit 0"
+  }
+}

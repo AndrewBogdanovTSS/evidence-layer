@@ -1,0 +1,64 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  # The engine range in package.json is a claim like any other. Running the
+  # suite on the oldest version it names is what makes it checkable rather
+  # than aspirational.
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20.11', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test
+
+  # Separate job, one Node version: these check the repository, not the code's
+  # behaviour on a given runtime, so running them three times says nothing new.
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `recordNewMisses` reads commit trailers; a shallow clone would
+          # silently find none and report a clean history that was never read.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm check:docs
+
+      # Captured rather than streamed, because the summary is rendered from the
+      # machine-readable block the run emits - and it is rendered whether the
+      # checks passed or not, since "no report" is the one outcome a reader
+      # must never confuse with a clean run.
+      - name: check:all
+        id: checks
+        run: pnpm check:all --enforce | tee governance-output.txt
+        continue-on-error: true
+
+      - name: Summary
+        if: always()
+        run: pnpm ci:summary governance-output.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if the checks failed
+        if: steps.checks.outcome == 'failure'
+        run: exit 1

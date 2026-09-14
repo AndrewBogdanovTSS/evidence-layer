@@ -1,0 +1,6 @@
+# pnpm asks, once, whether a dependency's install script may run. esbuild's
+# links the platform binary its optional dependency already provides, and the
+# suite passes without it - so it stays off. A package whose own README argues
+# against unbacked trust does not run install scripts it has no reason to.
+allowBuilds:
+  esbuild: false

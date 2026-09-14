@@ -1,0 +1,8 @@
+#!/bin/sh
+# Not a gate, a reminder. The full run lives in CI; this catches the two cheap
+# failures - a README that drifted, a fixture that stopped failing - before they
+# cost a round trip.
+#
+# Install with: pnpm hooks:install
+set -e
+pnpm check:all --fast --enforce

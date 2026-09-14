@@ -1,0 +1,5 @@
+# Every check in this package hashes and compares file text. A checkout that
+# rewrote line endings would change a fingerprint without changing a line of
+# code, so endings are pinned rather than left to the platform.
+* text=auto eol=lf
+*.png binary

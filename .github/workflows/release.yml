@@ -1,0 +1,46 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+# `id-token: write` is what lets npm attach a provenance attestation: a signed,
+# public record of which commit and which workflow run produced the tarball.
+# The alternative is a README sentence asserting that the published package was
+# built from this source, which is exactly the kind of unbacked claim this
+# package exists to make impossible.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm check:docs
+
+      # The tag is a claim about the version being published. Checked here
+      # rather than discovered by whoever installs the wrong one.
+      - name: The tag matches package.json
+        run: |
+          tagged="${GITHUB_REF_NAME#v}"
+          packaged="$(node -p "require('./package.json').version")"
+          if [ "$tagged" != "$packaged" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $packaged"
+            exit 1
+          fi
+
+      - run: pnpm publish --no-git-checks --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
