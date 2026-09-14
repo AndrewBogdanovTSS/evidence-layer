@@ -6,44 +6,82 @@ on:
   pull_request:
 
 jobs:
-  # The engine range in package.json is a claim like any other. Running the
-  # suite on the oldest version it names is what makes it checkable rather
-  # than aspirational.
+  # Built once, here, and nowhere else.
+  #
+  # The first version of this file ran `pnpm build` on every leg of the test
+  # matrix, which failed on Node 20.11 - not because the package needs a newer
+  # Node, but because tsdown does (`^22.18.0 || ^24.11.0 || >=26.0.0`). Those
+  # are different claims. What `engines.node` promises is that the *published*
+  # ESM runs on 20.11, and rebuilding it three times never checked that; it
+  # checked the toolchain three times instead. So: build once, hand the built
+  # artifact to every version, and let the matrix test the thing consumers
+  # actually install.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 1
+
+  # The oldest version `engines.node` names is the one that makes the claim
+  # falsifiable. The other two are there so a regression on a current runtime
+  # is not discovered by a consumer.
   test:
+    needs: build
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         node: ['20.11', '22', '24']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm build
-      - run: pnpm test
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      # `test:unit` rather than `test`, which would rebuild - the point of this
+      # job is to run the suite, `test/bin.test.ts` included, against the
+      # artifact the build job produced.
+      - run: pnpm test:unit
 
   # Separate job, one Node version: these check the repository, not the code's
   # behaviour on a given runtime, so running them three times says nothing new.
   governance:
+    needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # `recordNewMisses` reads commit trailers; a shallow clone would
           # silently find none and report a clean history that was never read.
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
       - run: pnpm check:docs
 
       # Captured rather than streamed, because the summary is rendered from the

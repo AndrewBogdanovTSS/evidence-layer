@@ -17,17 +17,33 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
           cache: pnpm
 
+      # Checked before anything slow runs, and named, because the failure it
+      # replaces was an opaque `exit 1` from the publish step itself.
+      - name: The NPM_TOKEN secret exists
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "NPM_TOKEN is not set on this repository."
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret."
+            echo "It must be an npm Automation token (or a granular token scoped to"
+            echo "all packages) - a token scoped to existing packages by name cannot"
+            echo "create one that does not exist yet."
+            exit 1
+          fi
+
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm test:unit
       - run: pnpm check:docs
 
       # The tag is a claim about the version being published. Checked here
@@ -44,3 +60,4 @@ jobs:
       - run: pnpm publish --no-git-checks --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
