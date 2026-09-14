@@ -44,6 +44,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm build
       - run: pnpm test:unit
+      - run: pnpm smoke
       - run: pnpm check:docs
 
       # The tag is a claim about the version being published. Checked here

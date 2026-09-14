@@ -20,7 +20,12 @@ possible observation is not strong, it is empty.
 npm install --save-dev evidence-layer
 ```
 
-Requires Node 20.11 or newer. Zero runtime dependencies.
+Requires Node 22 or newer. Zero runtime dependencies.
+
+Node 20 is not supported, and the reason is a date rather than a taste:
+it reached end of life on 2026-04-30 and receives no security patches.
+A package whose entire subject is claims with a clock does not get to
+quietly support a runtime that stopped having one.
 
 ## The one rule everything here is graded against
 

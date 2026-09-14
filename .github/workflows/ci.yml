@@ -34,16 +34,45 @@ jobs:
           path: dist/
           retention-days: 1
 
-  # The oldest version `engines.node` names is the one that makes the claim
-  # falsifiable. The other two are there so a regression on a current runtime
-  # is not discovered by a consumer.
+  # The floor `engines.node` names, met the way a consumer meets it: plain
+  # `node`, no installer, no test runner, no dependencies.
+  #
+  # `22.0.0` is pinned rather than `22`, because `>=22` is a claim about the
+  # oldest 22 and testing only the newest would leave it unchecked. Node 20 is
+  # absent on purpose: it reached end of life on 2026-04-30, and a matrix leg
+  # for an unpatched runtime tests nothing anyone should be running.
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.0.0', '22', '24']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      # No `pnpm install` on purpose. If this passes, the package genuinely
+      # has no runtime dependencies - which is otherwise a README sentence
+      # nobody checked.
+      - run: node scripts/smoke.mjs
+
+  # The full suite. `22.0.0` is absent here and present in `smoke` above: the
+  # toolchain (pnpm, vitest) has its own, newer floor, and conflating the two
+  # is how a claim about the package quietly becomes a claim about its
+  # development environment.
   test:
     needs: build
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node: ['20.11', '22', '24']
+        node: ['22', '24']
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4

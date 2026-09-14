@@ -25,7 +25,7 @@
     "url": "https://github.com/AndrewBogdanovTSS/evidence-layer/issues"
   },
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22"
   },
   "packageManager": "pnpm@12.2.1",
   "main": "./dist/index.mjs",
@@ -64,7 +64,8 @@
     "evidence": "tsx scripts/gather-evidence.ts",
     "journal:report": "tsx bin/evidence-layer.ts journal report",
     "journal:tag": "tsx bin/evidence-layer.ts journal tag",
-    "hooks:install": "git config core.hooksPath .githooks"
+    "hooks:install": "git config core.hooksPath .githooks",
+    "smoke": "node scripts/smoke.mjs"
   },
   "publishConfig": {
     "access": "public",
