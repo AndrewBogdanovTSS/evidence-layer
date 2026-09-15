@@ -87,11 +87,15 @@ export interface Finding {
 
 /**
  * No color library - this package's whole pitch is zero runtime dependencies,
- * and three ANSI codes don't earn one. Skipped outside a real terminal so a
- * redirected log or a piped subprocess (governance shells out to check:docs
- * and captures its output) never carries raw escape sequences.
+ * and three ANSI codes don't earn one.
+ *
+ * Not gated on `process.stdout.isTTY`: governance itself runs checks as a
+ * captured subprocess and re-prints their output, and plenty of legitimate
+ * callers (a sandboxed session with no real terminal attached, a CI log
+ * viewer that renders ANSI) have no TTY but still want to see color. NO_COLOR
+ * (https://no-color.org) is the opt-out for the ones that do not.
  */
-const useColor = process.stdout.isTTY === true && process.env.NO_COLOR === undefined
+const useColor = process.env.NO_COLOR === undefined
 const paint = (code: number, text: string) => (useColor ? '[' + code + 'm' + text + '[0m' : text)
 
 const ICON: Record<Level, string> = {
