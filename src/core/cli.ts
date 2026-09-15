@@ -86,11 +86,11 @@ export interface Finding {
 }
 
 const ICON: Record<Level, string> = {
-  pass: ' ok ',
-  warning: 'warn',
-  error: 'FAIL',
-  unverifiable: ' ?? ',
-  flaky: 'flky',
+  pass: '✔',
+  warning: '⚠',
+  error: '✘',
+  unverifiable: '?',
+  flaky: '↻',
 }
 
 export function report(title: string, findings: Finding[]): void {
@@ -99,7 +99,7 @@ export function report(title: string, findings: Finding[]): void {
   console.log('-'.repeat(title.length))
   for (const f of findings) {
     const where = f.file ? ' (' + f.file + (f.line ? ':' + f.line : '') + ')' : ''
-    console.log('[' + ICON[f.level] + '] ' + f.claim + where)
+    console.log(ICON[f.level] + ' ' + f.claim + where)
     if (f.detail) console.log('        ' + f.detail)
   }
   console.log('')
