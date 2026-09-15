@@ -131,7 +131,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **178 tests** across **16 files**, and that sentence is checked
+The suite is **181 tests** across **16 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
@@ -141,6 +141,26 @@ pnpm check:docs     # do the claims on this page still hold?
 pnpm check:all      # every check, plus: does anything run them?
 pnpm journal:report # what the checks have found here, over time
 ```
+
+## Releasing
+
+```bash
+pnpm release              # patch: 0.1.0 -> 0.1.1
+pnpm release minor        # 0.1.0 -> 0.2.0
+pnpm release 1.0.0        # exactly that
+pnpm release --dry-run    # run every check, print the plan, change nothing
+```
+
+One command: it checks, bumps, commits, tags and pushes. The tag is what
+triggers publication - nothing is published from a laptop, because npm only
+generates a provenance attestation inside CI, and a local publish would quietly
+ship a version weaker than every other version.
+
+Before it touches anything it checks that the release is cut from the default
+branch, that the tree is clean, that the commit is the one the remote has, that
+the tag is free, that the version has never been published, and that
+`pnpm check:all --enforce` passes. Every one of those exists because it went
+wrong during the first release of this package.
 
 ## Docs
 

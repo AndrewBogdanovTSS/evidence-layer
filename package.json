@@ -65,7 +65,8 @@
     "journal:report": "tsx bin/evidence-layer.ts journal report",
     "journal:tag": "tsx bin/evidence-layer.ts journal tag",
     "hooks:install": "git config core.hooksPath .githooks",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "release": "tsx scripts/release.ts"
   },
   "publishConfig": {
     "access": "public",
