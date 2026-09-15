@@ -85,10 +85,19 @@ export interface Finding {
   observed?: unknown
 }
 
+/**
+ * No color library - this package's whole pitch is zero runtime dependencies,
+ * and three ANSI codes don't earn one. Skipped outside a real terminal so a
+ * redirected log or a piped subprocess (governance shells out to check:docs
+ * and captures its output) never carries raw escape sequences.
+ */
+const useColor = process.stdout.isTTY === true && process.env.NO_COLOR === undefined
+const paint = (code: number, text: string) => (useColor ? '[' + code + 'm' + text + '[0m' : text)
+
 const ICON: Record<Level, string> = {
-  pass: '✔',
-  warning: '⚠',
-  error: '✘',
+  pass: paint(32, '✔'),
+  warning: paint(33, '⚠'),
+  error: paint(31, '✘'),
   unverifiable: '?',
   flaky: '↻',
 }
