@@ -76,10 +76,10 @@ console.log('-'.repeat(28 + process.version.length))
 for (const { name, fn } of checks) {
   try {
     await fn()
-    console.log('[ ok ] ' + name)
+    console.log('✔ ' + name)
   } catch (err) {
     failed++
-    console.log('[FAIL] ' + name)
+    console.log('✘ ' + name)
     console.log('        ' + (err instanceof Error ? err.message : String(err)))
   }
 }
