@@ -102,7 +102,7 @@ const ICON: Record<Level, string> = {
   pass: paint(32, '✔'),
   warning: paint(33, '⚠'),
   error: paint(31, '✘'),
-  unverifiable: '?',
+  unverifiable: '❓',
   flaky: '↻',
 }
 
