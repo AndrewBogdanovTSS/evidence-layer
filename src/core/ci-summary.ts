@@ -74,10 +74,16 @@ export function buildReport(findings: Finding[], mode: string): Report {
   }
 }
 
-/** Prints the delimited block. The delimiters are why this is greppable in a CI log. */
+/**
+ * Prints the delimited block. The delimiters are why this is greppable in a CI log.
+ *
+ * Indented, not minified - a human running this locally has to be able to read
+ * it too, and `extractReport` parses it back with `JSON.parse`, which does not
+ * care about the whitespace in between.
+ */
 export function emitReport(findings: Finding[], mode: string): void {
   console.log(JSON_BEGIN)
-  console.log(JSON.stringify(buildReport(findings, mode)))
+  console.log(JSON.stringify(buildReport(findings, mode), null, 2))
   console.log(JSON_END)
 }
 

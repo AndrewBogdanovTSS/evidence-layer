@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { extractReport, renderSummary } from '../src/core/ci-summary'
+import { describe, expect, it, vi } from 'vitest'
+import { emitReport, extractReport, renderSummary } from '../src/core/ci-summary'
 import type { Report } from '../src/core/ci-summary'
 
 const wrap = (json: unknown, noise = 'some console output\n') =>
@@ -24,6 +24,21 @@ describe('extractReport', () => {
 
   it('returns null on a corrupt block rather than throwing', () => {
     expect(extractReport('---GOVERNANCE-JSON-BEGIN---\n{ nope\n---GOVERNANCE-JSON-END---')).toBeNull()
+  })
+})
+
+describe('emitReport', () => {
+  it('indents the JSON block so a human can read it in a terminal, and it still round-trips', () => {
+    const lines: string[] = []
+    const spy = vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+      lines.push(String(line))
+    })
+    emitReport([{ level: 'pass', claim: 'a', detail: 'b' }], 'warn')
+    spy.mockRestore()
+
+    const output = lines.join('\n')
+    expect(output).toContain('\n  "schema": 3,')
+    expect(extractReport(output)?.findings[0]).toEqual({ level: 'pass', claim: 'a', detail: 'b' })
   })
 })
 
