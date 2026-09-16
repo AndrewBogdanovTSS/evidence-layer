@@ -67,6 +67,8 @@
     "journal:tag": "tsx bin/evidence-layer.ts journal tag",
     "hooks:install": "git config core.hooksPath .githooks",
     "smoke": "node scripts/smoke.mjs",
+    "demo:setup": "node demo/refs.mjs setup",
+    "demo:reset": "node demo/refs.mjs reset",
     "release": "tsx scripts/release.ts"
   },
   "publishConfig": {

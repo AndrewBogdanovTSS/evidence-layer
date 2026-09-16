@@ -302,6 +302,8 @@ wrong during the first release of this package.
   invariants each record claims are enforced
 - [`docs/governance-exceptions.md`](docs/governance-exceptions.md) - how an
   exception gets an expiry date instead of becoming permanent
+- [`demo/`](demo) - the four demos the talk runs, in slide order, with the
+  receipt fixtures and the stale-baseline refs they need
 
 ## Licence
 
