@@ -3,5 +3,6 @@
 function increment(n) {
   return n + 1
 }
+console.log('Hello')
 
 module.exports = { increment }
