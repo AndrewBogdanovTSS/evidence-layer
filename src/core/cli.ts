@@ -95,7 +95,11 @@ export interface Finding {
  * viewer that renders ANSI) have no TTY but still want to see color. NO_COLOR
  * (https://no-color.org) is the opt-out for the ones that do not.
  */
-const useColor = process.env.NO_COLOR === undefined
+// https://no-color.org is specific: the variable is honoured when it is present
+// *and not an empty string*. `NO_COLOR=` is how a parent environment cancels an
+// inherited opt-out, and treating that as "no colour, please" would make the
+// cancellation impossible to express.
+const useColor = process.env.NO_COLOR === undefined || process.env.NO_COLOR === ''
 const paint = (code: number, text: string) => (useColor ? '[' + code + 'm' + text + '[0m' : text)
 
 const ICON: Record<Level, string> = {

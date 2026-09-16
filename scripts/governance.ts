@@ -49,7 +49,9 @@ exit 0 = warn-only or clean, 1 = --enforce and at least one error,
 /** Runs another command in this repo and folds its exit code into one finding, flaky included. */
 function runCheck(name: string, command: string, repo: string): Finding {
   const result = run(command, { cwd: repo, timeoutMs: 600_000 })
-  console.log(result.output)
+  // `raw`, not `output`: this is printed for a person to read, and the colour
+  // the sub-check emitted is the fastest way to see which line failed.
+  console.log(result.raw)
   return {
     level: result.exitCode === 0 ? 'pass' : result.exitCode === EXIT.flaky ? 'flaky' : 'error',
     claim: name,

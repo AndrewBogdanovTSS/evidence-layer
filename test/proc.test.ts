@@ -38,3 +38,28 @@ describe('capture', () => {
     expect(capture('node -e "process.exit(1)"')).toBeNull()
   })
 })
+
+describe('captured output is evidence, so the terminal must not appear in it', () => {
+  it('strips colour a child emits, so an artifact id does not depend on FORCE_COLOR', () => {
+    // Node colours a bare number in `console.log` when it believes colour is
+    // supported, and FORCE_COLOR makes it believe that even through a pipe.
+    // Same command, same commit, different machine setting - the id must not
+    // move, so the escape sequences cannot survive into the output.
+    const before = process.env.FORCE_COLOR
+    try {
+      process.env.FORCE_COLOR = '1'
+      const coloured = run('node -e "console.log(1+1)"')
+      expect(coloured.output).toBe('2')
+      // ...and the colour is still there for anything that re-prints it.
+      expect(coloured.raw).toContain('2')
+      expect(coloured.raw).not.toBe('2')
+    } finally {
+      if (before === undefined) delete process.env.FORCE_COLOR
+      else process.env.FORCE_COLOR = before
+    }
+  })
+
+  it('leaves text that was never coloured exactly as it was', () => {
+    expect(run('node -e "process.stdout.write(String(41 + 1))"').output).toBe('42')
+  })
+})

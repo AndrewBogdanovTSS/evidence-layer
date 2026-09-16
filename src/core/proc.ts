@@ -10,9 +10,30 @@
  */
 import { spawnSync } from 'node:child_process'
 
+/** CSI escape sequences - the colour and cursor codes a terminal-aware program emits. */
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\[[0-?]*[ -/]*[@-~]/g
+
 export interface RunResult {
   command: string
+  /**
+   * What the command said, normalised: terminal escape sequences removed and a
+   * package manager's echoed command line dropped. This is the evidence field -
+   * what gets hashed into an artifact id, parsed by a reporter adapter, and
+   * embedded in a review.
+   */
   output: string
+  /**
+   * The same text with nothing taken out, for callers that re-print it to a
+   * person. `governance` runs each check as a captured subprocess and prints
+   * what it captured; stripping colour there would make a passing check and a
+   * failing one look identical in the one place someone is actually reading.
+   *
+   * Two fields rather than one flag, because the choice is not global: a single
+   * run is usually both displayed and cited, and those two uses want different
+   * text.
+   */
+  raw: string
   exitCode: number
   timedOut: boolean
 }
@@ -47,10 +68,27 @@ export function run(command: string, opts: { cwd?: string; timeoutMs?: number } 
       .split('\n')
       .filter((line) => !/^\$ \S/.test(line.trim()))
       .join('\n')
+  // Colour is an environment setting, and captured output is evidence, so the
+  // two must not touch. With `FORCE_COLOR` set - common in CI, and inherited by
+  // every child - Node colours a bare `console.log(1 + 1)` and vitest colours
+  // its summary line, which breaks two things at once: a reporter parser stops
+  // recognising a format it reads correctly everywhere else, and, worse,
+  // `artifactId` hashes this output, so the same command at the same commit
+  // would address differently on a machine with colour enabled. An id that
+  // depends on the terminal is not an address.
+  //
+  // Stripped before `stripEcho`, because an escape sequence in front of the
+  // `$` would otherwise hide a package manager's echoed command line from it.
+  const stripAnsi = (s: string) => s.replace(ANSI_RE, '')
   const raw = (stripEcho(res.stdout ?? '') + stripEcho(res.stderr ?? '')).trim()
+  const normalised = stripAnsi(
+    (stripEcho(stripAnsi(res.stdout ?? '')) + stripEcho(stripAnsi(res.stderr ?? ''))).trim(),
+  )
+  const note = '\n[timed out after ' + timeoutMs + ' ms]'
   return {
     command,
-    output: timedOut ? (raw + '\n[timed out after ' + timeoutMs + ' ms]').trim() : raw,
+    output: timedOut ? (normalised + note).trim() : normalised,
+    raw: timedOut ? (raw + note).trim() : raw,
     exitCode: timedOut ? 124 : (res.status ?? 1),
     timedOut,
   }
