@@ -80,16 +80,20 @@ reports success when it could not run manufactures confidence out of nothing.
 `claims`, `receipt`, `ci-summary`, `journal`, governance, exceptions and misses
 need **no configuration at all** - they operate on markdown text, git output and
 `package.json`, which every project already has. Call `gatherEvidence({ repo,
-base })` with nothing else and it plans `pnpm lint`, `pnpm typecheck` and `pnpm
-test` - the three scripts an ordinary Node project already has names for.
+base })` with nothing else and it plans `pnpm lint`, `pnpm typecheck`, a
+lockfile check and `pnpm test` - the three scripts an ordinary Node project
+already has names for, plus one fact `pnpm-lock.yaml` can answer about itself -
+and reports the working tree's own status alongside them.
 
 What was **never** claimed to be zero-config, because it cannot be: any check
 that asserts a fact specific to one project - a route existing, a dependency
 pinned to an exact version, a build fitting a size budget. Those are facts about
 that project, not about Node, and belong in that project's own script. This
-repository's `scripts/check-docs.ts` is the worked example: it checks the claims
-*this* README makes, and it lives here rather than in the package because nobody
-else's README makes them.
+repository's `scripts/check-docs.ts` and `scripts/check-deps.ts` are the worked
+examples: one checks the claims *this* README makes, the other checks that
+every dependency *this package* declares is actually used, and both live here
+rather than in the package because nobody else's README or manifest makes
+those exact claims.
 
 ## Using it as a library
 
@@ -131,13 +135,14 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **184 tests** across **17 files**, and that sentence is checked
+The suite is **198 tests** across **18 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
 
 ```bash
 pnpm check:docs     # do the claims on this page still hold?
+pnpm check:deps     # is every dependency this package declares actually used?
 pnpm check:all      # every check, plus: does anything run them?
 pnpm journal:report # what the checks have found here, over time
 ```

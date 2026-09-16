@@ -70,6 +70,14 @@ not in the package. Every claim it makes is a fact about *this* repository, and
 a fact about one repository has no business inside a package that claims to
 work on any of them.
 
+Its sibling [`scripts/check-deps.ts`](../scripts/check-deps.ts) (`pnpm
+check:deps`) makes the same kind of claim about the other direction: not "does
+the README match the package," but "is every dependency the package declares
+actually used." It never reports an `error`, only `pass` or `warning` - "no
+textual reference found" is a heuristic over free text, weaker evidence than a
+command that actually failed, so the honest ceiling on its own confidence is a
+warning, not a build-breaking claim.
+
 ### 2. The check only you can write
 
 There is a slot here, and this package deliberately does not fill it.
@@ -93,8 +101,21 @@ being portable and starts being one project's tooling with a wider README.
 
 ### 3. `pnpm evidence --base <ref> --head <ref>` - gather before you write
 
-Runs the diff summary, the lint, the typecheck and the tests, and writes them
-into `evidence.local.md` as artifact blocks a review can cite.
+Runs the diff summary, the lint, the typecheck, a lockfile check and the
+tests, and writes them into `evidence.local.md` as artifact blocks a review
+can cite - alongside the working tree's own `git status`, reported for the
+same reason the guard below exists: lint, typecheck and tests read the tree as
+it sits, not the diff, so anything sitting on top of the reviewed commit
+shaped their result without ever appearing in it.
+
+Two more sections are opt-in, not planned by default, because neither makes
+the same kind of claim as the rest of the bundle: a coverage summary, parsed
+out of whatever the test step already printed if you supply a parser (see
+`adapters/node-default`'s `parseCoverageSummary` for the one reporter format
+recognised out of the box); and `pnpm evidence --audit`, which runs `pnpm
+audit` and labels it point-in-time, because unlike a lint violation or a
+failing test, a fresh advisory against an unpinned transitive dependency can
+appear with no code change at all.
 
 The problem this solves is not dishonesty. Anyone writing a review - person or
 model - reliably uses evidence already in front of them and unreliably chooses to
@@ -283,6 +304,25 @@ journal was the first thing built rather than the last. Whether six checks are
 more than this project needs is a real, currently unanswerable question; it
 is deferred to **30 runs against real changes**, not decided today, and a
 named owner reviews the journal then rather than guessing now.
+
+### 6d. Decision-record hygiene - the exceptions clock, extended
+
+An exception with no expiry is not a valid exception, checked since 6a. A
+decision record makes the identical promise about itself, in the same
+frontmatter `readInvariants` already reads: every record here carries
+`review_by`. Nothing checked that half until
+[`docs/decisions/0004-decisions-and-dependencies-get-a-clock.md`](decisions/0004-decisions-and-dependencies-get-a-clock.md) -
+an `accepted` record whose review date had quietly passed while it kept
+sitting in the directory `readInvariants` treats as live would have been
+indistinguishable from one still current.
+
+`checkDecisionHygiene` runs as part of `evidence-layer governance` (so every
+consumer gets it, not just this repository) and reports an `error` for an
+`accepted` record with no valid `review_by`, or one whose date has passed -
+never merely a warning, matching how an expired exception is treated. A
+record archived under `docs/decisions/archive/` is never scanned, on purpose:
+an archived record's date is expected to be in the past, and flagging it would
+be true and useless.
 
 ## What runs it
 

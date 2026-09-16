@@ -39,11 +39,17 @@ function claimSentence(command: string, exitCode: number): string | null {
       return ok ? 'Lint reports no violations.' : 'Lint reports violations.'
     case 'types':
       return ok ? 'Typecheck reports no errors.' : 'Typecheck reports errors.'
+    case 'lockfile':
+      return ok ? 'The lockfile matches package.json.' : 'The lockfile is out of sync with package.json.'
+    case 'audit':
+      return ok ? 'A dependency audit reports no known vulnerabilities.' : 'A dependency audit reports known vulnerabilities.'
     case 'engine':
       return ok ? 'Recorded engine behaviour is unchanged.' : 'Engine behaviour changed - a fingerprint moved.'
     case 'diff':
-      // Context, not a claim someone would grade VERIFIED - the diff summary
-      // does not assert anything a reader would ask "could this be wrong?" about.
+    case 'tree':
+      // Context, not a claim someone would grade VERIFIED - neither the diff
+      // summary nor the working-tree status asserts anything a reader would
+      // ask "could this be wrong?" about.
       return null
     default:
       return 'This command exits ' + exitCode + '.'

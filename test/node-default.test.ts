@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { measureDirSize, parseTestCount } from '../src/adapters/node-default'
+import { measureDirSize, parseCoverageSummary, parseTestCount } from '../src/adapters/node-default'
 
 describe('parseTestCount', () => {
   it('reads vitest\'s summary line', () => {
@@ -30,6 +30,26 @@ describe('parseTestCount', () => {
 
   it('returns null, not zero, for an unrecognised format - the honest "cannot tell"', () => {
     expect(parseTestCount('all good, ship it')).toBeNull()
+  })
+})
+
+describe('parseCoverageSummary', () => {
+  const TABLE = [
+    ' % Coverage report from v8',
+    '----------|---------|----------|---------|---------|-------------------',
+    'File      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s ',
+    '----------|---------|----------|---------|---------|-------------------',
+    'All files |   85.71 |    83.33 |     100 |   85.71 |                   ',
+    ' index.js |   85.71 |    83.33 |     100 |   85.71 | 12-14             ',
+    '----------|---------|----------|---------|---------|-------------------',
+  ].join('\n')
+
+  it("reads vitest's default v8 coverage table", () => {
+    expect(parseCoverageSummary(TABLE)).toBe('Statements 85.71%, Branches 83.33%, Functions 100%, Lines 85.71%')
+  })
+
+  it('returns null, not a fabricated number, when the output has no coverage table', () => {
+    expect(parseCoverageSummary('Tests  71 passed (71)')).toBeNull()
   })
 })
 

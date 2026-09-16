@@ -21,6 +21,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   EXIT,
+  checkDecisionHygiene,
   checkExceptions,
   checkReachability,
   emitReport,
@@ -39,7 +40,7 @@ Runs every check in this repository, then verifies that something actually runs 
 
   --enforce   exit 1 when any finding is an error (default: warn only)
   --fast      skip the checks that have to run the suite or the build
-  --only      run one: docs, tests, fixtures, reachability, exceptions
+  --only      run one: docs, deps, tests, fixtures, reachability, exceptions, decisions
   --no-json   suppress the machine-readable report block
 
 exit 0 = warn-only or clean, 1 = --enforce and at least one error,
@@ -104,12 +105,16 @@ function main(): void {
   if (!only || only === 'docs') {
     findings.push(runCheck('README claims', 'pnpm check:docs' + (fast ? ' --fast' : ''), repo))
   }
+  if (!only || only === 'deps') {
+    findings.push(runCheck('package.json dependencies', 'pnpm check:deps', repo))
+  }
   if ((!only || only === 'tests') && !fast) {
     findings.push(runCheck('the suite, and the package it builds', 'pnpm test', repo))
   }
   if (!only || only === 'fixtures') findings.push(...checkFixtures(repo))
   if (!only || only === 'reachability') findings.push(...checkReachability(repo))
   if (!only || only === 'exceptions') findings.push(...checkExceptions(repo))
+  if (!only || only === 'decisions') findings.push(...checkDecisionHygiene(repo))
 
   const newMisses = recordNewMisses(repo, join(repo, 'journal.jsonl'))
   if (newMisses.length > 0) {

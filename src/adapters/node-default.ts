@@ -47,6 +47,27 @@ export function parseTestCount(output: string): number | null {
   return null
 }
 
+/**
+ * The `All files` row of vitest's default v8 coverage table, rendered as one
+ * readable line - or `null` when the output carries no such table, which is
+ * the ordinary case: coverage is opt-in, and most test commands never turn it
+ * on. `null` is the honest answer here too, for the same reason as
+ * `parseTestCount` - a caller should treat it as "nothing to report," never
+ * invent a number.
+ *
+ *     % Coverage report from v8
+ *     ----------|---------|----------|---------|---------|
+ *     File      | % Stmts | % Branch | % Funcs | % Lines |
+ *     ----------|---------|----------|---------|---------|
+ *     All files |   85.71 |    83.33 |     100 |   85.71 |
+ */
+export function parseCoverageSummary(output: string): string | null {
+  const row = /All files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/.exec(output)
+  if (!row) return null
+  const [, stmts, branch, funcs, lines] = row
+  return 'Statements ' + stmts + '%, Branches ' + branch + '%, Functions ' + funcs + '%, Lines ' + lines + '%'
+}
+
 /** Total byte size of a directory tree. Generic; what the number means to a project's budget is that project's claim, not this function's. */
 export function measureDirSize(path: string): number {
   let total = 0

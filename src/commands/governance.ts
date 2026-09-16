@@ -1,10 +1,14 @@
 /**
- * `evidence-layer governance` - does anything actually run the checks?
+ * `evidence-layer governance` - does anything actually run the checks, and is
+ * what it's running still current?
  *
- * The two checks in this package that need no configuration and no adapter:
+ * The three checks in this package that need no configuration and no adapter:
  * reachability (every invariant a decision record declares must be reachable
- * from a git hook or a CI workflow) and exceptions (every governance exception
- * must carry an expiry date that has not passed).
+ * from a git hook or a CI workflow), exceptions (every governance exception
+ * must carry an expiry date that has not passed) and decision hygiene (every
+ * accepted decision record must carry a review date that has not passed
+ * either - the same discipline exceptions already get, extended to the
+ * records that govern them).
  *
  * What deliberately is *not* here: running a project's other checks. Which
  * checks a repository runs, in what order, and which of them are slow enough
@@ -16,6 +20,7 @@
  */
 import { join } from 'node:path'
 import {
+  checkDecisionHygiene,
   checkExceptions,
   checkReachability,
   emitReport,
@@ -31,7 +36,8 @@ const HELP = `
 evidence-layer governance [--repo <path>] [--decisions <dir>] [--enforce] [--no-json]
 
 Checks that the invariants your decision records declare are actually wired to
-something that runs, and that no governance exception has quietly expired.
+something that runs, that no governance exception has quietly expired, and
+that no accepted decision record has gone past its own review date.
 
   --repo        repository root (default: current directory)
   --decisions   directory of decision records (default: <repo>/docs/decisions)
@@ -54,6 +60,7 @@ export function run(argv: string[]): void {
   const findings: Finding[] = [
     ...checkReachability(repo, decisions),
     ...(exceptions ? checkExceptions(repo, exceptions) : checkExceptions(repo)),
+    ...checkDecisionHygiene(repo, decisions),
   ]
 
   const mode = args.enforce === true ? 'enforce' : 'warn'
