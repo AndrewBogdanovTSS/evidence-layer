@@ -84,7 +84,7 @@ run manufactures confidence out of nothing.
 ### 4 - is anything running the checks?
 
 ```bash
-pnpm exec tsx bin/evidence-layer.ts governance --repo examples/plain-node-project
+pnpm check:governance --repo examples/plain-node-project
 ```
 
 Two invariants in the example project read as enforced. One names `npm test`,
@@ -95,7 +95,7 @@ is reported that way rather than passed.
 `npx evidence-layer governance --repo examples/plain-node-project` is the same
 command for a consumer who has the package installed. Inside this repository
 the bin is not linked into `node_modules/.bin`, because the package does not
-depend on itself, so the demo runs the source entry point directly.
+depend on itself, so `check:governance` runs the source entry point directly.
 
 ## Why keep broken files around
 
