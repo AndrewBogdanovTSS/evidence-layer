@@ -7,10 +7,11 @@
 > because a reader has to see where the review was written from before they
 > see what it concluded.
 >
-> This review cites three files, so it carries **three** Sample integrity
-> lines, one per cited file - see `demo/reviews/bad-receipt.md` for what it
+> This review cites three files, so its Sample integrity table has **three**
+> rows, one per cited file - see `demo/reviews/bad-receipt.md` for what it
 > looks like when only one file is quoted and it is not one of the files the
-> review is actually about.
+> review is actually about. That file keeps the older one-line-per-quote form,
+> which the checker still reads.
 
 ## Access Receipt
 
@@ -22,10 +23,15 @@
 **Diff stat**: 22 files changed, 1009 insertions(+), 62 deletions(-)
 **Files in diff**: 22
 **Files opened during review**: 22
-**Sample integrity**: `test/decision-hygiene.test.ts` -> `import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'`
-**Sample integrity**: `test/proc.test.ts` -> `import { describe, expect, it } from 'vitest'`
-**Sample integrity**: `README.md` -> `# evidence-layer`
 **Tools used**: git, ripgrep, the local test suite
+
+**Sample integrity**:
+
+| File | First non-blank line |
+|---|---|
+| `test/decision-hygiene.test.ts` | `import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'` |
+| `test/proc.test.ts` | `import { describe, expect, it } from 'vitest'` |
+| `README.md` | `# evidence-layer` |
 
 Every field above is a literal value. Nothing here is a summary, an
 impression, or a promise: a reader can re-derive each one by running the same
@@ -35,7 +41,7 @@ The base is the merge-base with `origin/demo-target`, not the tip of the local
 branch of the same name. Those two values differ by ten commits in this clone,
 and the difference is the whole of `demo/reviews/bad-receipt.md`.
 
-The sample integrity lines are the cheapest of the checks and the hardest to
+The sample integrity rows are the cheapest of the checks and the hardest to
 fake. Quoting the first non-blank line of a file you did not open requires
 guessing it, and nobody guesses an import list verbatim - including the order
 of the names inside the braces.

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { generateClaimSkeleton, generateSampleSkeleton } from '../src/core/skeleton'
 import { findArtifactBlocks } from '../src/core/artifact'
 import { findClaims, lintClaims } from '../src/core/claims'
+import { parseReceipt } from '../src/core/receipt'
 
 const artifact = (command: string, exitCode: number, id: string, commit = 'f8ae76a') => ({
   command,
@@ -46,9 +47,38 @@ describe('generateClaimSkeleton', () => {
 })
 
 describe('generateSampleSkeleton', () => {
-  it('emits one Sample integrity line per file supplied', () => {
+  it('emits one table row per file supplied, under a single label', () => {
     const md = generateSampleSkeleton([{ path: 'a.ts', line: 'import x' }, { path: 'b.ts', line: 'import y' }])
-    expect(md.split('\n')).toHaveLength(2)
+    expect(md).toBe(
+      [
+        '**Sample integrity**:',
+        '',
+        '| File | First non-blank line |',
+        '|---|---|',
+        '| `a.ts` | `import x` |',
+        '| `b.ts` | `import y` |',
+      ].join('\n'),
+    )
+  })
+
+  it('keeps a quote with backticks or pipes inside one intact cell', () => {
+    const md = generateSampleSkeleton([
+      { path: 'p.md', line: '# Adopt `evidence-layer` now' },
+      { path: 't.ts', line: "export type Level = 'pass' | 'error'" },
+    ])
+    expect(md).toContain('| `p.md` | `` # Adopt `evidence-layer` now `` |')
+    expect(md).toContain("| `t.ts` | `export type Level = 'pass' \\| 'error'` |")
+  })
+
+  it('round-trips: parseReceipt reads back exactly the lines it was given', () => {
+    const samples = [
+      { path: 'a.ts', line: 'import x' },
+      { path: 'p.md', line: '# Adopt `evidence-layer` now' },
+      { path: 't.ts', line: "export type Level = 'pass' | 'error'" },
+      { path: 'f.md', line: '```ts' },
+      { path: 'g.md', line: '`x`' },
+    ]
+    expect(parseReceipt(generateSampleSkeleton(samples, 3)).samples).toEqual(samples)
   })
 
   it('notes an omitted count when the caller capped the list, without inventing entries', () => {

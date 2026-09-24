@@ -127,6 +127,20 @@ npx evidence-layer journal tag <id> real     # mark a finding real or false
 | `journal report` | "these checks are useful" - real findings, false findings and misses, counted over time rather than assumed |
 | `journal tag` | as above, at the moment of fixing, by whoever fixed it |
 
+A receipt quotes each cited file in a table - one row per file, the first
+non-blank line in a code span, `|` escaped as `\|`:
+
+```markdown
+**Sample integrity**:
+
+| File | First non-blank line |
+|---|---|
+| `src/a.ts` | `import { b } from './b'` |
+```
+
+The one-line form from 0.1.x (`` **Sample integrity**: `path` -> `line` ``) is
+still read, so existing reviews keep verifying.
+
 The colon-separated names these checks had before they were a package
 (`check:claims`, `check:receipt`, `ci:summary`, `journal:report`,
 `journal:tag`) still work as aliases.
@@ -239,7 +253,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **198 tests** across **18 files**, and that sentence is checked
+The suite is **204 tests** across **18 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

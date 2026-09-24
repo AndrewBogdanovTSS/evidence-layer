@@ -30,6 +30,50 @@ describe('parseReceipt', () => {
     expect(parseReceipt(md).samples).toHaveLength(2)
   })
 
+  it('reads the table form, unescaping pipes and code-span padding', () => {
+    const md = [
+      '**Sample integrity**:',
+      '',
+      '| File | First non-blank line |',
+      '| --- | --- |',
+      "| `t.ts` | `export type Level = 'pass' \\| 'error'` |",
+      '| `p.md` | `` # Adopt `evidence-layer` now `` |',
+      '',
+      'Prose after the table is not a row.',
+    ].join('\n')
+    expect(parseReceipt(md).samples).toEqual([
+      { path: 't.ts', line: "export type Level = 'pass' | 'error'" },
+      { path: 'p.md', line: '# Adopt `evidence-layer` now' },
+    ])
+  })
+
+  it('keeps line-form and table entries in document order when a review mixes them', () => {
+    const md = [
+      '**Sample integrity**: `a.ts` -> `import a`',
+      '',
+      '| File | First non-blank line |',
+      '|---|---|',
+      '| `b.ts` | `import b` |',
+    ].join('\n')
+    expect(parseReceipt(md).samples.map((s) => s.path)).toEqual(['a.ts', 'b.ts'])
+  })
+
+  it('reads a line-form quote behind a longer delimiter, and a legacy one greedily as before', () => {
+    const md = [
+      '**Sample integrity**: `p.md` -> `` # Adopt `evidence-layer` now ``',
+      '**Sample integrity**: `q.md` -> `# Adopt `evidence-layer` now`',
+    ].join('\n')
+    expect(parseReceipt(md).samples.map((s) => s.line)).toEqual([
+      '# Adopt `evidence-layer` now',
+      '# Adopt `evidence-layer` now',
+    ])
+  })
+
+  it('ignores a table whose header is not the sample header', () => {
+    const md = ['| Severity | File |', '|---|---|', '| high | `a.ts` |'].join('\n')
+    expect(parseReceipt(md).samples).toEqual([])
+  })
+
   it('leaves a missing field undefined rather than guessing at it', () => {
     expect(parseReceipt('**Branch**: master').headSha).toBeUndefined()
   })
