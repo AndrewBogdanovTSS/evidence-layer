@@ -1,5 +1,5 @@
 # evidence-layer
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/ee9f32b6-6e43-4cdd-97d3-57d014e356af" />
+<img width="2816" height="1536" alt="Gemini_Generated_Image_1ppnm1ppnm1ppnm1" src="https://github.com/user-attachments/assets/ae0a2a95-a9bd-4cac-b5eb-7278f764215d" />
 
 Checks that turn a review's assertions into claims that could be proved wrong.
 
