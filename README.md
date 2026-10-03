@@ -1,4 +1,5 @@
 # evidence-layer
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/ee9f32b6-6e43-4cdd-97d3-57d014e356af" />
 
 Checks that turn a review's assertions into claims that could be proved wrong.
 
