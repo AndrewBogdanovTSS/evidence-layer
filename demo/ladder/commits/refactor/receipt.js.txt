@@ -1,0 +1,7 @@
+const { formatPrice } = require('./price')
+
+function receiptLine(item) {
+  return item.name + ' ' + formatPrice(item.cents) + ' (-' + formatPrice(item.discount) + ')'
+}
+
+module.exports = { receiptLine }

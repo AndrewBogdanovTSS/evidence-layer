@@ -21,13 +21,15 @@
  * default Windows install. One implementation, no drift.
  *
  * `node demo/refs.mjs setup` - idempotent. `reset` removes both refs and
- * nothing else. Neither touches `master`.
+ * nothing else. Neither touches `master`. Both also run `demo/ladder.mjs`, so
+ * one setup prepares every demo in this directory.
  *
  * Exit codes: 0 done - 1 the pinned commits are not in this clone - 2 bad usage.
  */
 import { spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resetLadder, setupLadder } from './ladder.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -67,11 +69,17 @@ function setup() {
   console.log('now run:')
   console.log('  pnpm check:receipt demo/reviews/bad-receipt.md --repo .    # fails on the stale baseline')
   console.log('  pnpm check:receipt demo/reviews/good-receipt.md --repo .   # the receipt holds')
+  console.log('')
+  console.log('and, for the ladder demo (Part III):')
+  for (const { ref, sha } of setupLadder()) console.log('  ' + ref.replace('refs/', '') + ' -> ' + sha)
+  console.log('  pnpm check:ladder demo/ladder-bad        # a renamed copy, and a trailer claiming reuse')
+  console.log('  pnpm check:ladder demo/ladder-refactor   # the copy gone, the claim now true')
 }
 
 function reset() {
   git('update-ref', '-d', LOCAL_REF)
   git('update-ref', '-d', REMOTE_REF)
+  resetLadder()
   console.log('demo refs removed')
 }
 

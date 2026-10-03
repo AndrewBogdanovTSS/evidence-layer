@@ -32,6 +32,7 @@ import {
   run,
 } from '../src/index'
 import type { Finding } from '../src/index'
+import { setupLadder } from '../demo/ladder.mjs'
 
 const HELP = `
 pnpm check:all [--enforce] [--fast] [--only <check>] [--repo <path>] [--no-json]
@@ -77,13 +78,48 @@ function checkFixtures(repo: string): Finding[] {
     { file: 'shotgun-artifact.md', exit: EXIT.ok },
   ]
 
-  return expectations.map(({ file, exit }): Finding => {
+  const findings = expectations.map(({ file, exit }): Finding => {
     const result = run('pnpm check:claims ' + reviews + file, { cwd: repo, timeoutMs: 120_000 })
     return {
       level: result.exitCode === exit ? 'pass' : 'error',
       claim: 'fixture ' + file + ' still exits ' + exit,
       detail: result.exitCode === exit ? 'as expected' : 'exited ' + result.exitCode + ' instead',
       file: reviews + file,
+      expected: exit,
+      observed: result.exitCode,
+    }
+  })
+  return [...findings, ...checkLadderFixtures(repo)]
+}
+
+/**
+ * The ladder demo's two commits, rebuilt on top of HEAD and checked. They are
+ * not files but refs (see `demo/ladder.mjs`), so they are recreated first -
+ * idempotently, outside `refs/heads/`, touching neither the working tree nor
+ * the index. A clone where git refuses that gets `unverifiable`, not a pass.
+ */
+function checkLadderFixtures(repo: string): Finding[] {
+  try {
+    setupLadder()
+  } catch (error) {
+    return [
+      {
+        level: 'unverifiable',
+        claim: 'the ladder fixtures exit what they should',
+        detail: 'could not build the fixture commits: ' + (error instanceof Error ? error.message : String(error)),
+      },
+    ]
+  }
+  const expectations = [
+    { ref: 'demo/ladder-bad', exit: EXIT.failed },
+    { ref: 'demo/ladder-refactor', exit: EXIT.ok },
+  ]
+  return expectations.map(({ ref, exit }): Finding => {
+    const result = run('pnpm check:ladder ' + ref, { cwd: repo, timeoutMs: 120_000 })
+    return {
+      level: result.exitCode === exit ? 'pass' : 'error',
+      claim: 'fixture ' + ref + ' still exits ' + exit,
+      detail: result.exitCode === exit ? 'as expected' : 'exited ' + result.exitCode + ' instead',
       expected: exit,
       observed: result.exitCode,
     }

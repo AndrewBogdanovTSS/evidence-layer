@@ -262,6 +262,7 @@ cannot fail.
 pnpm evidence --base origin/master # gather this repository's own evidence bundle
 pnpm check:docs     # do the claims on this page still hold?
 pnpm check:deps     # is every dependency this package declares actually used?
+pnpm check:ladder   # did this commit climb the decision ladder it says it did?
 pnpm check:all      # every check, plus: does anything run them?
 pnpm journal:report # what the checks have found here, over time
 ```

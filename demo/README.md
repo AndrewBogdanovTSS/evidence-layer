@@ -1,6 +1,7 @@
 # demo/
 
-The four demos the talk runs, in slide order, with the fixtures they need.
+The demos the talks run, in slide order, with the fixtures they need: four for
+Part II (*Show Me the Strip*), one for Part III (*Lift the Shadow*).
 
 Everything here is either wrong on purpose or a reference this repository's own
 history cannot produce by itself. Each file says at the top what it is and what
@@ -21,7 +22,11 @@ It creates a local `demo-target` branch parked on the first commit and an
 baseline that has genuinely gone stale. Nothing touches `master`, and every
 ref it creates is named `demo-*`. Remove them with `pnpm demo:reset`.
 
-Only demo 3 needs this. Demos 1, 2 and 4 run on a clean clone.
+The same command builds the ladder demo's two commits as `refs/demo/ladder-bad`
+and `refs/demo/ladder-refactor` - outside `refs/heads/`, so they are not branches
+and a default push does not send them.
+
+Only demos 3 and 5 need this. Demos 1, 2 and 4 run on a clean clone.
 
 ## The demos
 
@@ -96,6 +101,37 @@ is reported that way rather than passed.
 command for a consumer who has the package installed. Inside this repository
 the bin is not linked into `node_modules/.bin`, because the package does not
 depend on itself, so `check:governance` runs the source entry point directly.
+
+### 5 - did it climb the ladder? (Part III)
+
+```bash
+pnpm check:ladder demo/ladder-bad
+pnpm check:ladder demo/ladder-refactor
+```
+
+The decision ladder - does it need to exist, is it already here, does the
+platform do it, does an installed dependency, only then the minimum - is an
+instruction to whoever writes the change. An agent saying it climbed is a
+self-report. A commit names the rung that held in a trailer, and the check
+holds the trailer to the diff.
+
+| Ref | What it is |
+|---|---|
+| `demo/ladder-bad` | `ladder/shop/receipt.js` adds `formatDiscount`, which is `formatPrice` from `ladder/shop/price.js` with its parameter renamed, under a trailer claiming `Ladder-Rung: 2 reuse formatPrice`. Half true: it does call `formatPrice` - and also copies it |
+| `demo/ladder-refactor` | the next commit: the copy removed, `formatPrice` called instead, same trailer - now true |
+
+The first fails twice - the rung claim is refuted, and the clone check finds
+the copy whatever the trailer says. The second passes both. The commits are
+built from `ladder/commits/` by `ladder.mjs`; their sources end in `.txt` so
+that nothing scanning this repository's JavaScript mistakes the deliberate copy
+for real code.
+
+The clone check is written rather than installed, and the reason is the demo:
+the off-the-shelf detector tried first matched exact token runs only, and the
+copy an agent writes renames its parameters. Only names a function binds itself
+are renamed before comparing - renaming free names too made every one-line test
+callback in this repository "a copy" of every other, on the first run against
+its own history.
 
 ## Why keep broken files around
 

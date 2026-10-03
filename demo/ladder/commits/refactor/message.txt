@@ -1,0 +1,5 @@
+Format the discount with formatPrice
+
+The receipt carried its own copy of formatPrice under another name.
+
+Ladder-Rung: 2 reuse formatPrice

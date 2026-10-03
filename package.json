@@ -61,6 +61,7 @@
     "check:claims": "tsx bin/evidence-layer.ts claims",
     "check:receipt": "tsx bin/evidence-layer.ts receipt",
     "check:governance": "tsx bin/evidence-layer.ts governance",
+    "check:ladder": "tsx scripts/check-ladder.ts",
     "check:all": "tsx scripts/governance.ts",
     "ci:summary": "tsx bin/evidence-layer.ts ci-summary",
     "evidence": "tsx scripts/gather-evidence.ts",

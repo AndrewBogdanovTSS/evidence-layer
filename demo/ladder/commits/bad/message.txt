@@ -1,0 +1,3 @@
+Show the discount on the receipt
+
+Ladder-Rung: 2 reuse formatPrice
