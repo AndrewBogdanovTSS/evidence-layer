@@ -46,7 +46,12 @@ describe('captured output is evidence, so the terminal must not appear in it', (
     // Same command, same commit, different machine setting - the id must not
     // move, so the escape sequences cannot survive into the output.
     const before = process.env.FORCE_COLOR
+    // An inherited NO_COLOR is a different scenario: with both set, Node 26
+    // warns on stderr that one overrides the other, and that warning is real
+    // output `run` keeps - so this test failed for anyone who opts out of colour.
+    const noColor = process.env.NO_COLOR
     try {
+      delete process.env.NO_COLOR
       process.env.FORCE_COLOR = '1'
       const coloured = run('node -e "console.log(1+1)"')
       expect(coloured.output).toBe('2')
@@ -56,6 +61,7 @@ describe('captured output is evidence, so the terminal must not appear in it', (
     } finally {
       if (before === undefined) delete process.env.FORCE_COLOR
       else process.env.FORCE_COLOR = before
+      if (noColor !== undefined) process.env.NO_COLOR = noColor
     }
   })
 
