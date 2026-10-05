@@ -235,7 +235,14 @@ export function gatherEvidence(opts: GatherOptions): GatherResult {
     const id = artifactId(res.command, headSha, res.output)
     parts.push(formatArtifact(res.command, res.output, res.exitCode, { id, commit: headSha }), '')
     if (classifyCommand(res.command) !== 'diff') {
-      claimArtifacts.push({ command: res.command, output: res.output, exitCode: res.exitCode, id, commit: headSha })
+      claimArtifacts.push({
+        command: res.command,
+        output: res.output,
+        exitCode: res.exitCode,
+        id,
+        commit: headSha,
+        timedOut: res.timedOut,
+      })
     }
     if (step.name === 'test') testOutput = res.output
     console.log('  ' + step.name + ': exit ' + res.exitCode + (res.timedOut ? ' (timed out)' : ''))
@@ -260,8 +267,15 @@ export function gatherEvidence(opts: GatherOptions): GatherResult {
       formatArtifact(res.command, res.output, res.exitCode, { id, commit: headSha }),
       '',
     )
-    claimArtifacts.push({ command: res.command, output: res.output, exitCode: res.exitCode, id, commit: headSha })
-    console.log('  dependency audit: exit ' + res.exitCode)
+    claimArtifacts.push({
+      command: res.command,
+      output: res.output,
+      exitCode: res.exitCode,
+      id,
+      commit: headSha,
+      timedOut: res.timedOut,
+    })
+    console.log('  dependency audit: exit ' + res.exitCode + (res.timedOut ? ' (timed out)' : ''))
   }
 
   const claimSkeleton = generateClaimSkeleton(claimArtifacts)

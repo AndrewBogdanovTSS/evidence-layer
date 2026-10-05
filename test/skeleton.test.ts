@@ -38,6 +38,34 @@ describe('generateClaimSkeleton', () => {
     expect(findings.some((f) => f.level === 'error')).toBe(false)
   })
 
+  it('says a timed-out run did not complete, instead of reading its 124 as a failure', () => {
+    const skeleton = generateClaimSkeleton([{ ...artifact('pnpm typecheck', 124, 'types-ffffff'), timedOut: true }])
+    expect(skeleton.split('\n')[0]).toBe('**Claim**: Typecheck did not complete - it timed out before reporting a result.')
+    expect(skeleton).not.toContain('reports errors')
+    expect(skeleton).toContain('exit: 124')
+  })
+
+  it('names the command generically when a timed-out command has no known kind', () => {
+    const skeleton = generateClaimSkeleton([{ ...artifact('node build.mjs', 124, 'cmd-aaaaaa'), timedOut: true }])
+    expect(skeleton).toContain('**Claim**: This command did not complete - it timed out before reporting a result.')
+  })
+
+  it('still makes no claim for a diff, even one that timed out', () => {
+    const skeleton = generateClaimSkeleton([{ ...artifact('git diff --stat a...b', 124, 'diff-dddddd'), timedOut: true }])
+    expect(skeleton.trim()).toBe('')
+  })
+
+  it('reads 124 as a timeout only when the caller says so - a real tool may exit 124', () => {
+    const skeleton = generateClaimSkeleton([artifact('pnpm typecheck', 124, 'types-aaaaaa')])
+    expect(skeleton).toContain('Typecheck reports errors.')
+  })
+
+  it('produces a timed-out claim that the linter accepts unmodified', () => {
+    const skeleton = generateClaimSkeleton([{ ...artifact('pnpm test', 124, 'tests-ffffff'), timedOut: true }])
+    const findings = lintClaims(skeleton, 'skeleton.md')
+    expect(findings.some((f) => f.level === 'error')).toBe(false)
+  })
+
   it('round-trips through the artifact parser - the skeleton it writes is what the checker reads', () => {
     const skeleton = generateClaimSkeleton([artifact('pnpm test', 0, 'tests-eeeeee')])
     const lines = skeleton.split('\n')

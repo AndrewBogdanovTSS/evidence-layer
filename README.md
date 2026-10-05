@@ -73,7 +73,9 @@ What this layer changes, concretely:
   Gathering writes a skeleton with the ids already substituted, so citing an
   artifact means *leaving a block in place*, and asserting something unbacked
   means *deleting part of the template*. A convention that costs the writer more
-  than the shortcut loses to the shortcut every time, model or not.
+  than the shortcut loses to the shortcut every time, model or not. A run its
+  time limit killed is suggested as "did not complete", never as a failure it
+  never got to report.
 - **Agent review gets a scorecard instead of a vibe.** A commit fixing a bug a
   review let through adds `Missed-By: <review or PR>` to its own message, and
   `governance` extracts those into the journal on every run. "Is the agent's
@@ -254,7 +256,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **204 tests** across **18 files**, and that sentence is checked
+The suite is **209 tests** across **18 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

@@ -27,11 +27,37 @@ export interface SkeletonArtifact {
   exitCode: number
   id: string
   commit: string
+  /**
+   * The run was killed by its time limit, as `run()` reports it. Its exit code
+   * is the conventional `124`, which only says the command was stopped - left
+   * to the exit code alone, a killed typecheck would be suggested as "reports
+   * errors", a claim its own artifact cannot back. Passed explicitly rather than
+   * read from `124`, because a real tool may exit 124 on its own.
+   */
+  timedOut?: boolean
+}
+
+/** Who did not finish, per command kind - the subject of a timed-out claim. */
+const TIMED_OUT_SUBJECT: Record<string, string> = {
+  tests: 'The test suite',
+  lint: 'Lint',
+  types: 'Typecheck',
+  lockfile: 'The lockfile check',
+  audit: 'The dependency audit',
+  engine: 'The engine fingerprint check',
 }
 
 /** One plausible claim sentence per command kind. Never asserts success when exitCode says otherwise. */
-function claimSentence(command: string, exitCode: number): string | null {
+function claimSentence(command: string, exitCode: number, timedOut = false): string | null {
   const kind = classifyCommand(command)
+  // Context, not a claim someone would grade VERIFIED - neither the diff
+  // summary nor the working-tree status asserts anything a reader would
+  // ask "could this be wrong?" about. Checked first, so a slow diff that
+  // timed out still yields no claim.
+  if (kind === 'diff' || kind === 'tree') return null
+  // A run that was stopped never reported a result, so the only claim its
+  // artifact backs is that it did not finish - not a pass, and not a failure.
+  if (timedOut) return (TIMED_OUT_SUBJECT[kind] ?? 'This command') + ' did not complete - it timed out before reporting a result.'
   const ok = exitCode === 0
   switch (kind) {
     case 'tests':
@@ -46,12 +72,6 @@ function claimSentence(command: string, exitCode: number): string | null {
       return ok ? 'A dependency audit reports no known vulnerabilities.' : 'A dependency audit reports known vulnerabilities.'
     case 'engine':
       return ok ? 'Recorded engine behaviour is unchanged.' : 'Engine behaviour changed - a fingerprint moved.'
-    case 'diff':
-    case 'tree':
-      // Context, not a claim someone would grade VERIFIED - neither the diff
-      // summary nor the working-tree status asserts anything a reader would
-      // ask "could this be wrong?" about.
-      return null
     default:
       return 'This command exits ' + exitCode + '.'
   }
@@ -65,7 +85,7 @@ function claimSentence(command: string, exitCode: number): string | null {
 export function generateClaimSkeleton(artifacts: SkeletonArtifact[]): string {
   const parts: string[] = []
   for (const a of artifacts) {
-    const sentence = claimSentence(a.command, a.exitCode)
+    const sentence = claimSentence(a.command, a.exitCode, a.timedOut)
     if (!sentence) continue
     parts.push(
       '**Claim**: ' + sentence,
