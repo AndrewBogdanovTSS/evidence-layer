@@ -222,7 +222,7 @@ for (const [label, color] of [['real', C.green], ['false', C.amber], ['untagged'
   t(cx + 12, 372, label, { size: 10.5, fill: C.muted })
   cx += label.length * 6.5 + 24
 }
-t(810, 390, '+ open misses, via recordNewMisses()', { size: 10, fill: C.muted })
+t(810, 390, '+ open misses, recorded by governance', { size: 10, fill: C.muted })
 card(796, 418, 228, 52)
 iconCommit(818, 436, C.red)
 t(838, 440, 'a later fix commit', { size: 12.5, weight: 600 })

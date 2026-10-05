@@ -119,9 +119,33 @@ describe('the checks themselves, reached through the executable', () => {
       '--decisions',
       join(fixture, 'docs', 'decisions'),
       '--no-json',
+      // The fixture lives inside this repository's history; recording its
+      // trailers would write a journal into the source tree.
+      '--no-journal',
     ])
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('is reachable from a wired trigger')
+  })
+
+  it('has governance record a Missed-By trailer into the journal once, and only when allowed', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'evidence-layer-misses-'))
+    const git = (...args: string[]) =>
+      spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd: repo, encoding: 'utf8' })
+    git('init', '-q')
+    git('commit', '-q', '--allow-empty', '-m', 'fix: off-by-one\n\nMissed-By: reviews/pr-12.md')
+    const journal = join(repo, 'journal.jsonl')
+    const governance = (...extra: string[]) => cli(['governance', '--repo', repo, '--no-json', ...extra])
+
+    expect(governance('--no-journal').status).toBe(0)
+    expect(existsSync(journal)).toBe(false)
+
+    const first = governance()
+    expect(first.status).toBe(0)
+    expect(first.stdout).toContain('1 new miss(es) recorded from commit trailers')
+    expect(readFileSync(journal, 'utf8')).toContain('reviews/pr-12.md')
+
+    expect(governance().stdout).not.toContain('new miss(es)')
+    expect(readFileSync(journal, 'utf8').trim().split('\n')).toHaveLength(1)
   })
 
   it('reports an empty journal as empty rather than as a pass', () => {

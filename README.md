@@ -1,5 +1,5 @@
 # evidence-layer
-<img src="docs/assets/how-it-works.svg" width="1040" alt="How evidence-layer works. 1, Gather: before the review is written, gatherEvidence() refuses unless the requested commit is checked out, runs the project's own commands, and writes evidence.local.md: artifact blocks addressed by a hash of command, commit and output, a pre-filled claim skeleton and a Sample integrity table. 2, Write: the review keeps those blocks, so each claim cites VERIFIED[id], and adds an Access Receipt; a bare VERIFIED tag only earns a warning. 3, Verify: in CI, claims checks every id resolves at this commit, and receipt checks the receipt against git; each exits with a code and one of five levels. 4, Over time: governance checks that invariants are enforced and prints a JSON block; check outcomes and Missed-By trailers reach the journal when a project logs them, and journal report counts real, false and untagged findings per check.">
+<img src="docs/assets/how-it-works.svg" width="1040" alt="How evidence-layer works. 1, Gather: before the review is written, gatherEvidence() refuses unless the requested commit is checked out, runs the project's own commands, and writes evidence.local.md: artifact blocks addressed by a hash of command, commit and output, a pre-filled claim skeleton and a Sample integrity table. 2, Write: the review keeps those blocks, so each claim cites VERIFIED[id], and adds an Access Receipt; a bare VERIFIED tag only earns a warning. 3, Verify: in CI, claims checks every id resolves at this commit, and receipt checks the receipt against git; each exits with a code and one of five levels. 4, Over time: governance checks that invariants are enforced and prints a JSON block; governance also records Missed-By trailers into the journal, check outcomes reach it when a project logs them, and journal report counts real, false and untagged findings per check.">
 
 Checks that turn a review's assertions into claims that could be proved wrong.
 
@@ -126,7 +126,7 @@ npx evidence-layer journal tag <id> real     # mark a finding real or false
 | `claims` | "I verified this" - every `VERIFIED[id]` tag must address a real artifact collected at the commit under review |
 | `receipt` | "I read this repository" - the review's Access Receipt must match the repository's own git output, and a cited file must be backed by that file's own verbatim first line |
 | `ci-summary` | nothing; it renders a captured run for a CI job summary, and reports `unverifiable` when it has nothing to read |
-| `governance` | "this is enforced" - every invariant a decision record declares must be reachable from a git hook or a CI workflow, and no governance exception may be past its expiry |
+| `governance` | "this is enforced" - every invariant a decision record declares must be reachable from a git hook or a CI workflow, and no governance exception may be past its expiry; on the way, it records every `Missed-By:` commit trailer into the journal (`--no-journal` to skip) |
 | `journal report` | "these checks are useful" - real findings, false findings and misses, counted over time rather than assumed |
 | `journal tag` | as above, at the moment of fixing, by whoever fixed it |
 
@@ -256,7 +256,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **209 tests** across **18 files**, and that sentence is checked
+The suite is **210 tests** across **18 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
