@@ -1,0 +1,188 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 560" width="1040" height="560" role="img" aria-label="How evidence-layer works, in four phases: gather evidence at the commit before the review is written, write the review by keeping the addressed artifact blocks, verify claims and the Access Receipt in CI, and count findings and misses over time in the journal.">
+<defs>
+<linearGradient id="g-1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#54aeff" stop-opacity="0.28"/><stop offset="1" stop-color="#54aeff" stop-opacity="0.05"/></linearGradient>
+<linearGradient id="g-2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d4a72c" stop-opacity="0.28"/><stop offset="1" stop-color="#d4a72c" stop-opacity="0.05"/></linearGradient>
+<linearGradient id="g-3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4ac26b" stop-opacity="0.28"/><stop offset="1" stop-color="#4ac26b" stop-opacity="0.05"/></linearGradient>
+<linearGradient id="g-4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c297ff" stop-opacity="0.28"/><stop offset="1" stop-color="#c297ff" stop-opacity="0.05"/></linearGradient>
+<clipPath id="frame"><rect width="1040" height="560" rx="16"/></clipPath>
+</defs>
+<g clip-path="url(#frame)">
+<rect width="1040" height="560" fill="#f6f8fa"/>
+<rect x="0" y="48" width="260" height="464" fill="url(#g-1)"/>
+<text x="130" y="78" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16.5" font-weight="700" fill="#0969da" text-anchor="middle">Phase 1 · GATHER</text>
+<text x="130" y="97" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">before the review is written</text>
+<rect x="260" y="48" width="260" height="464" fill="url(#g-2)"/>
+<line x1="260" y1="48" x2="260" y2="512" stroke="#1f2328" stroke-opacity="0.12"/>
+<text x="390" y="78" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16.5" font-weight="700" fill="#9a6700" text-anchor="middle">Phase 2 · WRITE</text>
+<text x="390" y="97" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">by an agent or a person</text>
+<rect x="520" y="48" width="260" height="464" fill="url(#g-3)"/>
+<line x1="520" y1="48" x2="520" y2="512" stroke="#1f2328" stroke-opacity="0.12"/>
+<text x="650" y="78" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16.5" font-weight="700" fill="#1a7f37" text-anchor="middle">Phase 3 · VERIFY</text>
+<text x="650" y="97" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">in CI, by a different party</text>
+<rect x="780" y="48" width="260" height="464" fill="url(#g-4)"/>
+<line x1="780" y1="48" x2="780" y2="512" stroke="#1f2328" stroke-opacity="0.12"/>
+<text x="910" y="78" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16.5" font-weight="700" fill="#8250df" text-anchor="middle">Phase 4 · OVER TIME</text>
+<text x="910" y="97" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">the clock</text>
+<text x="520" y="32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#1f2328" text-anchor="middle">evidence-layer · how a claim becomes checkable</text>
+<rect x="16" y="112" width="228" height="56" rx="10" fill="#ffffff" fill-opacity="0.2" stroke="#1f2328" stroke-opacity="0.16" stroke-width="1.2"/>
+<g fill="none" stroke="#0969da" stroke-width="1.8" stroke-linecap="round"><circle cx="34" cy="131" r="3"/><circle cx="34" cy="149" r="3"/><circle cx="47" cy="136" r="3"/><path d="M34,134 v12 M47,139 c0,6 -13,4 -13,8"/></g>
+<text x="62" y="136" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="600" fill="#1f2328" text-anchor="start">The commit under review</text>
+<text x="62" y="155" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" font-weight="400" fill="#59636e" text-anchor="start">vs merge-base origin/&lt;target&gt;</text>
+<path d="M130,168 V180" fill="none" stroke="#59636e" stroke-width="2" stroke-linejoin="round"/>
+<rect x="81" y="180" width="98" height="20" rx="10" fill="#9a6700" fill-opacity="0.16" stroke="#9a6700" stroke-opacity="0.75" stroke-width="1"/>
+<text x="130" y="194" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#9a6700" text-anchor="middle">checked out?</text>
+<circle cx="193" cy="190" r="7" fill="#cf222e" fill-opacity="0.18" stroke="#cf222e" stroke-width="1.2"/>
+<path d="M190,187 l6,6 M196,187 l-6,6" stroke="#cf222e" stroke-width="1.6" stroke-linecap="round"/>
+<text x="205" y="194" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#cf222e" text-anchor="start">refuses</text>
+<path d="M130,200 V205" fill="none" stroke="#59636e" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="125,205 130,214 135,205" fill="#59636e"/>
+<rect x="16" y="214" width="228" height="104" rx="10" fill="#ffffff" fill-opacity="0.2" stroke="#0969da" stroke-opacity="0.55" stroke-width="1.2"/>
+<g fill="none" stroke="#0969da" stroke-width="2.4" stroke-linecap="round"><circle cx="40" cy="240" r="7.5"/><path d="M48.0,240.0 L52.0,240.0 M45.7,245.7 L48.5,248.5 M40.0,248.0 L40.0,252.0 M34.3,245.7 L31.5,248.5 M32.0,240.0 L28.0,240.0 M34.3,234.3 L31.5,231.5 M40.0,232.0 L40.0,228.0 M45.7,234.3 L48.5,231.5"/></g><circle cx="40" cy="240" r="2.6" fill="#0969da"/>
+<text x="62" y="245" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="13.5" font-weight="700" fill="#0969da" text-anchor="start">gatherEvidence()</text>
+<text x="62" y="264" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">runs your own commands</text>
+<rect x="28" y="274" width="36" height="20" rx="10" fill="#0969da" fill-opacity="0.16" stroke="#0969da" stroke-opacity="0.75" stroke-width="1"/>
+<text x="46" y="288" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" font-weight="400" fill="#0969da" text-anchor="middle">lint</text>
+<rect x="68" y="274" width="66" height="20" rx="10" fill="#0969da" fill-opacity="0.16" stroke="#0969da" stroke-opacity="0.75" stroke-width="1"/>
+<text x="101" y="288" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" font-weight="400" fill="#0969da" text-anchor="middle">typecheck</text>
+<rect x="138" y="274" width="60" height="20" rx="10" fill="#0969da" fill-opacity="0.16" stroke="#0969da" stroke-opacity="0.75" stroke-width="1"/>
+<text x="168" y="288" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" font-weight="400" fill="#0969da" text-anchor="middle">lockfile</text>
+<rect x="202" y="274" width="36" height="20" rx="10" fill="#0969da" fill-opacity="0.16" stroke="#0969da" stroke-opacity="0.75" stroke-width="1"/>
+<text x="220" y="288" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" font-weight="400" fill="#0969da" text-anchor="middle">test</text>
+<text x="28" y="309" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" font-weight="400" fill="#59636e" text-anchor="start">id = hash(command, commit, output)</text>
+<path d="M130,318 V336" fill="none" stroke="#59636e" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="125,336 130,345 135,336" fill="#59636e"/>
+<text x="140" y="335" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">writes</text>
+<rect x="16" y="346" width="228" height="124" rx="10" fill="#ffffff" fill-opacity="0.2" stroke="#1f2328" stroke-opacity="0.16" stroke-width="1.2"/>
+<g fill="none" stroke="#0969da" stroke-width="1.8" stroke-linejoin="round"><path d="M31,362 h12 l6,6 v18 h-18 z M43,362 v6 h6"/><path d="M35,374 h10 M35,379 h10" stroke-linecap="round"/></g>
+<text x="62" y="379" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="13.5" font-weight="700" fill="#1f2328" text-anchor="start">evidence.local.md</text>
+<rect x="28" y="394" width="205" height="20" rx="10" fill="#9a6700" fill-opacity="0.16" stroke="#9a6700" stroke-opacity="0.75" stroke-width="1"/>
+<text x="130.5" y="408" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" font-weight="400" fill="#9a6700" text-anchor="middle">artifact:tests-a3f91c@f8ae76a</text>
+<circle cx="36" cy="434" r="7" fill="#0969da" fill-opacity="0.18" stroke="#0969da" stroke-width="1.2"/>
+<path d="M32.5,434 l2.5,2.6 l4.6,-5" fill="none" stroke="#0969da" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="50" y="438" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">claim skeleton, ids filled in</text>
+<circle cx="36" cy="456" r="7" fill="#0969da" fill-opacity="0.18" stroke="#0969da" stroke-width="1.2"/>
+<path d="M32.5,456 l2.5,2.6 l4.6,-5" fill="none" stroke="#0969da" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="50" y="460" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">Sample integrity table</text>
+<g fill="none" stroke="#9a6700" stroke-width="2" stroke-linecap="round"><rect x="335" y="131" width="30" height="22" rx="7"/><path d="M350,131 v-6"/><path d="M332,142 v-4 M368,142 v-4"/></g><circle cx="350" cy="123" r="2.6" fill="#9a6700"/><circle cx="344" cy="141" r="2.6" fill="#9a6700"/><circle cx="356" cy="141" r="2.6" fill="#9a6700"/>
+<text x="390" y="148" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="400" fill="#59636e" text-anchor="middle">/</text>
+<g fill="none" stroke="#9a6700" stroke-width="2" stroke-linecap="round"><circle cx="430" cy="133" r="7"/><path d="M417,154 c0,-9 6,-13 13,-13 s13,4 13,13"/></g>
+<rect x="276" y="172" width="228" height="298" rx="10" fill="#ffffff" fill-opacity="0.2" stroke="#9a6700" stroke-opacity="0.45" stroke-width="1.2"/>
+<g fill="none" stroke="#9a6700" stroke-width="1.8" stroke-linejoin="round"><path d="M289,186 h12 l6,6 v18 h-18 z M301,186 v6 h6"/><path d="M293,198 h10 M293,203 h10" stroke-linecap="round"/></g>
+<text x="318" y="203" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="13.5" font-weight="700" fill="#1f2328" text-anchor="start">review.md</text>
+<rect x="288" y="216" width="204" height="62" rx="8" fill="#f6f8fa" fill-opacity="0.2" stroke="#1f2328" stroke-opacity="0.16" stroke-width="1.2"/>
+<text x="300" y="236" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1f2328" text-anchor="start">Access Receipt</text>
+<text x="300" y="254" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="start">HEAD · base · files in diff</text>
+<text x="300" y="270" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="start">first line of each cited file</text>
+<circle cx="296" cy="302" r="7" fill="#1a7f37" fill-opacity="0.18" stroke="#1a7f37" stroke-width="1.2"/>
+<path d="M292.5,302 l2.5,2.6 l4.6,-5" fill="none" stroke="#1a7f37" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="310" y="306" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#1a7f37" text-anchor="start">honest: keep the block</text>
+<rect x="296" y="316" width="166" height="20" rx="10" fill="#9a6700" fill-opacity="0.16" stroke="#9a6700" stroke-opacity="0.75" stroke-width="1"/>
+<text x="379" y="330" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" font-weight="400" fill="#9a6700" text-anchor="middle">VERIFIED[tests-a3f91c]</text>
+<text x="298" y="354" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="start">+ its artifact block, as-is</text>
+<line x1="288" y1="372" x2="492" y2="372" stroke="#1f2328" stroke-opacity="0.12"/>
+<circle cx="296" cy="394" r="7" fill="#cf222e" fill-opacity="0.18" stroke="#cf222e" stroke-width="1.2"/>
+<path d="M293,391 l6,6 M299,391 l-6,6" stroke="#cf222e" stroke-width="1.6" stroke-linecap="round"/>
+<text x="310" y="398" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#cf222e" text-anchor="start">shortcut: bare tag, no id</text>
+<rect x="296" y="408" width="71" height="20" rx="10" fill="#cf222e" fill-opacity="0.16" stroke="#cf222e" stroke-opacity="0.75" stroke-width="1"/>
+<text x="331.5" y="422" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" font-weight="400" fill="#cf222e" text-anchor="middle">VERIFIED</text>
+<line x1="300" y1="418" x2="363" y2="418" stroke="#cf222e" stroke-width="1.4"/>
+<text x="298" y="448" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="start">costs a deletion; claims warns</text>
+<rect x="536" y="112" width="228" height="128" rx="10" fill="#ffffff" fill-opacity="0.2" stroke="#1f2328" stroke-opacity="0.16" stroke-width="1.2"/>
+<text x="552" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" fill="#1a7f37" text-anchor="start">evidence-layer claims</text>
+<circle cx="558" cy="156" r="7" fill="#1a7f37" fill-opacity="0.18" stroke="#1a7f37" stroke-width="1.2"/>
+<path d="M554.5,156 l2.5,2.6 l4.6,-5" fill="none" stroke="#1a7f37" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="572" y="160" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">each id resolves to an artifact</text>
+<circle cx="558" cy="177" r="7" fill="#1a7f37" fill-opacity="0.18" stroke="#1a7f37" stroke-width="1.2"/>
+<path d="M554.5,177 l2.5,2.6 l4.6,-5" fill="none" stroke="#1a7f37" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="572" y="181" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">collected at this commit</text>
+<circle cx="558" cy="198" r="7" fill="#1a7f37" fill-opacity="0.18" stroke="#1a7f37" stroke-width="1.2"/>
+<path d="M554.5,198 l2.5,2.6 l4.6,-5" fill="none" stroke="#1a7f37" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="572" y="202" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">at most 2 claims per artifact</text>
+<circle cx="558" cy="219" r="7" fill="#1a7f37" fill-opacity="0.18" stroke="#1a7f37" stroke-width="1.2"/>
+<path d="M554.5,219 l2.5,2.6 l4.6,-5" fill="none" stroke="#1a7f37" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="572" y="223" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">success words need an Effect</text>
+<rect x="536" y="252" width="228" height="108" rx="10" fill="#ffffff" fill-opacity="0.2" stroke="#1f2328" stroke-opacity="0.16" stroke-width="1.2"/>
+<text x="552" y="276" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" fill="#1a7f37" text-anchor="start">evidence-layer receipt</text>
+<circle cx="558" cy="296" r="7" fill="#1a7f37" fill-opacity="0.18" stroke="#1a7f37" stroke-width="1.2"/>
+<path d="M554.5,296 l2.5,2.6 l4.6,-5" fill="none" stroke="#1a7f37" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="572" y="300" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">matches git’s own output</text>
+<circle cx="558" cy="317" r="7" fill="#1a7f37" fill-opacity="0.18" stroke="#1a7f37" stroke-width="1.2"/>
+<path d="M554.5,317 l2.5,2.6 l4.6,-5" fill="none" stroke="#1a7f37" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="572" y="321" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">base = merge-base, not ancestry</text>
+<circle cx="558" cy="338" r="7" fill="#1a7f37" fill-opacity="0.18" stroke="#1a7f37" stroke-width="1.2"/>
+<path d="M554.5,338 l2.5,2.6 l4.6,-5" fill="none" stroke="#1a7f37" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="572" y="342" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">quoted first lines match</text>
+<path d="M650,360 V366" fill="none" stroke="#59636e" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="645,366 650,375 655,366" fill="#59636e"/>
+<rect x="536" y="376" width="228" height="94" rx="10" fill="#ffffff" fill-opacity="0.2" stroke="#1a7f37" stroke-opacity="0.55" stroke-width="1.2"/>
+<text x="552" y="398" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1f2328" text-anchor="start">exit code is the contract</text>
+<rect x="552" y="408" width="41" height="20" rx="10" fill="#1a7f37" fill-opacity="0.16" stroke="#1a7f37" stroke-opacity="0.75" stroke-width="1"/>
+<text x="572.5" y="422" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" font-weight="400" fill="#1a7f37" text-anchor="middle">pass</text>
+<rect x="598" y="408" width="59" height="20" rx="10" fill="#9a6700" fill-opacity="0.16" stroke="#9a6700" stroke-opacity="0.75" stroke-width="1"/>
+<text x="627.5" y="422" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" font-weight="400" fill="#9a6700" text-anchor="middle">warning</text>
+<rect x="662" y="408" width="47" height="20" rx="10" fill="#cf222e" fill-opacity="0.16" stroke="#cf222e" stroke-opacity="0.75" stroke-width="1"/>
+<text x="685.5" y="422" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" font-weight="400" fill="#cf222e" text-anchor="middle">error</text>
+<rect x="552" y="434" width="47" height="20" rx="10" fill="#8250df" fill-opacity="0.16" stroke="#8250df" stroke-opacity="0.75" stroke-width="1"/>
+<text x="575.5" y="448" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" font-weight="400" fill="#8250df" text-anchor="middle">flaky</text>
+<rect x="604" y="434" width="90" height="20" rx="10" fill="#6e7781" fill-opacity="0.16" stroke="#6e7781" stroke-opacity="0.75" stroke-width="1"/>
+<text x="649" y="448" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" font-weight="400" fill="#6e7781" text-anchor="middle">unverifiable</text>
+<text x="552" y="466" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#59636e" text-anchor="start">an agent reads its grade and fixes</text>
+<rect x="796" y="112" width="228" height="140" rx="10" fill="#ffffff" fill-opacity="0.2" stroke="#1f2328" stroke-opacity="0.16" stroke-width="1.2"/>
+<path d="M818,125 l11,4 v8 c0,8 -5,12 -11,14 c-6,-2 -11,-6 -11,-14 v-8 z" fill="#8250df" fill-opacity="0.16" stroke="#8250df" stroke-width="1.8" stroke-linejoin="round"/><path d="M813,138 l3.5,3.5 l6.5,-7" fill="none" stroke="#8250df" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="838" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="700" fill="#8250df" text-anchor="start">evidence-layer</text>
+<text x="838" y="152" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="700" fill="#8250df" text-anchor="start">governance</text>
+<circle cx="812" cy="174" r="7" fill="#8250df" fill-opacity="0.18" stroke="#8250df" stroke-width="1.2"/>
+<path d="M808.5,174 l2.5,2.6 l4.6,-5" fill="none" stroke="#8250df" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="826" y="178" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">invariants reach a hook or CI</text>
+<circle cx="812" cy="195" r="7" fill="#8250df" fill-opacity="0.18" stroke="#8250df" stroke-width="1.2"/>
+<path d="M808.5,195 l2.5,2.6 l4.6,-5" fill="none" stroke="#8250df" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="826" y="199" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">no exception past expiry</text>
+<circle cx="812" cy="216" r="7" fill="#8250df" fill-opacity="0.18" stroke="#8250df" stroke-width="1.2"/>
+<path d="M808.5,216 l2.5,2.6 l4.6,-5" fill="none" stroke="#8250df" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="826" y="220" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">decision records not stale</text>
+<circle cx="812" cy="237" r="7" fill="#8250df" fill-opacity="0.18" stroke="#8250df" stroke-width="1.2"/>
+<path d="M808.5,237 l2.5,2.6 l4.6,-5" fill="none" stroke="#8250df" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="826" y="241" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">JSON block on every run</text>
+<rect x="796" y="264" width="228" height="136" rx="10" fill="#ffffff" fill-opacity="0.2" stroke="#1f2328" stroke-opacity="0.16" stroke-width="1.2"/>
+<text x="810" y="286" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="700" fill="#8250df" text-anchor="start">journal report</text>
+<text x="810" y="302" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" font-weight="400" fill="#59636e" text-anchor="start">per check · illustrative numbers</text>
+<text x="810" y="324" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">claims</text>
+<rect x="870" y="314" width="64" height="12" rx="2" fill="#1a7f37" fill-opacity="0.85"/>
+<rect x="936" y="314" width="20" height="12" rx="2" fill="#9a6700" fill-opacity="0.85"/>
+<rect x="958" y="314" width="31" height="12" rx="2" fill="#6e7781" fill-opacity="0.85"/>
+<text x="810" y="344" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">receipt</text>
+<rect x="870" y="334" width="42" height="12" rx="2" fill="#1a7f37" fill-opacity="0.85"/>
+<rect x="914" y="334" width="9" height="12" rx="2" fill="#9a6700" fill-opacity="0.85"/>
+<rect x="925" y="334" width="20" height="12" rx="2" fill="#6e7781" fill-opacity="0.85"/>
+<circle cx="814" cy="368" r="4" fill="#1a7f37"/>
+<text x="822" y="372" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#59636e" text-anchor="start">real</text>
+<circle cx="864" cy="368" r="4" fill="#9a6700"/>
+<text x="872" y="372" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#59636e" text-anchor="start">false</text>
+<circle cx="920.5" cy="368" r="4" fill="#6e7781"/>
+<text x="928.5" y="372" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#59636e" text-anchor="start">untagged</text>
+<text x="810" y="390" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" font-weight="400" fill="#59636e" text-anchor="start">+ open misses, recorded by governance</text>
+<rect x="796" y="418" width="228" height="52" rx="10" fill="#ffffff" fill-opacity="0.2" stroke="#1f2328" stroke-opacity="0.16" stroke-width="1.2"/>
+<g fill="none" stroke="#cf222e" stroke-width="1.8" stroke-linecap="round"><circle cx="818" cy="436" r="5"/><path d="M805,436 h8 M823,436 h8"/></g>
+<text x="838" y="440" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1f2328" text-anchor="start">a later fix commit</text>
+<text x="812" y="460" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" font-weight="400" fill="#cf222e" text-anchor="start">Missed-By: &lt;review or PR&gt;</text>
+<path d="M1004,418 V410" fill="none" stroke="#cf222e" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="999,410 1004,401 1009,410" fill="#cf222e"/>
+<text x="994" y="413" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" font-weight="400" fill="#cf222e" text-anchor="end">trailer</text>
+<path d="M244,404 H254 Q260,404 260,398 V332 Q260,326 266,326 H286" fill="none" stroke="#9a6700" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="286,321 295,326 286,331" fill="#9a6700"/>
+<text x="260" y="426" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#9a6700" text-anchor="middle">copy</text>
+<path d="M504,236 H514 Q520,236 520,230 V182 Q520,176 526,176 H526" fill="none" stroke="#1a7f37" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="526,171 535,176 526,181" fill="#1a7f37"/>
+<path d="M504,320 H514 Q520,320 520,314 V312 Q520,306 526,306 H526" fill="none" stroke="#1a7f37" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="526,301 535,306 526,311" fill="#1a7f37"/>
+<text x="520" y="166" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#1a7f37" text-anchor="middle">checks</text>
+<path d="M536,452 H526 Q520,452 520,446 V446 Q520,440 514,440 H514" fill="none" stroke="#9a6700" stroke-width="2" stroke-linejoin="round" stroke-dasharray="6 4"/>
+<polygon points="514,435 505,440 514,445" fill="#9a6700"/>
+<text x="520" y="484" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#9a6700" text-anchor="middle">fix, rerun</text>
+<path d="M764,392 H774 Q780,392 780,386 V336 Q780,330 786,330 H786" fill="none" stroke="#8250df" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="786,325 795,330 786,335" fill="#8250df"/>
+<text x="770" y="371" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" font-weight="400" fill="#8250df" text-anchor="end">outcomes, if logged</text>
+<text x="520" y="542" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle" font-style="italic">The honest path must be cheaper than the convenient one.</text>
+</g>
+<rect x="0.5" y="0.5" width="1039" height="559" rx="16" fill="none" stroke="#d1d9e0"/>
+</svg>
