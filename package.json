@@ -71,7 +71,8 @@
     "smoke": "node scripts/smoke.mjs",
     "demo:setup": "node demo/refs.mjs setup",
     "demo:reset": "node demo/refs.mjs reset",
-    "release": "tsx scripts/release.ts"
+    "release": "tsx scripts/release.ts",
+    "diagram": "node scripts/diagram.mjs"
   },
   "publishConfig": {
     "access": "public",

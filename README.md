@@ -1,5 +1,5 @@
 # evidence-layer
-<img width="2816" height="1536" alt="Gemini_Generated_Image_1ppnm1ppnm1ppnm1" src="https://github.com/user-attachments/assets/ae0a2a95-a9bd-4cac-b5eb-7278f764215d" />
+<img src="docs/assets/how-it-works.svg" width="1040" alt="How evidence-layer works. 1, Gather: before the review is written, gatherEvidence() refuses unless the requested commit is checked out, runs the project's own commands, and writes evidence.local.md: artifact blocks addressed by a hash of command, commit and output, a pre-filled claim skeleton and a Sample integrity table. 2, Write: the review keeps those blocks, so each claim cites VERIFIED[id], and adds an Access Receipt; a bare VERIFIED tag only earns a warning. 3, Verify: in CI, claims checks every id resolves at this commit, and receipt checks the receipt against git; each exits with a code and one of five levels. 4, Over time: governance checks that invariants are enforced and prints a JSON block; check outcomes and Missed-By trailers reach the journal when a project logs them, and journal report counts real, false and untagged findings per check.">
 
 Checks that turn a review's assertions into claims that could be proved wrong.
 
