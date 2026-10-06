@@ -1,4 +1,7 @@
 # evidence-layer
+
+[![npm version](https://img.shields.io/npm/v/evidence-layer)](https://www.npmjs.com/package/evidence-layer)
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/how-it-works.svg">
   <img src="docs/assets/how-it-works-light.svg" width="1040" alt="How evidence-layer works. 1, Gather: before the review is written, gatherEvidence() refuses unless the requested commit is checked out, runs the project's own commands, and writes evidence.local.md: artifact blocks addressed by a hash of command, commit and output, a pre-filled claim skeleton and a Sample integrity table. 2, Write: the review keeps those blocks, so each claim cites VERIFIED[id], and adds an Access Receipt; a bare VERIFIED tag only earns a warning. 3, Verify: in CI, claims checks every id resolves at this commit, and receipt checks the receipt against git; each exits with a code and one of five levels. 4, Over time: governance checks that invariants are enforced and prints a JSON block; governance also records Missed-By trailers into the journal, check outcomes reach it when a project logs them, and journal report counts real, false and untagged findings per check.">
