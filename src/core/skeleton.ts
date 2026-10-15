@@ -18,7 +18,8 @@
  * cheaper than convenient, which is the only version of this feature allowed
  * to ship.
  */
-import { classifyCommand, formatArtifact } from './artifact'
+import { classifyCommand, formatArtifact, parseWorkSummary } from './artifact'
+import type { StopReason } from './artifact'
 import { formatCodeSpan } from './receipt'
 
 export interface SkeletonArtifact {
@@ -28,12 +29,14 @@ export interface SkeletonArtifact {
   id: string
   commit: string
   /**
-   * The run was killed by its time limit, as `run()` reports it. Its exit code
-   * is the conventional `124`, which only says the command was stopped - left
-   * to the exit code alone, a killed typecheck would be suggested as "reports
-   * errors", a claim its own artifact cannot back. Passed explicitly rather than
-   * read from `124`, because a real tool may exit 124 on its own.
+   * Why the run stopped before reporting a result, as `run()` / `runAsync()`
+   * report it. Left to the exit code alone, a killed typecheck would be
+   * suggested as "reports errors", a claim its own artifact cannot back. Passed
+   * explicitly rather than read from `124`, because a real tool may exit 124
+   * on its own. Written onto the artifact's exit line.
    */
+  stopped?: StopReason
+  /** @deprecated Since 0.4.0 - pass `stopped: 'timeout'`. Still honoured. */
   timedOut?: boolean
 }
 
@@ -47,8 +50,15 @@ const TIMED_OUT_SUBJECT: Record<string, string> = {
   engine: 'The engine fingerprint check',
 }
 
+/** How a stopped run is described: the reason it never reported a result. */
+function stoppedBecause(stopped: StopReason): string {
+  if (stopped === 'timeout') return 'it timed out before reporting a result.'
+  if (stopped === 'overflow') return 'its output overflowed the capture limit and it was stopped.'
+  return 'it was killed by ' + stopped.slice('killed '.length) + ' before reporting a result.'
+}
+
 /** One plausible claim sentence per command kind. Never asserts success when exitCode says otherwise. */
-function claimSentence(command: string, exitCode: number, timedOut = false): string | null {
+function claimSentence(command: string, exitCode: number, stopped?: StopReason, output = ''): string | null {
   const kind = classifyCommand(command)
   // Context, not a claim someone would grade VERIFIED - neither the diff
   // summary nor the working-tree status asserts anything a reader would
@@ -57,13 +67,28 @@ function claimSentence(command: string, exitCode: number, timedOut = false): str
   if (kind === 'diff' || kind === 'tree') return null
   // A run that was stopped never reported a result, so the only claim its
   // artifact backs is that it did not finish - not a pass, and not a failure.
-  if (timedOut) return (TIMED_OUT_SUBJECT[kind] ?? 'This command') + ' did not complete - it timed out before reporting a result.'
+  if (stopped) return (TIMED_OUT_SUBJECT[kind] ?? 'This command') + ' did not complete - ' + stoppedBecause(stopped)
   const ok = exitCode === 0
+  // The work summary, when the run has one, puts the amount of work in the
+  // sentence: "no failures" over zero tests is not a claim anyone means.
+  const summary = parseWorkSummary(output)
   switch (kind) {
-    case 'tests':
-      return ok ? 'The test suite reports no failures.' : 'The test suite reports failures.'
-    case 'lint':
-      return ok ? 'Lint reports no violations.' : 'Lint reports violations.'
+    // Each summary branch words its claim so `outcomeProblem` accepts it -
+    // the zero-work sentences carry no success verb on purpose.
+    case 'tests': {
+      if (!ok || summary?.kind !== 'tests') return ok ? 'The test suite reports no failures.' : 'The test suite reports failures.'
+      const c = summary.counts
+      if (c.failed! > 0) return 'The test suite reports failures.'
+      if (c.passed === 0) return 'The test suite ran 0 tests to completion - ' + c.skipped + ' skipped, ' + c.todo + ' todo.'
+      return 'The test suite ran ' + c.passed + ' passing tests and reports no failures.'
+    }
+    case 'lint': {
+      if (!ok || summary?.kind !== 'lint') return ok ? 'Lint reports no violations.' : 'Lint reports violations.'
+      const c = summary.counts
+      if (c.errors! + c.warnings! > 0) return 'Lint reports violations.'
+      if (c.files! - c.ignored! <= 0) return 'Lint checked no files - every file given to it was ignored.'
+      return 'Lint checked ' + (c.files! - c.ignored!) + ' files and reports no violations.'
+    }
     case 'types':
       return ok ? 'Typecheck reports no errors.' : 'Typecheck reports errors.'
     case 'lockfile':
@@ -85,13 +110,14 @@ function claimSentence(command: string, exitCode: number, timedOut = false): str
 export function generateClaimSkeleton(artifacts: SkeletonArtifact[]): string {
   const parts: string[] = []
   for (const a of artifacts) {
-    const sentence = claimSentence(a.command, a.exitCode, a.timedOut)
+    const stopped = a.stopped ?? (a.timedOut ? 'timeout' : undefined)
+    const sentence = claimSentence(a.command, a.exitCode, stopped, a.output)
     if (!sentence) continue
     parts.push(
       '**Claim**: ' + sentence,
       '**Grounding**: VERIFIED[' + a.id + ']',
       '',
-      formatArtifact(a.command, a.output, a.exitCode, { id: a.id, commit: a.commit }),
+      formatArtifact(a.command, a.output, a.exitCode, { id: a.id, commit: a.commit, stopped }),
       '',
     )
   }

@@ -28,14 +28,22 @@
  * An honest UNVERIFIED is worth more than a decorative VERIFIED: it tells the
  * reader exactly where the review is thin.
  *
+ * It does check the outcome, where the outcome is mechanical: a claim that
+ * reads as success cannot rest on a run that exited non-zero, a run that was
+ * stopped before it finished backs only "did not complete", and a lint or test
+ * run whose work summary shows it checked nothing backs no success claim - see
+ * `outcomeProblem`.
+ *
  * What this does not do: it does not verify that an artifact's output actually
  * supports the meaning of the claim next to it - that requires reading the
  * output for sense, which is a probabilistic judgement, and putting one inside
  * a deterministic checker reintroduces exactly the circular validation this
- * layer exists to avoid. It guarantees only that the artifact exists, was
- * collected here, and was pointed at on purpose rather than left nearby.
+ * layer exists to avoid. Beyond the outcome rules above, it guarantees only
+ * that the artifact exists, was collected here, and was pointed at on purpose
+ * rather than left nearby.
  */
-import { fencedLineNumbers, findArtifactBlocks } from './artifact'
+import { classifyCommand, fencedLineNumbers, findArtifactBlocks, parseWorkSummary, workDone } from './artifact'
+import type { StopReason } from './artifact'
 import type { Finding } from './cli'
 
 /** How far below a legacy (unaddressed) VERIFIED tag its artifact block is allowed to sit. */
@@ -79,6 +87,105 @@ const SYCOPHANCY_RES = [
   /good catch/i,
 ]
 
+// "no <failure noun>" is the success form of a failure noun ("Lint reports no
+// violations"), so it is matched first - otherwise the failure noun inside it
+// reads as an admission of failure. These cover the skeleton's own sentences
+// plus the common rephrasings.
+const NEGATED_FAILURE_RE =
+  /\b(?:no|zero|0|without)\s+(?:known\s+|new\s+)?(?:failures?|failing|errors?|violations?|vulnerabilit(?:y|ies)|issues?|problems?|warnings?|regressions?)\b|\bnothing\s+(?:fails|failed|breaks|broke)\b/i
+const SUCCESS_VERB_RE =
+  /\b(?:pass(?:es|ed|ing)?|succeed(?:s|ed|ing)?|successful(?:ly)?|clean(?!-)|green|works|compiles|is unchanged|exits? 0)\b/i
+const NEGATION_RE = /\b(?:not|never|no longer|fails? to|cannot)\b|n't\b/i
+const INCOMPLETE_RE = /\b(?:did not|didn't) (?:complete|finish)\b|\btimed out\b|\bwas (?:killed|stopped)\b|\bno result\b/i
+
+/**
+ * Whether a claim sentence asserts that something passed. Deterministic and
+ * deliberately narrow: it catches the default lie - the skeleton's own success
+ * sentences and the common "passes / no errors" phrasings - not a writer
+ * determined to word around it. A negation before the success verb ("does not
+ * pass") reads as a failure claim, which a failing artifact is exactly what
+ * verifies.
+ */
+export function readsAsSuccess(text: string): boolean {
+  if (NEGATED_FAILURE_RE.test(text)) return true
+  const verb = SUCCESS_VERB_RE.exec(text)
+  if (!verb) return false
+  return !NEGATION_RE.test(text.slice(0, verb.index))
+}
+
+/** Whether a claim sentence says its run never finished - the only thing a stopped run can back. */
+export function readsAsIncomplete(text: string): boolean {
+  return INCOMPLETE_RE.test(text)
+}
+
+/** The parts of an artifact the outcome rules read. `ArtifactBlock` satisfies it. */
+export interface OutcomeArtifact {
+  command: string
+  output: string
+  exitCode: number
+  stopped?: StopReason
+}
+
+export interface OutcomeOptions {
+  /**
+   * A success claim on a lint or test artifact must carry a work-summary line.
+   * Off by default, because artifacts gathered before the summary existed have
+   * none; a project whose gatherer writes summaries turns it on, after which a
+   * summary-less artifact cannot back a success claim. A summary that *is*
+   * present is always checked.
+   */
+  requireWorkSummary?: boolean
+}
+
+/**
+ * Why the cited run cannot back this claim, or `null` when its outcome allows
+ * it. The rules are mechanical - read off the exit line and the work summary,
+ * never off the output's meaning:
+ *
+ *   1. A run that was stopped (`exit: 124 (timeout)`, `(overflow)`, `(killed
+ *      SIGKILL)`) reported nothing, so it backs only a claim that it did not
+ *      complete - not a pass, and not a failure either.
+ *   2. A claim that reads as success cannot rest on a non-zero exit.
+ *   3. A success claim on a lint or test run needs that run to have checked
+ *      something: exit 0 is also what a linter whose every file was ignored,
+ *      and a test run whose every test was skipped, report.
+ */
+export function outcomeProblem(artifact: OutcomeArtifact, claimText: string, opts: OutcomeOptions = {}): string | null {
+  const cmd = '`' + artifact.command + '`'
+  if (artifact.stopped) {
+    if (readsAsIncomplete(claimText)) return null
+    return (
+      'cites ' + cmd + ', which was stopped before it finished (' + artifact.stopped + ') - it can back only ' +
+      '"did not complete", not a pass and not a failure. Re-run it with a longer limit'
+    )
+  }
+  if (!readsAsSuccess(claimText)) return null
+  if (artifact.exitCode !== 0) {
+    return (
+      'asserts success, but ' + cmd + ' exited ' + artifact.exitCode + ' - a failing command cannot verify ' +
+      'that something passed. State what it actually showed, or re-run it'
+    )
+  }
+  const kind = classifyCommand(artifact.command)
+  if (kind !== 'lint' && kind !== 'tests') return null
+  const summary = parseWorkSummary(artifact.output)
+  if (!summary) {
+    return opts.requireWorkSummary
+      ? 'asserts success, but ' + cmd + ' has no work summary - exit 0 alone cannot show it checked anything. Regenerate the evidence'
+      : null
+  }
+  if (summary.kind !== kind) {
+    return 'asserts success, but the work summary in ' + cmd + ' describes a ' + summary.kind + ' run, not ' + kind
+  }
+  const counts = Object.entries(summary.counts).map(([k, v]) => k + '=' + v).join(' ')
+  if (workDone(summary) <= 0) return 'asserts success, but ' + cmd + ' checked nothing (' + counts + ')'
+  // A linter exits 0 on warnings unless told otherwise, and "no violations"
+  // over a run that printed some is not true either way.
+  const found = kind === 'lint' ? summary.counts.errors! + summary.counts.warnings! : summary.counts.failed!
+  if (found > 0) return 'asserts success, but the work summary in ' + cmd + ' reports problems (' + counts + ')'
+  return null
+}
+
 interface Claim {
   /** 0-based line of the `**Claim**:` line. */
   line: number
@@ -111,7 +218,7 @@ export function findClaims(lines: string[], fenced: Set<number>): Claim[] {
   return claims
 }
 
-export interface LintOptions {
+export interface LintOptions extends OutcomeOptions {
   /** The commit the review claims to be about, when known - enables the id/commit mismatch check. */
   expectedHeadSha?: string
 }
@@ -153,6 +260,8 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     }
 
     const gradeLine = claim.gradeLine!
+    // The grounding line can carry part of the sentence ("VERIFIED[id] - typecheck passes").
+    const claimText = gradeLine === claim.line ? claim.text : claim.text + ' ' + lines[gradeLine]
 
     if (claim.grade === 'VERIFIED' && claim.gradeId) {
       const artifact = artifacts.find((a) => a.id === claim.gradeId)
@@ -184,6 +293,11 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       usage.count += 1
       usage.lastLine = claim.line
       idUsage.set(claim.gradeId, usage)
+      const problem = outcomeProblem(artifact, claimText, opts)
+      if (problem) {
+        findings.push({ level: 'error', claim: claim.text, detail: 'VERIFIED[' + claim.gradeId + '] ' + problem, ...where })
+        return
+      }
       findings.push({
         level: 'pass',
         claim: claim.text,
@@ -207,6 +321,11 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
         return
       }
       consumedByPosition.add(idx)
+      const problem = outcomeProblem(artifacts[idx]!, claimText, opts)
+      if (problem) {
+        findings.push({ level: 'error', claim: claim.text, detail: 'VERIFIED ' + problem, ...where })
+        return
+      }
       findings.push({
         level: 'pass',
         claim: claim.text,

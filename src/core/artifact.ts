@@ -15,6 +15,22 @@
  *     exit: 0
  *     (fence)
  *
+ * A run that never reported a result says why on its exit line, so the reason
+ * travels with the code instead of being guessed from it - `124` is only a
+ * convention, and a real tool may exit 124 on its own:
+ *
+ *     exit: 124 (timeout)
+ *     exit: 137 (killed SIGKILL)
+ *     exit: 1 (overflow)
+ *
+ * A lint or test run may end its output with one work-summary line, the counts
+ * that say whether it checked anything at all - exit 0 alone does not, because
+ * a linter whose every file was ignored and a test run whose every test was
+ * skipped both exit 0:
+ *
+ *     [SUMMARY lint: files=7 ignored=0 errors=0 warnings=0]
+ *     [SUMMARY tests: passed=71 failed=0 skipped=0 todo=0]
+ *
  * `artifact` alone (no id) is still valid - it is the pre-addressing grammar,
  * kept for one release as a warning-only path rather than a break. See
  * `claims.ts` for how a claim references an id, and why proximity alone used
@@ -79,9 +95,26 @@ export function fencedLineNumbers(lines: string[]): Set<number> {
 /** `<kind>-<6 hex chars>`, e.g. `tests-a3f91c`. Kind is cosmetic; the hash is the address. */
 export const ARTIFACT_ID_RE = /^[a-z]+-[0-9a-f]{6}$/
 
+/**
+ * Why a run stopped before it reported a result: its own time limit, its own
+ * output cap, or a signal from outside (the OOM killer, a user's `kill`).
+ */
+export type StopReason = 'timeout' | 'overflow' | `killed ${string}`
+
+const STOP_REASON_RE = /^(?:timeout|overflow|killed [A-Z0-9]+)$/
+
+/** The last line of an artifact block: `exit: 124 (timeout)`, or plain `exit: 0`. */
+export function formatExitLine(exitCode: number, stopped?: StopReason): string {
+  return 'exit: ' + exitCode + (stopped ? ' (' + stopped + ')' : '')
+}
+
 export interface ArtifactBlock extends FencedBlock {
   command: string
   exitCode: number
+  /** The quoted output: every line between the `$ ` line and the exit line. */
+  output: string
+  /** Present when the exit line says the run was stopped before it finished. */
+  stopped?: StopReason
   /** Present once the block has been addressed. Absent on the legacy `artifact` grammar. */
   id?: string
   /** Short commit prefix the id was computed against, when the block carries one. */
@@ -96,16 +129,23 @@ export function findArtifactBlocks(lines: string[]): ArtifactBlock[] {
   for (const block of findFencedBlocks(lines)) {
     const info = INFO_RE.exec(block.info)
     if (!info || !block.closed) continue
-    const body = block.body.filter((l) => l.trim() !== '')
-    const first = body[0]
-    const last = body[body.length - 1]
+    const firstIdx = block.body.findIndex((l) => l.trim() !== '')
+    let lastIdx = block.body.length - 1
+    while (lastIdx > firstIdx && block.body[lastIdx]!.trim() === '') lastIdx--
+    const first = block.body[firstIdx]
+    const last = firstIdx < lastIdx ? block.body[lastIdx] : undefined
     if (!first?.startsWith('$ ')) continue
-    const exit = last ? /^exit:\s*(\d+)$/.exec(last.trim()) : null
+    const exit = last ? /^exit:\s*(\d+)(?:\s+\(([^)]+)\))?$/.exec(last.trim()) : null
     if (!exit) continue
+    // An unknown reason is not guessed at: the block does not parse, the same as
+    // any other malformed exit line.
+    if (exit[2] !== undefined && !STOP_REASON_RE.test(exit[2])) continue
     found.push({
       ...block,
       command: first.slice(2).trim(),
+      output: block.body.slice(firstIdx + 1, lastIdx).join('\n'),
       exitCode: Number(exit[1]),
+      ...(exit[2] !== undefined && { stopped: exit[2] as StopReason }),
       id: info[1],
       commit: info[2],
     })
@@ -128,6 +168,57 @@ export function classifyCommand(command: string): string {
   if (/fingerprint/i.test(command)) return 'engine'
   if (/\btest\b|vitest|jest|mocha/i.test(command)) return 'tests'
   return 'cmd'
+}
+
+export type WorkKind = 'lint' | 'tests'
+
+/** The counts a lint or test run reports about itself. Keys depend on the kind. */
+export interface WorkSummary {
+  kind: WorkKind
+  counts: Record<string, number>
+}
+
+/** Which keys each kind's summary must carry, in the order they are written. */
+export const WORK_SUMMARY_KEYS: Record<WorkKind, readonly string[]> = {
+  lint: ['files', 'ignored', 'errors', 'warnings'],
+  tests: ['passed', 'failed', 'skipped', 'todo'],
+}
+
+const WORK_SUMMARY_RE = /^\[SUMMARY (lint|tests): ([^\]]*)\]$/
+
+/** One work-summary line, e.g. `[SUMMARY lint: files=7 ignored=0 errors=0 warnings=0]`. */
+export function formatWorkSummary(kind: WorkKind, counts: Record<string, number>): string {
+  return '[SUMMARY ' + kind + ': ' + WORK_SUMMARY_KEYS[kind].map((k) => k + '=' + (counts[k] ?? 0)).join(' ') + ']'
+}
+
+/**
+ * The work summary in a run's output, or `null` when there is none or it is
+ * malformed. Only the last non-blank line counts: the producer appends it after
+ * the tool has finished, so a summary-shaped line the tool itself printed
+ * earlier (a test that echoes one) cannot stand in for the run's own.
+ */
+export function parseWorkSummary(output: string): WorkSummary | null {
+  const line = output
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .at(-1)
+  const match = line ? WORK_SUMMARY_RE.exec(line) : null
+  if (!match) return null
+  const [, kind, body] = match
+  const counts: Record<string, number> = {}
+  for (const [, key, value] of body!.matchAll(/(\w+)=(\d+)/g)) counts[key!] = Number(value)
+  if (!WORK_SUMMARY_KEYS[kind as WorkKind].every((k) => k in counts)) return null
+  return { kind: kind as WorkKind, counts }
+}
+
+/**
+ * How much a lint or test run actually checked, from its summary: files that
+ * were linted rather than ignored, or tests that ran and passed.
+ */
+export function workDone(summary: WorkSummary): number {
+  const c = summary.counts
+  return summary.kind === 'lint' ? c.files! - c.ignored! : c.passed!
 }
 
 /**
@@ -156,7 +247,7 @@ export function formatArtifact(
   command: string,
   output: string,
   exitCode: number,
-  opts: { id?: string; commit?: string; maxLines?: number } = {},
+  opts: { id?: string; commit?: string; maxLines?: number; stopped?: StopReason } = {},
 ): string {
   const fence = '`'.repeat(3)
   const maxLines = opts.maxLines ?? 40
@@ -170,5 +261,5 @@ export function formatArtifact(
           ...lines.slice(-Math.floor(maxLines / 2)),
         ]
   const info = opts.id ? 'artifact:' + opts.id + (opts.commit ? '@' + opts.commit.slice(0, 7) : '') : 'artifact'
-  return [fence + info, '$ ' + command, ...body, 'exit: ' + exitCode, fence].join('\n')
+  return [fence + info, '$ ' + command, ...body, formatExitLine(exitCode, opts.stopped), fence].join('\n')
 }
