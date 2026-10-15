@@ -164,7 +164,7 @@ call in a script you own rather than a CLI flag pretending to know them.
 // scripts/evidence.mjs - run before the review is written, not after
 import { gatherEvidence } from 'evidence-layer'
 
-gatherEvidence({ repo: process.cwd(), base: 'origin/main' })
+await gatherEvidence({ repo: process.cwd(), base: 'origin/main' })
 ```
 
 ```bash
@@ -182,6 +182,30 @@ The last step belongs in CI rather than on the machine that wrote the change.
 Every check here can be run by whoever wrote the diff, which makes a passing
 local run a self-report - and anyone who skipped the gathering step skips the
 verifying step just as easily. Same commands, different party.
+
+## Exit 0 is not the same as "it passed"
+
+`claims` reads the outcome of every artifact a VERIFIED claim cites, and three
+rules are mechanical enough to check without reading the output for sense:
+
+- **A failing run backs no success claim.** "Tests pass" over `exit: 1` is an
+  error.
+- **A stopped run backs only "did not complete".** The exit line names why it
+  stopped (`exit: 124 (timeout)`, `exit: 1 (overflow)`, `exit: 137 (killed
+  SIGKILL)`), so "Typecheck reports errors" over a run the time limit killed is
+  an error too: that run reported nothing at all.
+- **A run that checked nothing backs no success claim.** A linter whose every
+  file was ignored and a test run whose every test was skipped both exit 0. A
+  gatherer can end lint and test output with one work-summary line, e.g.
+  `[SUMMARY lint: files=7 ignored=0 errors=0 warnings=0]`; a success claim over
+  a summary showing zero work, or any errors, warnings or failures, is an error.
+  `lintClaims(md, file, { requireWorkSummary: true })` also rejects a success
+  claim over a lint or test artifact that carries no summary.
+
+`runAsync` is the runner for those steps. A timeout kills the whole process
+tree - a process group on POSIX, `taskkill /T` on Windows - rather than only
+the direct child, and it reports within a grace period even when some process
+in the tree will not release the output.
 
 ## Exit codes are a contract
 
@@ -262,7 +286,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **210 tests** across **18 files**, and that sentence is checked
+The suite is **256 tests** across **21 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

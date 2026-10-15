@@ -46,7 +46,7 @@ export function typecheckInsteadOfLint(): string {
   return 'pnpm typecheck'
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
   if (args.help) help(HELP)
 
@@ -59,7 +59,7 @@ function main(): void {
   if (!base) usage(HELP)
 
   try {
-    gatherEvidence({ repo, base, head, out, skip, audit, plan: { lintCommand: typecheckInsteadOfLint } })
+    await gatherEvidence({ repo, base, head, out, skip, audit, plan: { lintCommand: typecheckInsteadOfLint } })
   } catch (err) {
     console.error((err as Error).message)
     process.exit(EXIT.failed)
@@ -67,4 +67,4 @@ function main(): void {
   process.exit(EXIT.ok)
 }
 
-main()
+void main()

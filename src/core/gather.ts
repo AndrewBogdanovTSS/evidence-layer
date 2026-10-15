@@ -47,7 +47,7 @@ import { join } from 'node:path'
 import { artifactId, classifyCommand, formatArtifact } from './artifact'
 import { generateClaimSkeleton, generateSampleSkeleton } from './skeleton'
 import type { SkeletonArtifact } from './skeleton'
-import { capture, run } from './proc'
+import { capture, run, runAsync } from './proc'
 
 export interface Step {
   name: string
@@ -165,7 +165,7 @@ export interface GatherResult {
   treeClean: boolean
 }
 
-export function gatherEvidence(opts: GatherOptions): GatherResult {
+export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult> {
   const head = opts.head ?? 'HEAD'
   const out = opts.out ?? 'evidence.local.md'
   const skip = opts.skip ?? []
@@ -231,9 +231,9 @@ export function gatherEvidence(opts: GatherOptions): GatherResult {
       parts.push('_Not run: ' + step.skipReason + '._', '')
       continue
     }
-    const res = run(step.command, { cwd: opts.repo, timeoutMs: 300_000 })
+    const res = await runAsync(step.command, { cwd: opts.repo, timeoutMs: 300_000 })
     const id = artifactId(res.command, headSha, res.output)
-    parts.push(formatArtifact(res.command, res.output, res.exitCode, { id, commit: headSha }), '')
+    parts.push(formatArtifact(res.command, res.output, res.exitCode, { id, commit: headSha, stopped: res.stopped }), '')
     if (classifyCommand(res.command) !== 'diff') {
       claimArtifacts.push({
         command: res.command,
@@ -241,11 +241,11 @@ export function gatherEvidence(opts: GatherOptions): GatherResult {
         exitCode: res.exitCode,
         id,
         commit: headSha,
-        timedOut: res.timedOut,
+        stopped: res.stopped,
       })
     }
     if (step.name === 'test') testOutput = res.output
-    console.log('  ' + step.name + ': exit ' + res.exitCode + (res.timedOut ? ' (timed out)' : ''))
+    console.log('  ' + step.name + ': exit ' + res.exitCode + (res.stopped ? ' (' + res.stopped + ')' : ''))
   }
 
   // Derived from the test step's own output above, not a command run in its
@@ -257,14 +257,14 @@ export function gatherEvidence(opts: GatherOptions): GatherResult {
   }
 
   if (opts.audit) {
-    const res = run('pnpm audit', { cwd: opts.repo, timeoutMs: 60_000 })
+    const res = await runAsync('pnpm audit', { cwd: opts.repo, timeoutMs: 60_000 })
     const id = artifactId(res.command, headSha, res.output)
     parts.push(
       '## dependency audit',
       '',
       '_Point-in-time: reflects the vulnerability database at the moment this ran, not a property of the commit alone._',
       '',
-      formatArtifact(res.command, res.output, res.exitCode, { id, commit: headSha }),
+      formatArtifact(res.command, res.output, res.exitCode, { id, commit: headSha, stopped: res.stopped }),
       '',
     )
     claimArtifacts.push({
@@ -273,9 +273,9 @@ export function gatherEvidence(opts: GatherOptions): GatherResult {
       exitCode: res.exitCode,
       id,
       commit: headSha,
-      timedOut: res.timedOut,
+      stopped: res.stopped,
     })
-    console.log('  dependency audit: exit ' + res.exitCode + (res.timedOut ? ' (timed out)' : ''))
+    console.log('  dependency audit: exit ' + res.exitCode + (res.stopped ? ' (' + res.stopped + ')' : ''))
   }
 
   const claimSkeleton = generateClaimSkeleton(claimArtifacts)
