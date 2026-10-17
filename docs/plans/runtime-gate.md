@@ -1,10 +1,10 @@
 # Plan: evidence-layer as a runtime gate for coding agents
 
-Status: draft towards DEC-0005, revision 2. Based on a review of an external
+Status: draft towards DEC-0005, revision 3. Based on a review of an external
 proposal - "hexagonal core + seal + predicates + hooks for Claude Code / Codex /
-Antigravity" - checked against the code at `v0.4.0`. Revision 2 takes an
-independent review of this plan into account; what was accepted from it and
-what was not is in section 8.
+Antigravity" - checked against the code at `v0.4.0`. Revisions 2 and 3 take two
+independent reviews of this plan into account; what was accepted from each and
+what was not is in sections 8 and 9.
 
 ## 1. Verdict on the original proposal
 
@@ -144,11 +144,20 @@ export type GateEvent =
   | { kind: 'pre-write'; cwd: string; paths: string[] }
   | { kind: 'stop'; cwd: string; sessionId: string; reentry: boolean; message?: string }
 
-export type GateDecision =
+/** Why the gate reached its decision - so an allow that checked nothing never reads as a pass. */
+export type GateOutcome =
+  | 'checked'          // the checks ran; the findings are the whole story
+  | 'retry-exhausted'  // errors remain, but this session has been blocked N times already
+  | 'fail-open-error'  // the gate itself failed
+  | 'no-snapshot'      // no session snapshot, so the review was not checked
+  | 'not-applicable'   // nothing for this event to check (no review change, no Claim lines)
+
+export type GateDecision = { outcome: GateOutcome } & (
   | { action: 'allow'; findings: Finding[] }
   | { action: 'deny'; reason: string; findings: Finding[] }   // pre-write
   | { action: 'block'; reason: string; findings: Finding[] }  // stop: the agent keeps going
   | { action: 'context'; text: string }                       // session-start
+)
 
 export function decide(event: GateEvent, opts: GateOptions): GateDecision
 ```
@@ -194,6 +203,14 @@ A grammar that extends the addressed tag:
   `unverifiable` in CI.
 - An unknown key, an unparsed fragment, or a key this kind of artifact does not
   have (`errors` on tests) → `error`. Nothing is dropped silently.
+- The same key twice in one tag (`exit=0, exit=0`, or `passed>=1, passed<=9`)
+  → `error`. A range is two claims, not one, and the grammar does not try to
+  express it.
+- Two artifact blocks with the same id in one document: identical bodies are
+  allowed (the same block pasted twice is still the block the id names), but
+  differing bodies → `error`. Today `artifacts.find` takes the first and never
+  looks at the second, so a second block under a borrowed id goes unchecked.
+  This is a change to `lintClaims` itself and ships in this phase.
 - Values are integers, plus the enumeration for `stopped`. Numeric keys accept
   `= != < <= > >=`. `stopped` accepts only `=` and `!=`; an ordering
   comparison on the enumeration (`stopped<timeout`) is an `error`. No strings
@@ -300,6 +317,20 @@ known property.
   of the two bundles.
 
 - `gatherEvidence` writes the seal by default. `seal: false` turns it off.
+- **The tree is measured twice.** `gatherEvidence` computes `treeId` right
+  before the first command and again right after the last one. If the two
+  differ (a step ran a formatter or a code generator, a test wrote a file that
+  is not ignored, another process edited the tree), the steps did not all
+  check the same code:
+  - no seal is written, and any previous seal is deleted, so a stale one cannot
+    stand in for it;
+  - the bundle is still written, because it is evidence of what happened, and
+    its header names the paths that changed (`git diff-tree --name-only
+    <before> <after>`);
+  - `GatherResult` gains `sealed: false` and `treeChanged: string[]`, and the
+    console says which paths to fix or ignore.
+
+  The extra cost is one more ~14 ms fingerprint on a run that takes seconds.
 - `lintClaims(md, file, { seal })` checks, for every addressed
   `VERIFIED[id]`:
   - the id is not in the seal → `error` "this block was not produced by the
@@ -316,14 +347,21 @@ known property.
     This is the main check for an agent: it catches "edited the code after
     running the tests";
   - **same content, but `HEAD` moved** (the agent committed after gathering)
-    → no separate freshness message. The error comes from the existing commit
-    check in `lintClaims` ("collected at X, but this review is about Y"): CI
-    raises the same one, so the gate does not soften it. The reason text is
-    made more precise: "the content did not change, only HEAD moved - gather
-    again after committing";
+    → `pass`. The evidence describes this content, and content is what
+    `treeId` measures;
   - **everything matches** → `pass`.
-- The rule SessionStart gives the agent as context: if the session makes
-  commits, evidence is gathered **after the last commit**.
+- **Which commit the gate expects.** Exactly what the CLI already expects:
+  `--sha` when given, otherwise the review's own Access Receipt `HEAD SHA`,
+  otherwise no commit check. Never the current `HEAD`. A review committed
+  together with the code can never name the commit that contains it (that
+  commit's id depends on the review's own bytes), so its receipt names the
+  commit the evidence was gathered at - the parent - and holding it to `HEAD`
+  would fail every committed review by construction. "Is this evidence still
+  about the code in front of me" is the freshness check's question, answered
+  by content rather than by commit id.
+- So there is no "gather after the last commit" rule: content addressing
+  makes the order of gathering and committing irrelevant, as long as the code
+  did not change in between.
 - DEC-0005 records the threat model. The seal catches the default failure (a
   block written by hand, edited output, a block from an old run, code edited
   after gathering) and does not catch a deliberate rewrite of
@@ -333,13 +371,16 @@ known property.
 
 | Event | What it does | Cost |
 | --- | --- | --- |
-| SessionStart | `context`: the `**Claim**` + `VERIFIED[id: ...]` grammar; the "gather after the last commit" rule; whether the seal is fresh; the review snapshot for this session; cleanup of old state | one `git rev-parse` |
+| SessionStart | `context`: the `**Claim**` + `VERIFIED[id: ...]` grammar; whether a seal exists at `HEAD` (`seal.headSha === HEAD` - a hint, not the freshness verdict, which needs `write-tree` and runs only at Stop); the review snapshot for this session; cleanup of old state | one `git rev-parse` |
 | PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | `deny` when the real path falls in the protected list | no git, `fs` only |
 | Stop | `claims` + `receipt` + predicates + seal + freshness over the review; errors → `block` listing the findings | `git add` into a temporary index + `write-tree` |
 
 Protected paths in PreToolUse are resolved without running git, but with
 worktrees in mind:
-- if `<cwd>/.git` is a file, the real directory is read from its
+- `.git` is found by walking up from `cwd`, the same way `run-hook.mjs` walks
+  up for `node_modules`: the hook's `cwd` is wherever the agent last `cd`-ed,
+  which in a monorepo is often `packages/app`, not the root;
+- if that `.git` is a file, the real directory is read from its
   `gitdir: <path>` line (in a worktree that is `<main>/.git/worktrees/<name>`,
   which is where `git rev-parse --git-path evidence-layer` points; verified on
   the prototype);
@@ -351,7 +392,11 @@ worktrees in mind:
 
 When Stop checks the review ("changed in this session"):
 - SessionStart writes the sha256 of each review path, or `absent` when the file
-  does not exist, to `<git-path>/evidence-layer/sessions/<session_id>.json`;
+  does not exist, to `<git-path>/evidence-layer/sessions/<session_id>.json` -
+  **only if that file does not exist yet**. SessionStart also fires on
+  `resume`, `clear`, `compact` and `fork`; overwriting on each of them would
+  move the session's starting point to the middle of the session, and a review
+  written before a `/compact` would stop counting as changed;
 - Stop checks the review only when its hash differs from this session's
   snapshot. A `review.md` left modified yesterday does not block today's
   conversation about something else;
@@ -362,17 +407,31 @@ When Stop checks the review ("changed in this session"):
 Cleanup: SessionStart deletes `sessions/*.json` older than 7 days. The gate's
 journal (4.6) is never deleted: it is the gate's clock.
 
-Loop protection on Stop: when `stop_hook_active` is true, or this session has
-already been blocked N times (the counter lives next to the seal, N=2 by
-default), the result is `allow` + a `systemMessage` with the remaining
-findings.
+Loop protection on Stop. Claude Code sets `stop_hook_active` to true whenever
+it is already continuing because of a stop hook - that is, on the very next
+Stop after the first block. Combined with a counter by "or", the flag would let
+the agent through on its second attempt every time and leave N dead. So the
+two have separate jobs:
+- **the counter is the limit.** `blocks` in `sessions/<session_id>.json`. Every
+  Stop runs the checks for real: clean → `allow` (`checked`); errors and
+  `blocks < N` → `block`, `blocks += 1`; errors and `blocks >= N` → `allow` +
+  a `systemMessage` with the remaining findings (`retry-exhausted`). N=2 by
+  default, so an agent gets two chances to fix its claims;
+- **the flag is the fallback.** Only when the session file cannot be read or
+  written (no `session_id`, a filesystem error), `stop_hook_active` stands in
+  for a counter with N=1: block once, then let through (`fail-open-error`).
 
 What exactly Stop checks:
 - **Phase 3:** the review file (`--review <path>`, default `review.md`, if it
   changed in this session). Deterministic, and the same thing the package
   already does in CI.
-- **Phase 4:** the agent's last message from `transcript_path`. Only
-  `**Claim**:` lines are checked. Without any - `allow`: an ordinary
+- **Phase 4:** the agent's last message, from the Stop input's
+  `last_assistant_message`, never from `transcript_path`. The Claude Code
+  documentation says the transcript is written asynchronously and is not
+  guaranteed to contain the final message at Stop time, so a transcript
+  fallback could quietly check the *previous* reply. When the field is
+  absent (an older client), chat mode does not run, and a `systemMessage`
+  says so (`not-applicable`). Only `**Claim**:` lines are checked. Without any - `allow`: an ordinary
   conversational reply is never blocked, which keeps the README's principle
   that "prose outside a Claim line is never graded". `lintProse` is off in chat
   mode; otherwise it is noise.
@@ -388,8 +447,10 @@ What exactly Stop checks:
 
 ### 4.4 The Claude Code host (`hosts/claude-code.ts`)
 
-- Input: JSON on stdin (`hook_event_name`, `cwd`, `session_id`,
-  `transcript_path`, `tool_name`, `tool_input`, `stop_hook_active`).
+- Input: JSON on stdin (`hook_event_name`, `cwd`, `session_id`, `source` on
+  SessionStart, `tool_name` and `tool_input` on PreToolUse,
+  `stop_hook_active` and `last_assistant_message` on Stop).
+  `last_assistant_message` maps to `GateEvent.message`.
 - Output:
   - PreToolUse: `hookSpecificOutput.permissionDecision` +
     `permissionDecisionReason`;
@@ -443,6 +504,15 @@ Otherwise every agent stop would dirty the working tree and break the
 freshness check by itself. `journal report --include-gate` reads both files,
 which shows how often the gate blocked and how much of that was `real`.
 
+Each entry records the decision's `GateOutcome`, and the journal's existing
+`outcome` is derived from it rather than from `action`, so an allow that
+checked nothing never counts as a pass:
+- `checked` → `pass`, or `error` when it blocked;
+- `retry-exhausted` → `error` (the errors are still there; the gate only
+  stopped insisting);
+- `fail-open-error`, `no-snapshot` → `unverifiable`;
+- `not-applicable` → not journalled.
+
 ## 5. Phases
 
 Each phase ships on its own and is useful on its own.
@@ -475,8 +545,10 @@ Each phase ships on its own and is useful on its own.
   - a block that is not in the seal;
   - code edited after gathering → `error`;
   - only `review.md` edited → `pass`;
-  - `git commit` with no content change → freshness `pass`, the commit check
-    an `error` with the more precise text;
+  - `git commit` with no content change → freshness `pass`, and a review whose
+    receipt names the parent commit passes the commit check;
+  - a step that writes a non-ignored file during gathering → no seal, the old
+    seal deleted, the path named in the bundle header and in `treeChanged`;
   - a large untracked file is recorded by its metadata;
   - empty output (a regression test for the proposal's bug);
   - two concurrent gathers → valid JSON for one of the bundles;
@@ -492,7 +564,12 @@ Each phase ships on its own and is useful on its own.
 - Tests:
   - `run-hook.mjs` with no package installed and with an old version;
   - PreToolUse in a worktree, through a symlink and through `..`;
-  - the review snapshot (yesterday's modified `review.md` does not block);
+  - the review snapshot (yesterday's modified `review.md` does not block), and
+    a `resume` that keeps the original snapshot;
+  - the retry counter: a fix on the second attempt is a clean `allow`, the
+    third Stop with errors is `retry-exhausted`, and `stop_hook_active` alone
+    never lets the agent through while the session file is writable;
+  - PreToolUse with `cwd` in a subdirectory of the repository;
   - `init` run twice and after a flag change (invariant 7);
   - `init --local`.
 - A manual check in a live Claude Code session: the agent writes `review.md`
@@ -502,8 +579,8 @@ Each phase ships on its own and is useful on its own.
   (`checkCommands` checks that), and the test count is updated.
 
 ### Phase 4. Chat-mode Stop (minor)
-- Reading the agent's last reply from the transcript. Fixtures are real,
-  anonymised transcripts.
+- Reading the agent's last reply from `last_assistant_message`. Fixtures are
+  real, anonymised Stop inputs, including one without the field.
 - The gate's journal, `journal report --include-gate`.
 
 ### Phase 5. Other hosts (when ready)
@@ -514,7 +591,12 @@ Each phase ships on its own and is useful on its own.
 - **git-native:** `evidence-layer init git` installs:
   - **pre-commit**, which runs `claims`/`receipt` only when a review path is in
     the index. This is the hook that catches an agent that commits locally and
-    stops, leaving the `push` to a person;
+    stops, leaving the `push` to a person. It checks the **staged** content
+    (`git show :<path>`), not the working copy: the staged bytes are what the
+    commit will contain, and a partially staged review would otherwise be
+    checked in a version nobody commits. The expected commit is the receipt's,
+    as in 4.2: during pre-commit `HEAD` is still the parent, and the receipt of
+    a committed review names exactly that parent;
   - **pre-push** - behind a `--pre-push` flag, as a final check of the branch.
 
   When `git config core.hooksPath` is set (Husky, Lefthook, simple-git-hooks,
@@ -542,8 +624,9 @@ Each phase ships on its own and is useful on its own.
    licence, and the plugin manifests live in the repository; enforced by
    `pnpm test` (the DEC-0003 invariant is unchanged).
 6. Editing the review file under check, the bundle file or the
-   `evidence-layer/` state directory after `gatherEvidence` never changes
-   `treeId`, and editing any other file always does; enforced by `pnpm test`.
+   `evidence-layer/` state directory after `gatherEvidence` never changes the
+   freshness fingerprint (`treeId` + `largeUntracked`), and editing any other
+   file git does not ignore always does; enforced by `pnpm test`.
 7. Running `evidence-layer init <host>` again on a project that is already set
    up produces a byte-identical config and never duplicates hook entries;
    enforced by `pnpm test`.
@@ -586,3 +669,30 @@ Each phase ships on its own and is useful on its own.
 Follow-up notes before implementation: the `session-start` event carries
 `sessionId` (section 3), and the fingerprint handles a repository with no index
 file yet (4.2, phase 2).
+
+## 9. Revision 3: triage of the second review
+
+The Claude Code facts the review relies on were checked against the current
+hooks documentation (code.claude.com/docs/en/hooks): `stop_hook_active` is
+"`true` when Claude Code is already continuing as a result of a stop hook";
+Stop receives `last_assistant_message`, and the transcript "isn't guaranteed
+to include the final message at Stop time"; SessionStart's `source` is
+`startup`, `resume`, `clear`, `compact` or `fork`; `cwd` follows the agent's
+`cd`.
+
+| Review point | Decision | What changed |
+| --- | --- | --- |
+| 1.1 `stop_hook_active \|\| count >= N` makes N dead | accepted - a bug in the plan | The counter is the limit; the flag is a fallback with N=1 only when the session file is unusable (4.3) |
+| 1.2 `last_assistant_message` | accepted, without the fallback | The field is the only source. A transcript fallback is rejected: per the documentation it may not contain the final message yet, so it could check the previous reply. No field → chat mode does not run (4.3, 4.4, phase 4) |
+| 1.3 the tree changing during gathering | accepted | `treeId` before and after; on a mismatch no seal, the old one deleted, the bundle still written with the changed paths named (4.2, phase 2) |
+| 1.4 snapshot overwritten on `resume` | accepted | Written only if absent (4.3) |
+| 1.4 `cwd` in a subdirectory | accepted | `.git` found by walking up (4.3) |
+| 1.5 pre-commit vs the artifacts' commit | diagnosis partly wrong, real problem found | The CLI does not compare artifacts with `HEAD`: `claims` expects `--sha` or the receipt's `HEAD SHA`, so a committed review whose receipt names its parent already passes. The inconsistency was in this plan: revision 2 had the gate hold artifacts to `HEAD` and added a "gather after the last commit" rule. Both are removed - the gate expects what the CLI expects, and freshness is judged by content (4.2). The proposed `HEAD~1` special case is rejected: receipt checks commits by equality, never by ancestry, and a hard-coded parent would break on merges and amended commits. Pre-commit checks the staged content (phase 5) |
+| 2 `outcome` separate from `action` | accepted | `GateOutcome` on every decision, mapped onto the journal's five levels (3, 4.6) |
+| 2 invariant 6 wording | accepted | "the freshness fingerprint (`treeId` + `largeUntracked`)", "any other file git does not ignore" (6) |
+| 2 SessionStart cost | accepted | Labelled as a `seal.headSha === HEAD` hint; the real verdict runs only at Stop (4.3) |
+| 2 duplicate predicate keys | accepted | `error` (4.1) |
+| 2 duplicate artifact ids | accepted, refined | Identical bodies allowed, differing bodies `error` - a change to `lintClaims` in phase 1 (4.1) |
+
+Revision 3 reverses one revision 2 decision: the "gather after the last
+commit" rule in the 2.2 row of section 8 no longer exists.
