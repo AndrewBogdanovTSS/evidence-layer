@@ -1,152 +1,153 @@
-# План: evidence-layer как runtime-гейт для агентов
+# Plan: evidence-layer as a runtime gate for coding agents
 
-Статус: черновик к DEC-0005, ревизия 2. Основа - разбор внешнего предложения
-«гексагональное ядро + seal + предикаты + хуки Claude Code / Codex /
-Antigravity», сверенного с кодом на `v0.4.0`. Ревизия 2 учитывает независимое
-ревью плана; что из него принято и что нет - в разделе 8.
+Status: draft towards DEC-0005, revision 2. Based on a review of an external
+proposal - "hexagonal core + seal + predicates + hooks for Claude Code / Codex /
+Antigravity" - checked against the code at `v0.4.0`. Revision 2 takes an
+independent review of this plan into account; what was accepted from it and
+what was not is in section 8.
 
-## 1. Вердикт по исходному предложению
+## 1. Verdict on the original proposal
 
-Цель верная: сейчас проверки срабатывают в CI, уже *после* того, как агент
-написал отчёт. Если они будут срабатывать в момент `Stop`, агент поймает
-собственный неподкреплённый «тесты проходят» до того, как его прочтёт человек.
-Но больше половины предложения либо уже сделано, либо противоречит
-инвариантам, которые репозиторий проверяет сам.
+The goal is right: today the checks fire in CI, *after* the agent has already
+written its account. If they fire at `Stop`, the agent catches its own unbacked
+"tests pass" before a person reads it. But more than half of the proposal is
+either already built or contradicts invariants this repository checks about
+itself.
 
-### Что уже есть (и переписывать не нужно)
+### Already here (nothing to rewrite)
 
-| В предложении | В репозитории |
+| In the proposal | In the repository |
 | --- | --- |
-| «Гексагональное ядро, Ports & Adapters» | `src/core/` + `src/adapters/`, граница проверяется `test/boundary.test.ts` (DEC-0003) |
-| `core/parser.js` | `src/core/artifact.ts` - грамматика блоков, `findArtifactBlocks` |
-| `collectors/orchestrator.js`, `command-runner.js` | `src/core/gather.ts`, `src/core/proc.ts` (`runAsync` с убийством дерева процессов) |
-| `core/journal.js`, `governance.js`, `receipt.js` | существуют, со схемой и тестами |
-| Хэш артефакта | `artifactId()` уже содержит sha256(command, commit, output) |
-| Subpath exports | `exports` + `publint` + `attw` на каждой сборке |
+| "Hexagonal core, Ports & Adapters" | `src/core/` + `src/adapters/`, the boundary checked by `test/boundary.test.ts` (DEC-0003) |
+| `core/parser.js` | `src/core/artifact.ts` - the block grammar, `findArtifactBlocks` |
+| `collectors/orchestrator.js`, `command-runner.js` | `src/core/gather.ts`, `src/core/proc.ts` (`runAsync` kills the whole process tree) |
+| `core/journal.js`, `governance.js`, `receipt.js` | exist, with a schema and tests |
+| An artifact hash | `artifactId()` already is sha256(command, commit, output) |
+| Subpath exports | `exports` + `publint` + `attw` on every build |
 
-### Что отклоняем и почему
+### Rejected, and why
 
-1. **`.js`-файлы и новое дерево `collectors/`.** Пакет написан на TypeScript и
-   собирается tsdown в `dist/*.mjs`. Переезд файлов ради схемы на картинке -
-   это чистая переделка: ни одна проверка от неё не станет сильнее.
-2. **`manifests/` внутри npm-пакета.** DEC-0003 требует, чтобы в тарболе были
-   только `dist/`, README и LICENSE, и `test/bin.test.ts` это проверяет.
-   Манифесты плагинов кладём в репозиторий, публикуем через git-маркетплейс, а
-   в тарбол они не попадают.
-3. **`npx --no-install` в каждом хуке.** Замер в этом контейнере (Node 22.22):
-   голый `node` стартует примерно за 48 мс, `npx --no-install` - примерно за
-   370 мс. Если PreToolUse стоит на `Bash`, задержка добавляется к каждому
-   вызову инструмента. Хуки вызывают `node <путь к dist/bin>` напрямую.
-4. **PostToolUse на `Write|Edit`.** Свежесть проверяется надёжнее и дешевле,
-   если один раз на `Stop` сравнить отпечаток дерева с запечатанным
-   (раздел 4.2). Такая проверка ловит и правки через `Bash`, которые
-   PostToolUse по матчеру `Write|Edit` не видит.
-5. **`Bash` в матчере PreToolUse по умолчанию.** Детерминированно понять, что
-   shell-команда пишет в защищённый путь, нельзя. Если включать такое
-   правило, то как `ask` и только по явному флагу, никогда как `deny`.
-6. **Слово «криптографическая».** Нехешированный ключом SHA-256 в `.git/`,
-   куда у агента есть права на запись, - это контроль целостности против
-   типового сбоя (блок отредактирован или скопирован вручную), а не
-   доказательство против того, кто подделывает намеренно. README уже честно
-   говорит «It does not stop someone determined to fake it», и план это не
-   ослабляет. Независимой стороной остаётся CI.
-7. **Antigravity как адаптер первой волны.** Нет документированного
-   стабильного API хуков, под который можно написать тест-фикстуру. Пакет не
-   заявляет поддержку хоста, пока под неё нет фикстуры (это инвариант ниже).
+1. **`.js` files and a new `collectors/` tree.** The package is written in
+   TypeScript and built by tsdown into `dist/*.mjs`. Moving files to match a
+   diagram is pure churn: no check gets any stronger from it.
+2. **`manifests/` inside the npm package.** DEC-0003 requires the tarball to
+   carry only `dist/`, the README and the licence, and `test/bin.test.ts`
+   checks that. Plugin manifests live in the repository and are published
+   through a git marketplace; they never enter the tarball.
+3. **`npx --no-install` in every hook.** Measured in this container (Node
+   22.22): bare `node` starts in about 48 ms, `npx --no-install` in about
+   370 ms. With PreToolUse on `Bash`, that delay is added to every tool call.
+   Hooks call `node <path to dist/bin>` directly.
+4. **PostToolUse on `Write|Edit`.** Freshness is checked more reliably and more
+   cheaply by comparing the tree fingerprint with the sealed one once, at
+   `Stop` (section 4.2). That check also catches edits made through `Bash`,
+   which a PostToolUse matcher on `Write|Edit` never sees.
+5. **`Bash` in the PreToolUse matcher by default.** Whether a shell command
+   writes to a protected path cannot be decided deterministically. If such a
+   rule is ever enabled, it is `ask`, behind an explicit flag, never `deny`.
+6. **The word "cryptographic".** An unkeyed SHA-256 in `.git/`, which the agent
+   can write to, is an integrity check against the default failure (a block
+   edited or copied in by hand), not proof against someone faking it on
+   purpose. The README already says, honestly, "It does not stop someone
+   determined to fake it", and this plan does not weaken that. CI remains the
+   independent party.
+7. **Antigravity as a first-wave adapter.** There is no documented, stable
+   hook API to write a test fixture against. The package does not claim
+   support for a host until that support has a fixture (an invariant below).
 
-### Дефекты в коде предложения
+### Defects in the proposal's code
 
 `seal.js`:
-- `if (!currentText)` считает пустой вывод отсутствующим артефактом, хотя
-  пустой вывод нормален (чистый `git status`).
-- Цикл идёт по артефактам **из пломбы**, поэтому блок, вписанный в обзор
-  руками и в пломбе отсутствующий, проходит молча. Направление должно быть
-  обратным: каждый блок, на который ссылается обзор, обязан быть в пломбе.
-- `join('.git', ...)` ломается в worktree и submodule, где `.git` - это
-  файл, и при запуске не из корня. Правильно: `git rev-parse --git-path`.
-- Неатомарная запись: два хука одновременно могут оставить битый JSON. Нужна
-  запись во временный файл + `rename`.
-- Возвращается первая ошибка, а не `Finding[]`, то есть теряется модель пяти
-  исходов.
+- `if (!currentText)` treats empty output as a missing artifact, although
+  empty output is normal (a clean `git status`).
+- The loop walks the artifacts **in the seal**, so a block written into the
+  review by hand and absent from the seal passes silently. The direction has to
+  be the other way round: every block the review cites must be in the seal.
+- `join('.git', ...)` breaks in a worktree or a submodule, where `.git` is a
+  file, and when run from anywhere but the root. The right call is
+  `git rev-parse --git-path`.
+- Non-atomic writes: two hooks at once can leave broken JSON. It needs a write
+  to a temporary file + `rename`.
+- It returns the first error rather than `Finding[]`, which loses the
+  five-outcome model.
 
 `predicates.js`:
-- Нераспознанный фрагмент (`if (pMatch)`) **молча выбрасывается**: опечатка в
-  предикате превращает его в проходящую проверку. Это ровно та «уверенность
-  из ничего», которую запрещает `cli.ts`. Такой фрагмент должен давать
-  `error`.
-- `[a-zA-Z0-9_-]+` для id не совпадает с `ARTIFACT_ID_RE`
-  (`[a-z]+-[0-9a-f]{6}`). Хуже того, текущий `GRADE_RE` в `claims.ts` не
-  примет `VERIFIED[id:...]`: тег молча деградирует до bare `VERIFIED` и уходит
-  в legacy-проверку по близости.
-- `isNaN`-приведение превращает `0x10` в 16 и сравнивает строки через `<`
-  лексикографически.
-- Ключей `exit_code`, `duration_ms`, `status` в блоке артефакта нет. Есть
-  `exitCode`, `stopped` и счётчики work summary. `duration_ms`
-  недетерминирован и не может входить в хэш вывода.
-- `split(',')` ломает значения, в которых есть запятая.
+- An unrecognised fragment (`if (pMatch)`) is **silently dropped**: a typo in a
+  predicate turns it into a check that passes. That is exactly the "confidence
+  out of nothing" `cli.ts` forbids. Such a fragment has to be an `error`.
+- `[a-zA-Z0-9_-]+` for the id does not match `ARTIFACT_ID_RE`
+  (`[a-z]+-[0-9a-f]{6}`). Worse, the current `GRADE_RE` in `claims.ts` will not
+  accept `VERIFIED[id:...]`: the tag silently degrades to bare `VERIFIED` and
+  falls through to the legacy proximity check.
+- The `isNaN` coercion turns `0x10` into 16 and compares strings with `<`
+  lexicographically.
+- An artifact block has no `exit_code`, `duration_ms` or `status` keys. It has
+  `exitCode`, `stopped` and the work-summary counts. `duration_ms` is not
+  deterministic and cannot go into the output hash.
+- `split(',')` breaks any value that contains a comma.
 
 `.claude/settings.json`:
-- Коды выхода конфликтуют. В Claude Code `exit 2` означает «заблокировать», а
-  у пакета `EXIT.usage = 2`. Ошибка разбора аргументов внутри хука
-  превратится в блокировку. Хук обязан говорить на протоколе хоста (JSON +
-  exit 0), а не пробрасывать коды пакета.
-- Нет защиты от бесконечного цикла на `Stop` (`stop_hook_active`).
-- «Автоматическая настройка» в виде записи в чужой `settings.json` при
-  установке пакета (postinstall) недопустима. Нужна только явная команда
-  `init`, с `--dry-run` и слиянием вместо перезаписи.
+- The exit codes collide. In Claude Code `exit 2` means "block", and the
+  package's `EXIT.usage` is `2`. An argument-parsing error inside a hook would
+  become a block. A hook has to speak the host's protocol (JSON + exit 0), not
+  pass the package's codes through.
+- No protection against an infinite loop on `Stop` (`stop_hook_active`).
+- "Automatic setup" that writes into someone's `settings.json` at install time
+  (postinstall) is not acceptable. Only an explicit `init` command, with
+  `--dry-run` and a merge instead of an overwrite.
 
-## 2. Целевая структура
+## 2. Target layout
 
-Растём внутри текущего дерева. Новое отмечено `+`.
+Grow inside the current tree. New entries are marked `+`.
 
 ```
 src/
   core/
-    artifact.ts  claims.ts  gather.ts  proc.ts  journal.ts  ...   (как есть)
-  + core/predicates.ts   разбор/проверка предикатов, закрытый словарь ключей
-  + core/seal.ts         реестр артефактов: запись, чтение, проверка, отпечаток дерева
-  + core/gate.ts         решения гейта без знания о хосте: allow / deny / block / context
-  adapters/node-default.ts                                         (как есть)
-  + hosts/contract.ts    тип HostAdapter
+    artifact.ts  claims.ts  gather.ts  proc.ts  journal.ts  ...   (unchanged)
+  + core/predicates.ts   parse/evaluate predicates, closed key vocabulary
+  + core/seal.ts         artifact ledger: write, read, verify, tree fingerprint
+  + core/gate.ts         gate decisions with no knowledge of the host: allow / deny / block / context
+  adapters/node-default.ts                                         (unchanged)
+  + hosts/contract.ts    the HostAdapter type
   + hosts/claude-code.ts stdin JSON -> GateEvent, GateDecision -> stdout JSON
-  + hosts/codex.ts       после спайка (фаза 5)
+  + hosts/codex.ts       after the spike (phase 5)
   commands/
   + hook.ts              evidence-layer hook <host> <event>
   + init.ts              evidence-layer init <host> [--dry-run]
-bin/evidence-layer.ts    + ленивые import() по командам
+bin/evidence-layer.ts    + lazy import() per command
 + plugins/claude-code/
     .claude-plugin/plugin.json
     hooks/hooks.json
 + .claude-plugin/marketplace.json
 ```
 
-Почему `hosts/`, а не `adapters/`. В README и DEC-0003 «adapter» уже означает
-адаптер *стека проекта* (форматы тест-репортеров). Протокол агента - другая
-ось. Если сложить обе оси в одну папку, граница, которую проверяет тест,
-размоется.
+Why `hosts/` and not `adapters/`. In the README and DEC-0003, "adapter"
+already means an adapter for a *project's stack* (test-reporter formats). An
+agent's protocol is a different axis. Putting both axes in one directory would
+blur the boundary the test checks.
 
-Границы, проверяемые тестом (расширение `test/boundary.test.ts`):
-- `core/` → только `node:*` и соседи (как сейчас);
-- `hosts/` → `node:*`, `../core/*`, `./contract`; никогда `../commands`;
-- `core/` никогда не импортирует `hosts/`.
+Boundaries checked by a test (an extension of `test/boundary.test.ts`):
+- `core/` → only `node:*` and its siblings (as now);
+- `hosts/` → `node:*`, `../core/*`, `./contract`; never `../commands`;
+- `core/` never imports `hosts/`.
 
-Subpath exports: новых не добавляем. Хосты - внутренняя деталь `bin`, а
-`gate.ts` экспортируется из `.` вместе с остальным ядром. Новый subpath
-появится только тогда, когда у него будет внешний потребитель.
+Subpath exports: none added. The hosts are an internal detail of `bin`, and
+`gate.ts` is exported from `.` with the rest of the core. A new subpath appears
+only once it has an outside consumer.
 
-## 3. Контракты
+## 3. Contracts
 
 ```ts
-// core/gate.ts - про хост ничего не знает
+// core/gate.ts - knows nothing about the host
 export type GateEvent =
-  | { kind: 'session-start'; cwd: string; sessionId: string }  // снимок обзора пишется по sessionId (4.3)
+  | { kind: 'session-start'; cwd: string; sessionId: string }  // the review snapshot is keyed by sessionId (4.3)
   | { kind: 'pre-write'; cwd: string; paths: string[] }
   | { kind: 'stop'; cwd: string; sessionId: string; reentry: boolean; message?: string }
 
 export type GateDecision =
   | { action: 'allow'; findings: Finding[] }
   | { action: 'deny'; reason: string; findings: Finding[] }   // pre-write
-  | { action: 'block'; reason: string; findings: Finding[] }  // stop: агент продолжает
+  | { action: 'block'; reason: string; findings: Finding[] }  // stop: the agent keeps going
   | { action: 'context'; text: string }                       // session-start
 
 export function decide(event: GateEvent, opts: GateOptions): GateDecision
@@ -155,75 +156,80 @@ export function decide(event: GateEvent, opts: GateOptions): GateDecision
 ```ts
 // hosts/contract.ts
 export interface HostAdapter {
-  /** stdin JSON хоста → событие; null означает событие, которое гейт не обрабатывает. */
+  /** The host's stdin JSON → an event; null means an event the gate does not handle. */
   parse(event: string, stdin: string): GateEvent | null
-  /** Решение → то, что хост понимает. Код выхода всегда протокольный. */
+  /** A decision → what the host understands. The exit code is always the protocol's. */
   render(decision: GateDecision): { stdout: string; exitCode: 0 | 2 }
 }
 ```
 
-`commands/hook.ts` гарантирует для хоста следующее:
-- никогда не вызывает `process.exit(EXIT.*)` пакета;
-- внутренняя ошибка → `allow` + `systemMessage` с текстом ошибки (fail-open:
-  упавший гейт не должен намертво блокировать сессию);
-- `--fail-closed` разворачивает это поведение для тех, кому строгость важнее;
-- вывод проверяется на фикстурах (записанный stdin хоста → ожидаемый stdout).
+What `commands/hook.ts` guarantees the host:
+- it never calls the package's `process.exit(EXIT.*)`;
+- an internal error → `allow` + a `systemMessage` carrying the error
+  (fail-open: a crashed gate must not lock the session);
+- `--fail-closed` reverses that for anyone who values strictness more;
+- the output is checked against fixtures (recorded host stdin → expected
+  stdout).
 
-## 4. Компоненты
+## 4. Components
 
-### 4.1 Предикаты (`core/predicates.ts` + `claims.ts`)
+### 4.1 Predicates (`core/predicates.ts` + `claims.ts`)
 
-Грамматика, расширяющая адресный тег:
+A grammar that extends the addressed tag:
 
 ```
 **Claim**: Tests pass. VERIFIED[tests-a3f91c: exit=0, failed=0, passed>=71]
 ```
 
-- Ключи только из закрытого словаря, и каждый читается из самого блока
-  артефакта. Поэтому предикат проверяется одинаково локально и в CI, с
-  пломбой и без неё:
-  - `exit` - целое; читается из exit-строки;
+- Keys come only from a closed vocabulary, and each is read from the artifact
+  block itself. So a predicate checks the same way locally and in CI, with or
+  without a seal:
+  - `exit` - an integer, read from the exit line;
   - `stopped` - `none | timeout | overflow | killed`;
-  - счётчики work summary: `passed failed skipped todo` для tests,
-    `files ignored errors warnings` для lint.
-- `duration_ms` в словаре **нет**. Длительность не является детерминированным
-  свойством прогона, а «команда зависла» уже выражается через `stopped`.
-  Если бы ключ существовал, один и тот же `review.md` проходил бы локально с
-  пломбой и давал `unverifiable` в CI.
-- Неизвестный ключ, неразобранный фрагмент, ключ, которого нет у этого вида
-  артефакта (`errors` у tests) → `error`. Ничего не выбрасывается молча.
-- Значения - целые числа, плюс перечисление для `stopped`. Числовые ключи
-  принимают `= != < <= > >=`. `stopped` принимает только `=` и `!=`, а
-  сравнение порядка на перечислении (`stopped<timeout`) даёт `error`. Строк
-  и запятых внутри значений нет, поэтому нет и экранирования.
-- «Нулевой прогон» (`exit=0, failed=0` при `passed=0`) уже ловит
-  `outcomeProblem`: success-claim над work summary с `workDone <= 0` даёт
-  ошибку «checked nothing». Поскольку предикаты проверяются *в дополнение*, а
-  не вместо, слабый предикат это правило не обходит. Обязательный `passed>0`
-  в каждом теге не вводим, но фиксируем это поведение отдельным тестом.
-- `GRADE_RE` расширяется **в одном месте** и переиспользует `ARTIFACT_ID_RE`.
-  Тег вида `VERIFIED[...]`, который не разбирается, становится `error`, а не
-  bare `VERIFIED`.
-- Предикаты проверяются **в дополнение** к `outcomeProblem`, а не вместо него.
-- `skeleton.ts` выдаёт теги с уже заполненными предикатами из фактического
-  прогона, чтобы честный путь оставался дешёвым. Нужно перемерить базовую
-  стоимость 2.16x из DEC-0002 и записать новое число.
-- Сроки: bare `VERIFIED` уходит 2026-12-06 (`bare_verified_deprecation` в
-  DEC-0002). Предикаты выпускаем до этой даты, чтобы при переходе
-  пользователи сразу получили и адресный тег, и предикаты.
+  - the work-summary counts: `passed failed skipped todo` for tests,
+    `files ignored errors warnings` for lint.
+- There is **no** `duration_ms`. Duration is not a deterministic property of a
+  run, and "the command hung" is already expressed by `stopped`. If the key
+  existed, the same `review.md` would pass locally with a seal and come out
+  `unverifiable` in CI.
+- An unknown key, an unparsed fragment, or a key this kind of artifact does not
+  have (`errors` on tests) → `error`. Nothing is dropped silently.
+- Values are integers, plus the enumeration for `stopped`. Numeric keys accept
+  `= != < <= > >=`. `stopped` accepts only `=` and `!=`; an ordering
+  comparison on the enumeration (`stopped<timeout`) is an `error`. No strings
+  and no commas inside values, so no escaping either.
+- A "zero run" (`exit=0, failed=0` with `passed=0`) is already caught by
+  `outcomeProblem`: a success claim over a work summary with `workDone <= 0` is
+  a "checked nothing" error. Because predicates are checked *in addition to*
+  that rule rather than instead of it, a weak predicate cannot get around it. A
+  mandatory `passed>0` in every tag is not introduced, but the behaviour is
+  pinned by its own test.
+- `GRADE_RE` is extended **in one place** and reuses `ARTIFACT_ID_RE`. A
+  `VERIFIED[...]` tag that does not parse becomes an `error`, not bare
+  `VERIFIED`.
+- Predicates are checked **in addition to** `outcomeProblem`, not instead of
+  it.
+- `skeleton.ts` emits tags with the predicates already filled in from the
+  actual run, so the honest path stays cheap. The 2.16x cost baseline from
+  DEC-0002 has to be measured again and the new number recorded.
+- Timing: bare `VERIFIED` goes away on 2026-12-06 (`bare_verified_deprecation`
+  in DEC-0002). Predicates ship before that date, so the cutover hands users
+  the addressed tag and predicates at the same time.
 
-Ценность фазы не зависит от агентов: работает в CI без пломбы.
+The value of this phase does not depend on agents: it works in CI without a
+seal.
 
-### 4.2 Пломба / реестр (`core/seal.ts`)
+### 4.2 Seal / ledger (`core/seal.ts`)
 
-Место: `git rev-parse --git-path evidence-layer/seal.json`. Путь у каждого
-worktree свой, файл не попадает в историю, запись атомарная (tmp + rename).
+Location: `git rev-parse --git-path evidence-layer/seal.json`. Each worktree
+gets its own path, the file never enters history, and writes are atomic
+(tmp + rename).
 
 ```ts
 interface Seal {
   schemaVersion: 1
-  headSha: string            // полный
-  treeId: string             // git write-tree содержимого рабочего дерева, см. ниже
+  headSha: string            // full
+  treeId: string             // git write-tree over the working tree's content, see below
   largeUntracked: { path: string; size: number; mtimeMs: number }[]
   bundlePath: string
   bundleSha256: string
@@ -231,342 +237,352 @@ interface Seal {
     command: string
     exitCode: number
     stopped?: StopReason
-    outputSha256: string     // полный вывод, до обрезки середины
-    blockSha256: string      // ровно те строки блока, которые записал formatArtifact
+    outputSha256: string     // the full output, before the middle is trimmed
+    blockSha256: string      // exactly the block lines formatArtifact wrote
   }>
-  writtenAt: string          // метаданные, в сравнение не входят
+  writtenAt: string          // metadata, not compared
 }
 ```
 
-Отпечаток дерева (`treeId`) - это идентификатор git-дерева текущего
-*содержимого* рабочей директории, а не `HEAD + diff`. Он не меняется при
-`git commit`, если содержимое файлов не изменилось. Вычисляется так, не
-трогая настоящий индекс:
+The tree fingerprint (`treeId`) is the git tree id of the working directory's
+current *content*, not `HEAD + diff`. It does not change on `git commit` if no
+file's content changed. It is computed like this, without touching the real
+index:
 
 ```
-TMP=$(mktemp -d)/index                                   # путь, а не файл
+TMP=$(mktemp -d)/index                                   # a path, not a file
 [ -f "$(git rev-parse --git-path index)" ] && cp "$(git rev-parse --git-path index)" $TMP
-GIT_INDEX_FILE=$TMP git add -A -- . <:!крупные-untracked>
-GIT_INDEX_FILE=$TMP git rm -q --cached --ignore-unmatch -- <исключённые пути>
+GIT_INDEX_FILE=$TMP git add -A -- . <:!large-untracked>
+GIT_INDEX_FILE=$TMP git rm -q --cached --ignore-unmatch -- <excluded paths>
 GIT_INDEX_FILE=$TMP git write-tree
-# finally: rm -rf каталога $TMP
+# finally: rm -rf the $TMP directory
 ```
 
-Почему именно так. Сразу после `git init`, или пока в репозиторий ничего не
-добавлено, файла индекса нет. Тогда копирование пропускается, и `git add`
-создаёт временный индекс с нуля. Но `$TMP` должен быть **несуществующим
-путём** внутри временного каталога, а не файлом от `mktemp`: пустой файл git
-отвергает с `fatal: index file smaller than expected` (проверено). В
-`core/seal.ts` это `mkdtempSync` + `join(dir, 'index')` и `rmSync(dir, {
-recursive: true })` в `finally`. Тест фазы 2 на свежем репозитории без
-коммитов это закрепляет.
+Why exactly this. Right after `git init`, or before anything has been added,
+there is no index file. The copy is then skipped, and `git add` builds the
+temporary index from scratch. But `$TMP` has to be a **path that does not
+exist** inside a temporary directory, not a file from `mktemp`: git rejects an
+empty file with `fatal: index file smaller than expected` (verified). In
+`core/seal.ts` that is `mkdtempSync` + `join(dir, 'index')`, and
+`rmSync(dir, { recursive: true })` in `finally`. A phase 2 test on a fresh
+repository with no commits pins it.
 
-Прототип в пустом репозитории дал такие результаты:
-- правка `review.md` отпечаток не меняет;
-- `git commit` без правок содержимого отпечаток не меняет;
-- правка кода отпечаток меняет;
-- настоящий индекс остаётся нетронутым;
-- время - ~14 мс.
+A prototype in an empty repository gave:
+- editing `review.md` does not change the fingerprint;
+- `git commit` with no content change does not change the fingerprint;
+- editing code changes it;
+- the real index is left untouched;
+- time - ~14 ms.
 
-Побочный эффект: `git add` во временный индекс пишет loose-объекты в
-`.git/objects`. Их подберёт обычный `git gc`; в DEC-0005 это записывается
-как известное свойство.
+Side effect: `git add` into the temporary index writes loose objects into
+`.git/objects`. An ordinary `git gc` collects them; DEC-0005 records this as a
+known property.
 
-- **Исключённые пути** - ровно три вещи, и список не расширяется
-  настройкой:
-  - файл бандла;
-  - каталог состояния `evidence-layer/`;
-  - пути обзоров, которые проверяет гейт (`--review`, по умолчанию
-    `review.md`).
+- **Excluded paths** - exactly three things, and configuration cannot extend
+  the list:
+  - the bundle file;
+  - the `evidence-layer/` state directory;
+  - the review paths the gate checks (`--review`, default `review.md`).
 
-  Произвольный список игнорируемых путей был бы готовым обходом проверки
-  свежести («игнорировать `src/`»), поэтому его нет.
-- **Крупные неотслеживаемые файлы.** Список неотслеживаемых файлов берётся из
-  `git ls-files --others --exclude-standard -z`. Файлы больше 5 МБ (дамп, лог,
-  забытый бинарник) в объекты не добавляются, а учитываются по
-  `path + size + mtimeMs` в `largeUntracked`. Иначе один такой файл съел бы
-  бюджет Stop и место на диске.
-- **Параллельная запись.** Пломбу пишет только `gatherEvidence`, и она
-  привязана к одному бандлу через `bundleSha256`. Бандл перезаписывается
-  целиком, значит и пломба корректно работает по принципу last-write-wins.
-  Слияние словарей `artifacts` из двух сборов связало бы пломбу с id,
-  которых нет в текущем бандле. Поэтому ни слияния, ни lock-файла: запись
-  tmp + `rename`, а тест проверяет, что после двух параллельных сборов пломба
-  - валидный JSON и соответствует одному из бандлов.
+  An arbitrary ignore list would be a ready-made way around the freshness
+  check ("ignore `src/`"), so there is none.
+- **Large untracked files.** The untracked list comes from
+  `git ls-files --others --exclude-standard -z`. Files over 5 MB (a dump, a
+  log, a forgotten binary) are not added as objects; they are recorded as
+  `path + size + mtimeMs` in `largeUntracked`. Otherwise one such file would
+  eat the Stop budget and the disk.
+- **Concurrent writes.** Only `gatherEvidence` writes the seal, and it is bound
+  to one bundle through `bundleSha256`. The bundle is overwritten whole, so
+  last-write-wins is the correct behaviour for the seal too. Merging the
+  `artifacts` maps of two gathers would tie the seal to ids that are not in the
+  current bundle. So no merge and no lock file: tmp + `rename`, and a test
+  checks that after two concurrent gathers the seal is valid JSON matching one
+  of the two bundles.
 
-- `gatherEvidence` пишет пломбу по умолчанию. Отключается через
-  `seal: false`.
-- `lintClaims(md, file, { seal })` для каждого адресного `VERIFIED[id]`
-  проверяет:
-  - id отсутствует в пломбе → `error` «блок не создан сборщиком в этом
-    checkout»;
-  - `blockSha256` не совпадает → `error` «блок изменён после сбора».
-- Пломба проверяется **только если её явно передали** (`--seal` в CLI,
-  всегда в режиме хука). В CI её нет: там ничего не меняется и лишних
-  `unverifiable` не появляется.
-- Свежесть: `checkFreshness(seal, repo)` сравнивает текущий `treeId` (и
-  `largeUntracked`) с запечатанным. Возможны три исхода:
-  - **содержимое изменилось** → success-claim по lint/types/tests даёт
-    `error` «evidence собрано до последней правки - пересоберите». Это главная
-    проверка для агента: она ловит «правил код после прогона тестов»;
-  - **содержимое то же, но `HEAD` сдвинулся** (агент закоммитил после сбора)
-    → отдельного сообщения о свежести нет. Ошибку даст уже существующая
-    проверка коммита в `lintClaims` («collected at X, but this review is about
-    Y»): её же получит и CI, поэтому гейт её не смягчает. Текст причины
-    уточняется: «содержимое не менялось, сдвинулся только HEAD -
-    пересоберите после коммита»;
-  - **всё совпадает** → `pass`.
-- Правило для агента, которое SessionStart выдаёт в контексте: если в сессии
-  делаются коммиты, evidence собирается **после последнего коммита**.
-- Модель угроз записана в DEC-0005. Пломба ловит типовой сбой (руками
-  дописанный блок, правку вывода, блок из старого прогона, правку кода после
-  сбора) и не ловит намеренную перезапись `.git/evidence-layer/`.
+- `gatherEvidence` writes the seal by default. `seal: false` turns it off.
+- `lintClaims(md, file, { seal })` checks, for every addressed
+  `VERIFIED[id]`:
+  - the id is not in the seal → `error` "this block was not produced by the
+    gatherer in this checkout";
+  - `blockSha256` does not match → `error` "this block was edited after it was
+    gathered".
+- The seal is checked **only when it is passed explicitly** (`--seal` on the
+  CLI, always in hook mode). CI has none: nothing changes there, and no extra
+  `unverifiable` findings appear.
+- Freshness: `checkFreshness(seal, repo)` compares the current `treeId` (and
+  `largeUntracked`) with the sealed one. Three outcomes:
+  - **the content changed** → a success claim on lint/types/tests is an
+    `error` "evidence was gathered before the last edit - gather it again".
+    This is the main check for an agent: it catches "edited the code after
+    running the tests";
+  - **same content, but `HEAD` moved** (the agent committed after gathering)
+    → no separate freshness message. The error comes from the existing commit
+    check in `lintClaims` ("collected at X, but this review is about Y"): CI
+    raises the same one, so the gate does not soften it. The reason text is
+    made more precise: "the content did not change, only HEAD moved - gather
+    again after committing";
+  - **everything matches** → `pass`.
+- The rule SessionStart gives the agent as context: if the session makes
+  commits, evidence is gathered **after the last commit**.
+- DEC-0005 records the threat model. The seal catches the default failure (a
+  block written by hand, edited output, a block from an old run, code edited
+  after gathering) and does not catch a deliberate rewrite of
+  `.git/evidence-layer/`.
 
-### 4.3 Гейт (`core/gate.ts`)
+### 4.3 The gate (`core/gate.ts`)
 
-| Событие | Что делает | Стоимость |
+| Event | What it does | Cost |
 | --- | --- | --- |
-| SessionStart | `context`: грамматика `**Claim**` + `VERIFIED[id: ...]`; правило «gather после последнего коммита»; свежа ли пломба; снимок обзора для этой сессии; уборка старого состояния | один `git rev-parse` |
-| PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | `deny`, если реальный путь попадает в защищённый список | без git, только `fs` |
-| Stop | `claims` + `receipt` + предикаты + пломба + свежесть над обзором; ошибки → `block` с перечнем находок | `git add` во временный индекс + `write-tree` |
+| SessionStart | `context`: the `**Claim**` + `VERIFIED[id: ...]` grammar; the "gather after the last commit" rule; whether the seal is fresh; the review snapshot for this session; cleanup of old state | one `git rev-parse` |
+| PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | `deny` when the real path falls in the protected list | no git, `fs` only |
+| Stop | `claims` + `receipt` + predicates + seal + freshness over the review; errors → `block` listing the findings | `git add` into a temporary index + `write-tree` |
 
-Защищённые пути в PreToolUse разрешаются без запуска git, но с учётом
-worktree:
-- если `<cwd>/.git` - это файл, из строки `gitdir: <path>` читается
-  настоящий каталог (в worktree это `<main>/.git/worktrees/<name>`, куда и
-  указывает `git rev-parse --git-path evidence-layer`; проверено на
-  прототипе);
-- путь цели и защищённые пути нормализуются через `path.resolve` +
-  `fs.realpathSync.native`. Для ещё не существующего файла `realpath`
-  берётся от ближайшего существующего родителя, так что `..` и симлинки не
-  обходят проверку;
-- `Bash` по-прежнему не защищается, как и сказано в разделе 1.
+Protected paths in PreToolUse are resolved without running git, but with
+worktrees in mind:
+- if `<cwd>/.git` is a file, the real directory is read from its
+  `gitdir: <path>` line (in a worktree that is `<main>/.git/worktrees/<name>`,
+  which is where `git rev-parse --git-path evidence-layer` points; verified on
+  the prototype);
+- the target path and the protected paths are normalised with `path.resolve` +
+  `fs.realpathSync.native`. For a file that does not exist yet, `realpath` is
+  taken from its nearest existing parent, so neither `..` nor symlinks get
+  around the check;
+- `Bash` is still not protected, as section 1 says.
 
-Когда Stop проверяет обзор («изменён в этой сессии»):
-- SessionStart записывает в `<git-path>/evidence-layer/sessions/<session_id>.json`
-  sha256 каждого пути обзора, или `absent`, если файла нет;
-- Stop проверяет обзор только если его хэш отличается от снимка этой
-  сессии. Вчерашний изменённый `review.md` не блокирует сегодняшний разговор
-  о другом;
-- нет снимка (хуки поставили посреди сессии, SessionStart не сработал) →
-  обзор не проверяется, в `systemMessage` пишется почему. Это fail-open, как и
-  всё остальное в гейте.
+When Stop checks the review ("changed in this session"):
+- SessionStart writes the sha256 of each review path, or `absent` when the file
+  does not exist, to `<git-path>/evidence-layer/sessions/<session_id>.json`;
+- Stop checks the review only when its hash differs from this session's
+  snapshot. A `review.md` left modified yesterday does not block today's
+  conversation about something else;
+- no snapshot (hooks installed mid-session, SessionStart never fired) → the
+  review is not checked, and a `systemMessage` says why. That is fail-open,
+  like everything else in the gate.
 
-Уборка: SessionStart удаляет `sessions/*.json` старше 7 дней. Журнал гейта
-(4.6) не удаляется никогда: это и есть «часы» гейта.
+Cleanup: SessionStart deletes `sessions/*.json` older than 7 days. The gate's
+journal (4.6) is never deleted: it is the gate's clock.
 
-Защита от циклов на Stop: если `stop_hook_active` равен true или для этой
-сессии уже было N блокировок (счётчик лежит рядом с пломбой, N=2 по
-умолчанию), возвращается `allow` + `systemMessage` с оставшимися находками.
+Loop protection on Stop: when `stop_hook_active` is true, or this session has
+already been blocked N times (the counter lives next to the seal, N=2 by
+default), the result is `allow` + a `systemMessage` with the remaining
+findings.
 
-Что именно проверяет Stop:
-- **Фаза 3:** файл обзора (`--review <path>`, по умолчанию `review.md`, если
-  он изменён в этой сессии). Это детерминированно и совпадает с тем, что пакет
-  уже делает в CI.
-- **Фаза 4:** последнее сообщение агента из `transcript_path`. Проверяются
-  только строки `**Claim**:`. Без них - `allow`: обычная разговорная реплика
-  не блокируется, и это сохраняет принцип README «prose outside a Claim line
-  is never graded». `lintProse` в чат-режиме выключен, иначе шум.
-  - В чате нет блоков артефактов, поэтому `VERIFIED[id: ...]` резолвится
-    против бандла из `seal.bundlePath`. Перед этим проверяется, что
-    `sha256` бандла равен `seal.bundleSha256`; иначе `error` «бандл изменён
-    после сбора». Для этого `lintClaims` получает опцию `artifactSource`:
-    блоки берутся из бандла, а не из проверяемого текста.
-  - Строки `**Claim**:` внутри fenced-блоков пропускает уже существующий
-    `findClaims`, так что примеры синтаксиса в разговоре не проверяются.
-    Закрепляется тестом на фикстуре чата.
+What exactly Stop checks:
+- **Phase 3:** the review file (`--review <path>`, default `review.md`, if it
+  changed in this session). Deterministic, and the same thing the package
+  already does in CI.
+- **Phase 4:** the agent's last message from `transcript_path`. Only
+  `**Claim**:` lines are checked. Without any - `allow`: an ordinary
+  conversational reply is never blocked, which keeps the README's principle
+  that "prose outside a Claim line is never graded". `lintProse` is off in chat
+  mode; otherwise it is noise.
+  - A chat message has no artifact blocks, so `VERIFIED[id: ...]` resolves
+    against the bundle at `seal.bundlePath`. Before that, the bundle's
+    `sha256` is checked against `seal.bundleSha256`; a mismatch is an `error`
+    "the bundle was edited after it was gathered". For this, `lintClaims` gets
+    an `artifactSource` option: blocks come from the bundle rather than from
+    the text under check.
+  - `**Claim**:` lines inside fenced blocks are already skipped by the
+    existing `findClaims`, so syntax examples in a conversation are not
+    checked. Pinned by a test on a chat fixture.
 
-### 4.4 Хост Claude Code (`hosts/claude-code.ts`)
+### 4.4 The Claude Code host (`hosts/claude-code.ts`)
 
-- Вход: JSON из stdin (`hook_event_name`, `cwd`, `session_id`,
+- Input: JSON on stdin (`hook_event_name`, `cwd`, `session_id`,
   `transcript_path`, `tool_name`, `tool_input`, `stop_hook_active`).
-- Выход:
+- Output:
   - PreToolUse: `hookSpecificOutput.permissionDecision` +
     `permissionDecisionReason`;
   - Stop: `{"decision":"block","reason":...}`;
   - SessionStart: `hookSpecificOutput.additionalContext`.
-- Имена полей сверяем с актуальной документацией Claude Code в момент
-  реализации и фиксируем записанными фикстурами в `test/fixtures/hosts/claude-code/`.
-- Плагин `plugins/claude-code/hooks/hooks.json` вызывает не пакет напрямую,
-  а `node "${CLAUDE_PLUGIN_ROOT}/bin/run-hook.mjs" <event>`. Это маленький
-  враппер без зависимостей, закоммиченный в репозиторий. Прямой вызов
-  `node .../node_modules/evidence-layer/...` при отсутствии пакета падал бы
-  с `MODULE_NOT_FOUND` и кодом 1 на каждом событии, и сказать «гейт
-  неактивен» было бы некому. Что делает враппер:
-  - ищет `node_modules/evidence-layer/package.json` вверх от
-    `$CLAUDE_PROJECT_DIR`, что покрывает pnpm workspaces и worktree внутри
-    репозитория;
-  - проверяет, что версия пакета знает команду `hook`;
-  - если пакета нет или версия старая: SessionStart получает протокольный
-    `additionalContext` «evidence-layer не установлен / слишком старый - гейт
-    неактивен», остальные события - пустой ответ и `exit 0`;
-  - если всё в порядке: подменяет `process.argv` и делает `import()` бина
-    в том же процессе, без второго запуска `node`, чтобы не платить холодный
-    старт дважды.
-- `evidence-layer init claude [--local] [--dry-run]` вливает тот же блок в
-  `.claude/settings.json`, а с `--local` - в `.claude/settings.local.json`,
-  для тех, кто не хочет коммитить персональные хуки. Слияние идёт без
-  перезаписи: чужие хуки сохраняются, а *свои* записи (команда содержит
-  `evidence-layer hook`) обновляются на месте. Поэтому смена версии или
-  флагов (`--fail-closed`) не оставляет дубликатов, а повторный запуск даёт
-  побайтово тот же файл (инвариант 7).
+- The field names are checked against the current Claude Code documentation at
+  implementation time and pinned with recorded fixtures in
+  `test/fixtures/hosts/claude-code/`.
+- The plugin's `plugins/claude-code/hooks/hooks.json` does not call the package
+  directly but `node "${CLAUDE_PLUGIN_ROOT}/bin/run-hook.mjs" <event>`, a small
+  dependency-free wrapper committed to the repository. A direct
+  `node .../node_modules/evidence-layer/...` would fail with
+  `MODULE_NOT_FOUND` and exit 1 on every event when the package is not
+  installed, leaving nothing to say "the gate is inactive". What the wrapper
+  does:
+  - looks for `node_modules/evidence-layer/package.json` upwards from
+    `$CLAUDE_PROJECT_DIR`, which covers pnpm workspaces and worktrees inside the
+    repository;
+  - checks that the package version knows the `hook` command;
+  - if the package is missing or too old: SessionStart gets a protocol
+    `additionalContext` "evidence-layer is not installed / too old - the gate is
+    inactive", every other event an empty response and `exit 0`;
+  - otherwise: replaces `process.argv` and `import()`s the bin in the same
+    process, without a second `node` launch, so the cold start is not paid
+    twice.
+- `evidence-layer init claude [--local] [--dry-run]` merges the same block into
+  `.claude/settings.json`, or with `--local` into `.claude/settings.local.json`,
+  for anyone who does not want to commit personal hooks. The merge does not
+  overwrite: other hooks are kept, and *its own* entries (a command containing
+  `evidence-layer hook`) are updated in place. So changing the version or the
+  flags (`--fail-closed`) leaves no duplicates, and running it again produces a
+  byte-identical file (invariant 7).
 
-### 4.5 Холодный старт
+### 4.5 Cold start
 
-- `bin/evidence-layer.ts` переходит на `await import()` по команде. Путь
-  `hook` не загружает governance, ci-summary и journal-report.
-- Бюджет: SessionStart и PreToolUse ≤ 100 мс, Stop ≤ 1 с на репозитории
-  этого пакета.
-- Замер идёт в `scripts/smoke.mjs` и печатается как число. Превышение даёт
-  `warning`, а не падение: тайминг на общих раннерах шумит, и такой провал
-  был бы `flaky`, а не `error`.
-- В vitest проверяется структурное свойство: собранный chunk пути `hook` не
-  содержит модулей governance.
+- `bin/evidence-layer.ts` moves to `await import()` per command. The `hook`
+  path does not load governance, ci-summary or journal-report.
+- Budget: SessionStart and PreToolUse ≤ 100 ms, Stop ≤ 1 s on this package's
+  own repository.
+- Measured in `scripts/smoke.mjs` and printed as a number. Going over budget is
+  a `warning`, not a failure: timing on shared runners is noisy, and such a
+  failure would be `flaky`, not `error`.
+- vitest checks a structural property: the built chunk for the `hook` path
+  contains no governance modules.
 
-### 4.6 Журнал
+### 4.6 Journal
 
-Исходы гейта (`gate:stop`, `gate:pre-write`) пишутся в
-`.git/evidence-layer/journal.jsonl`, **а не** в коммитимый `journal.jsonl`.
-Иначе каждая остановка агента пачкала бы рабочее дерево и сама ломала проверку
-свежести. `journal report --include-gate` читает оба файла, и тогда видно,
-сколько раз гейт блокировал и сколько из этого было `real`.
+Gate outcomes (`gate:stop`, `gate:pre-write`) are written to
+`.git/evidence-layer/journal.jsonl`, **not** to the committed `journal.jsonl`.
+Otherwise every agent stop would dirty the working tree and break the
+freshness check by itself. `journal report --include-gate` reads both files,
+which shows how often the gate blocked and how much of that was `real`.
 
-## 5. Фазы
+## 5. Phases
 
-Каждая фаза выпускается отдельно и полезна сама по себе.
+Each phase ships on its own and is useful on its own.
 
-### Фаза 0. Решение и подготовка (patch)
-- `docs/decisions/0005-runtime-gate.md`: контекст, модель угроз, инварианты
-  (ниже), `review_by`, владелец.
-- Ленивые импорты в `bin`; число cold start в smoke.
-- `test/boundary.test.ts` расширяется правилами для `hosts/`. Тест не должен
-  проходить на пустом списке файлов, как уже сделано для `core/`.
-- Готово, когда: `pnpm check:all --enforce` зелёный, а поведение CLI не
-  изменилось (все тесты в `test/bin.test.ts` проходят).
+### Phase 0. Decision and groundwork (patch)
+- `docs/decisions/0005-runtime-gate.md`: context, threat model, invariants
+  (below), `review_by`, owner.
+- Lazy imports in `bin`; the cold-start number in smoke.
+- `test/boundary.test.ts` gains the rules for `hosts/`. The test must not pass
+  over an empty file list, as is already done for `core/`.
+- Done when: `pnpm check:all --enforce` is green and the CLI's behaviour is
+  unchanged (every test in `test/bin.test.ts` passes).
 
-### Фаза 1. Предикаты (minor, 0.5.0)
-- `core/predicates.ts`, расширение `GRADE_RE`, интеграция в `lintClaims`,
-  предикаты в скелетоне.
-- Тесты: каждый оператор; неизвестный ключ; ключ не того вида; мусорный
-  фрагмент; `VERIFIED[id:` без закрывающей скобки; совместная работа с
+### Phase 1. Predicates (minor, 0.5.0)
+- `core/predicates.ts`, the `GRADE_RE` extension, integration into
+  `lintClaims`, predicates in the skeleton.
+- Tests: every operator; an unknown key; a key of the wrong kind; a garbage
+  fragment; `VERIFIED[id:` with no closing bracket; working together with
   `outcomeProblem`.
-- Новый фикстурный обзор в `examples/plain-node-project/reviews/`, который
-  падает из-за предиката.
-- README («Exit 0 is not the same as "it passed"»), `docs/evidence-layer.md`,
-  новая стоимость относительно 2.16x.
+- A new fixture review in `examples/plain-node-project/reviews/` that fails on
+  a predicate.
+- README ("Exit 0 is not the same as "it passed""), `docs/evidence-layer.md`,
+  the new cost relative to 2.16x.
 
-### Фаза 2. Пломба и свежесть (minor, 0.6.0)
-- `core/seal.ts`, запись из `gatherEvidence`, `claims --seal`,
+### Phase 2. Seal and freshness (minor, 0.6.0)
+- `core/seal.ts`, writing it from `gatherEvidence`, `claims --seal`,
   `checkFreshness`.
-- Тесты во временном git-репозитории, включая worktree:
-  - правка блока;
-  - блок, которого нет в пломбе;
-  - правка кода после сбора → `error`;
-  - правка только `review.md` → `pass`;
-  - `git commit` без изменения содержимого → свежесть `pass`, проверка
-    коммита - `error` с уточнённым текстом;
-  - крупный неотслеживаемый файл учитывается по метаданным;
-  - пустой вывод (регрессия бага из предложения);
-  - два параллельных сбора → валидный JSON одного из бандлов;
-  - настоящий индекс после вычисления отпечатка побайтово не изменён.
+- Tests in a temporary git repository, worktrees included:
+  - an edited block;
+  - a block that is not in the seal;
+  - code edited after gathering → `error`;
+  - only `review.md` edited → `pass`;
+  - `git commit` with no content change → freshness `pass`, the commit check
+    an `error` with the more precise text;
+  - a large untracked file is recorded by its metadata;
+  - empty output (a regression test for the proposal's bug);
+  - two concurrent gathers → valid JSON for one of the bundles;
+  - the real index is byte-identical after the fingerprint is computed;
+  - a fresh repository with no commits and no index file.
 
-### Фаза 3. Гейт и Claude Code (minor, 0.7.0)
+### Phase 3. The gate and Claude Code (minor, 0.7.0)
 - `core/gate.ts`, `hosts/contract.ts`, `hosts/claude-code.ts`,
   `commands/hook.ts`, `commands/init.ts`, `plugins/claude-code/`,
   `.claude-plugin/marketplace.json`.
-- Фикстуры stdin → stdout для трёх событий. Отдельный тест на то, что ни
-  один путь хука не завершается с кодом 2 вне протокола.
-- Тесты:
-  - `run-hook.mjs` без установленного пакета и со старой версией;
-  - PreToolUse в worktree, через симлинк и через `..`;
-  - снимок обзора (вчерашний изменённый `review.md` не блокирует);
-  - `init` повторно и после смены флагов (инвариант 7);
+- stdin → stdout fixtures for all three events. A separate test that no hook
+  path exits with code 2 outside the protocol.
+- Tests:
+  - `run-hook.mjs` with no package installed and with an old version;
+  - PreToolUse in a worktree, through a symlink and through `..`;
+  - the review snapshot (yesterday's modified `review.md` does not block);
+  - `init` run twice and after a flag change (invariant 7);
   - `init --local`.
-- Ручная проверка в живой сессии Claude Code: агент пишет `review.md` с
-  неподкреплённым claim, гейт блокирует Stop, агент исправляет, вторая
-  остановка проходит.
-- README: команды `hook` и `init` появляются в `--help` и в README (это
-  проверяет `checkCommands`), счётчик тестов обновлён.
+- A manual check in a live Claude Code session: the agent writes `review.md`
+  with an unbacked claim, the gate blocks Stop, the agent fixes it, the second
+  stop goes through.
+- README: the `hook` and `init` commands appear in `--help` and in the README
+  (`checkCommands` checks that), and the test count is updated.
 
-### Фаза 4. Чат-режим Stop (minor)
-- Чтение последнего ответа агента из transcript. Фикстуры - реальные
-  обезличенные транскрипты.
-- Журнал гейта, `journal report --include-gate`.
+### Phase 4. Chat-mode Stop (minor)
+- Reading the agent's last reply from the transcript. Fixtures are real,
+  anonymised transcripts.
+- The gate's journal, `journal report --include-gate`.
 
-### Фаза 5. Другие хосты (по готовности)
-- **Codex CLI:** спайк - сверить актуальную схему хуков (события, stdin,
-  способ блокировки). Если она изоморфна Claude Code, получится тонкий
-  `hosts/codex.ts` с фикстурами. Если нет, остаются инструкция в `AGENTS.md`
-  и git-native уровень.
-- **git-native:** `evidence-layer init git` ставит:
-  - **pre-commit**, который запускает `claims`/`receipt` только если в
-    индексе есть путь обзора. Именно этот хук ловит агента, который
-    коммитит локально и завершает работу, оставив `push` человеку;
-  - **pre-push** - по флагу `--pre-push`, как финальную проверку ветки.
+### Phase 5. Other hosts (when ready)
+- **Codex CLI:** a spike - check the current hook schema (events, stdin, how to
+  block). If it is isomorphic to Claude Code's, the result is a thin
+  `hosts/codex.ts` with fixtures. If not, what remains is an instruction in
+  `AGENTS.md` and the git-native level.
+- **git-native:** `evidence-layer init git` installs:
+  - **pre-commit**, which runs `claims`/`receipt` only when a review path is in
+    the index. This is the hook that catches an agent that commits locally and
+    stops, leaving the `push` to a person;
+  - **pre-push** - behind a `--pre-push` flag, as a final check of the branch.
 
-  Если задан `git config core.hooksPath` (Husky, Lefthook, simple-git-hooks
-  или `.githooks` в этом репозитории), `init git` ничего не пишет: каталогом
-  управляет другой инструмент, а запись в неактивный `.git/hooks` была бы
-  молча бесполезной. Вместо этого команда печатает строку, которую нужно
-  добавить в конфиг этого инструмента, и завершается с `unverifiable`, а не
-  с `pass`.
-- **Antigravity:** только спайк. Адаптер появится, когда будет
-  документированный API и фикстура.
-- Возможно: zero-deps MCP-сервер по stdio (`evidence-layer mcp`) с
-  инструментами `gather` и `check_claims` для хостов без хуков. Отдельное
-  решение, в объём этого плана не входит.
+  When `git config core.hooksPath` is set (Husky, Lefthook, simple-git-hooks,
+  or `.githooks` in this repository), `init git` writes nothing: another tool
+  owns that directory, and writing into an inactive `.git/hooks` would be
+  silently useless. Instead the command prints the line to add to that tool's
+  config and exits with `unverifiable`, not `pass`.
+- **Antigravity:** a spike only. An adapter appears once there is a documented
+  API and a fixture.
+- Possibly: a zero-dependency stdio MCP server (`evidence-layer mcp`) with
+  `gather` and `check_claims` tools for hosts without hooks. A separate
+  decision, outside the scope of this plan.
 
-## 6. Инварианты DEC-0005
+## 6. DEC-0005 invariants
 
-1. Команда `hook` никогда не завершается с кодом, который хост трактует как
-   решение, иначе как через протокол этого хоста; проверяется `pnpm test`.
-2. Ничто в `src/core/` не импортирует `src/hosts/`, а `src/hosts/`
-   импортирует только `node:*`, ядро и собственный контракт; проверяется
-   `pnpm test`.
-3. Предикат с неизвестным ключом или неразобранный фрагмент даёт ошибку и
-   никогда не отбрасывается; проверяется `pnpm test`.
-4. Каждый хост, поддержку которого заявляет README, имеет тест на
-   записанных фикстурах; проверяется `pnpm check:docs`.
-5. Опубликованный тарбол по-прежнему содержит только `dist/`, README и
-   LICENSE, а манифесты плагинов живут в репозитории; проверяется
-   `pnpm test` (инвариант DEC-0003 не меняется).
-6. Правка проверяемого файла обзора, файла бандла или каталога состояния
-   `evidence-layer/` после `gatherEvidence` никогда не меняет `treeId`, а
-   правка любого другого файла всегда меняет; проверяется `pnpm test`.
-7. Повторный `evidence-layer init <host>` на уже настроенном проекте даёт
-   побайтово тот же конфиг и не дублирует записи хуков; проверяется
-   `pnpm test`.
+1. The `hook` command never exits with a code the host reads as a decision,
+   except through that host's protocol; enforced by `pnpm test`.
+2. Nothing in `src/core/` imports `src/hosts/`, and `src/hosts/` imports only
+   `node:*`, the core and its own contract; enforced by `pnpm test`.
+3. A predicate with an unknown key, or an unparsed fragment, is an error and is
+   never dropped; enforced by `pnpm test`.
+4. Every host the README claims support for has a test on recorded fixtures;
+   enforced by `pnpm check:docs`.
+5. The published tarball still carries only `dist/`, the README and the
+   licence, and the plugin manifests live in the repository; enforced by
+   `pnpm test` (the DEC-0003 invariant is unchanged).
+6. Editing the review file under check, the bundle file or the
+   `evidence-layer/` state directory after `gatherEvidence` never changes
+   `treeId`, and editing any other file always does; enforced by `pnpm test`.
+7. Running `evidence-layer init <host>` again on a project that is already set
+   up produces a byte-identical config and never duplicates hook entries;
+   enforced by `pnpm test`.
 
-## 7. Риски
+## 7. Risks
 
-- **Ложные блокировки злят пользователей.** На Stop блокируют только
-  `error`. `warning` и `unverifiable` уходят в `systemMessage`. После N
-  блокировок гейт пропускает. Если сам гейт падает, сессия продолжается
+- **False blocks annoy users.** Only `error` blocks at Stop. `warning` and
+  `unverifiable` go to a `systemMessage`. After N blocks the gate lets the
+  agent through. If the gate itself crashes, the session carries on
   (fail-open).
-- **Протокол хоста меняется.** Фикстуры падают раньше пользователей, и в
-  README указано, против какой версии хоста они записаны.
-- **Пломбу принимают за защиту от злоумышленника.** Модель угроз записана в
-  DEC-0005 и README. CI остаётся независимой стороной.
-- **Стоимость честного пути растёт.** Каждая фаза перемеряет базовую
-  стоимость из DEC-0002. Если честная версия заметно подорожала, фаза не
-  выпускается, пока скелетон не возьмёт эту работу на себя.
+- **The host protocol changes.** The fixtures fail before users do, and the
+  README states which host version they were recorded against.
+- **The seal is mistaken for protection against an attacker.** The threat
+  model is written down in DEC-0005 and the README. CI remains the independent
+  party.
+- **The honest path gets more expensive.** Every phase measures the DEC-0002
+  cost baseline again. If the honest version has become noticeably more
+  expensive, the phase does not ship until the skeleton takes that work on.
 
-## 8. Ревизия 2: разбор независимого ревью
+## 8. Revision 2: triage of the independent review
 
-| Пункт ревью | Решение | Что изменено |
+| Review point | Decision | What changed |
 | --- | --- | --- |
-| 2.1 `review.md` инвалидирует отпечаток | принято, сужено | Исключаются ровно бандл, каталог состояния и проверяемые обзоры. Настраиваемого списка игнора нет: он был бы обходом свежести (4.2, инвариант 6) |
-| 2.2 `git commit` после сбора меняет отпечаток | принято | `treeId` через временный индекс + `write-tree`, проверено прототипом. Сдвиг HEAD отдан существующей проверке коммита: CI всё равно её применит. Правило «gather после последнего коммита» добавлено в SessionStart (4.2) |
-| 2.3 `duration_ms` противоречит CI | принято | Ключ удалён из словаря и из пломбы (4.1) |
-| 2.4 защищённые пути в worktree | принято | Разбор `gitdir:` + `realpath` без запуска git (4.3) |
-| 3.1 операторы для `stopped` | принято | Только `=` / `!=`, иначе `error` (4.1) |
-| 3.1 «нулевой прогон» | уже покрыто | `outcomeProblem` ловит `workDone <= 0`, а предикаты его не заменяют. Добавлен тест, обязательный `passed>0` не вводится (4.1) |
-| 3.2 крупные неотслеживаемые файлы | принято | Порог 5 МБ, такие файлы учитываются по `size + mtime`, список из `ls-files --others --exclude-standard -z` (4.2) |
-| 3.2 слияние при параллельной записи | отклонено | Пломба привязана к бандлу, который перезаписывается целиком: last-write-wins здесь корректно, а слияние дало бы id, которых нет в бандле. Тест переформулирован (4.2, фаза 2) |
-| 3.3 «изменён в этой сессии» | принято | Снимок хэшей обзора на SessionStart по `session_id`; без снимка - fail-open (4.3) |
-| 3.3 чат-режим без блоков | принято | Резолв id против бандла с проверкой `bundleSha256`. Пропуск fenced-строк уже есть в `findClaims` (4.3) |
-| 3.3 `MODULE_NOT_FOUND` в плагине | принято | Враппер `run-hook.mjs` с поиском вверх, проверкой версии и `import()` в том же процессе (4.4) |
-| 3.3 `init --local`, обновление записей | принято | (4.4, инвариант 7) |
-| 3.4 pre-push не ловит коммит | принято, это была ошибка плана | pre-commit по умолчанию, pre-push по флагу. При `core.hooksPath` команда ничего не пишет и возвращает `unverifiable` (фаза 5) |
-| 3.4 уборка `.git/evidence-layer/` | принято частично | TTL 7 дней только для `sessions/`. Журнал не удаляется (4.3) |
-| 4 инварианты 6 и 7 | принято | Инвариант 6 сформулирован в обе стороны: правка любого другого файла *обязана* менять `treeId` (раздел 6) |
+| 2.1 `review.md` invalidates the fingerprint | accepted, narrowed | Exactly the bundle, the state directory and the reviews under check are excluded. No configurable ignore list: it would be a way around freshness (4.2, invariant 6) |
+| 2.2 `git commit` after gathering changes the fingerprint | accepted | `treeId` via a temporary index + `write-tree`, verified on a prototype. A moved HEAD is left to the existing commit check: CI applies it anyway. The "gather after the last commit" rule is added to SessionStart (4.2) |
+| 2.3 `duration_ms` contradicts CI | accepted | The key is removed from the vocabulary and from the seal (4.1) |
+| 2.4 protected paths in a worktree | accepted | Parse `gitdir:` + `realpath`, without running git (4.3) |
+| 3.1 operators for `stopped` | accepted | Only `=` / `!=`, otherwise `error` (4.1) |
+| 3.1 "zero run" | already covered | `outcomeProblem` catches `workDone <= 0`, and predicates do not replace it. A test is added; a mandatory `passed>0` is not introduced (4.1) |
+| 3.2 large untracked files | accepted | A 5 MB threshold; such files are recorded by `size + mtime`, the list comes from `ls-files --others --exclude-standard -z` (4.2) |
+| 3.2 merging on concurrent writes | rejected | The seal is bound to a bundle that is overwritten whole: last-write-wins is correct here, and a merge would produce ids the bundle does not contain. The test is reworded (4.2, phase 2) |
+| 3.3 "changed in this session" | accepted | A snapshot of the review hashes at SessionStart, keyed by `session_id`; no snapshot means fail-open (4.3) |
+| 3.3 chat mode has no blocks | accepted | Ids resolve against the bundle, with a `bundleSha256` check. Skipping fenced lines already exists in `findClaims` (4.3) |
+| 3.3 `MODULE_NOT_FOUND` in the plugin | accepted | A `run-hook.mjs` wrapper that searches upwards, checks the version and `import()`s in the same process (4.4) |
+| 3.3 `init --local`, updating entries | accepted | (4.4, invariant 7) |
+| 3.4 pre-push does not catch a commit | accepted - this was a mistake in the plan | pre-commit by default, pre-push behind a flag. With `core.hooksPath` set, the command writes nothing and returns `unverifiable` (phase 5) |
+| 3.4 cleaning up `.git/evidence-layer/` | partly accepted | A 7-day TTL for `sessions/` only. The journal is never deleted (4.3) |
+| 4 invariants 6 and 7 | accepted | Invariant 6 is stated both ways: editing any other file *must* change `treeId` (section 6) |
+
+Follow-up notes before implementation: the `session-start` event carries
+`sessionId` (section 3), and the fingerprint handles a repository with no index
+file yet (4.2, phase 2).
