@@ -325,8 +325,15 @@ known property.
   - no seal is written, and any previous seal is deleted, so a stale one cannot
     stand in for it;
   - the bundle is still written, because it is evidence of what happened, and
-    its header names the paths that changed (`git diff-tree --name-only
-    <before> <after>`);
+    its header names the paths that changed. Two sources, merged and sorted:
+    - `git diff-tree -r -z --name-only <before> <after>`. `-r` is required:
+      without it `diff-tree` compares only the root tree's entries and reports
+      `src` rather than `src/core/seal.ts` (verified). `-z` keeps paths with
+      non-ASCII characters from being quoted by `core.quotePath`;
+    - the difference between the `largeUntracked` lists before and after
+      (added, removed, or a changed `size`/`mtimeMs`): a log or dump over 5 MB
+      written during the run never reaches `treeId`, so `diff-tree` alone
+      would miss it;
   - `GatherResult` gains `sealed: false` and `treeChanged: string[]`, and the
     console says which paths to fix or ignore.
 
@@ -549,6 +556,9 @@ Each phase ships on its own and is useful on its own.
     receipt names the parent commit passes the commit check;
   - a step that writes a non-ignored file during gathering → no seal, the old
     seal deleted, the path named in the bundle header and in `treeChanged`;
+  - `treeChanged` names a nested file by its full path (not its top-level
+    directory), a path with non-ASCII characters unquoted, and a large
+    untracked file written during the run;
   - a large untracked file is recorded by its metadata;
   - empty output (a regression test for the proposal's bug);
   - two concurrent gathers → valid JSON for one of the bundles;
