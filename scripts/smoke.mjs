@@ -70,6 +70,25 @@ check('claims passes the backed review and fails the unbacked one', () => {
   assert.equal(cli(['claims', join(reviews, 'bad-claims.md')]).status, 1)
 })
 
+/**
+ * Cold start, printed as a number rather than asserted. An agent's hook starts
+ * this executable on every tool call, so the number is worth watching - but a
+ * timing on a shared runner is noise as often as signal, and a check that
+ * fails on noise is `flaky`, not a finding. Over budget is printed as a
+ * warning and changes nothing about the exit code.
+ */
+const COLD_START_BUDGET_MS = 100
+function measureColdStart() {
+  const runs = []
+  for (let i = 0; i < 5; i++) {
+    const start = process.hrtime.bigint()
+    cli(['--version'])
+    runs.push(Number(process.hrtime.bigint() - start) / 1e6)
+  }
+  runs.sort((a, b) => a - b)
+  return runs[Math.floor(runs.length / 2)]
+}
+
 let failed = 0
 console.log('\nSmoke test on Node ' + process.version)
 console.log('-'.repeat(28 + process.version.length))
@@ -83,6 +102,11 @@ for (const { name, fn } of checks) {
     console.log('        ' + (err instanceof Error ? err.message : String(err)))
   }
 }
+const coldStart = measureColdStart()
+console.log(
+  (coldStart <= COLD_START_BUDGET_MS ? 'ℹ' : '⚠') +
+    ' cold start: ' + coldStart.toFixed(0) + ' ms median of 5 (budget ' + COLD_START_BUDGET_MS + ' ms, not enforced)',
+)
 console.log('')
 console.log(checks.length + ' checked - ' + failed + ' failed')
 console.log('')
