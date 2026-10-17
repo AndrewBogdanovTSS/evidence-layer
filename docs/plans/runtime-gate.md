@@ -139,7 +139,7 @@ Subpath exports: новых не добавляем. Хосты - внутрен
 ```ts
 // core/gate.ts - про хост ничего не знает
 export type GateEvent =
-  | { kind: 'session-start'; cwd: string }
+  | { kind: 'session-start'; cwd: string; sessionId: string }  // снимок обзора пишется по sessionId (4.3)
   | { kind: 'pre-write'; cwd: string; paths: string[] }
   | { kind: 'stop'; cwd: string; sessionId: string; reentry: boolean; message?: string }
 
@@ -244,11 +244,22 @@ interface Seal {
 трогая настоящий индекс:
 
 ```
-cp "$(git rev-parse --git-path index)" $TMP
+TMP=$(mktemp -d)/index                                   # путь, а не файл
+[ -f "$(git rev-parse --git-path index)" ] && cp "$(git rev-parse --git-path index)" $TMP
 GIT_INDEX_FILE=$TMP git add -A -- . <:!крупные-untracked>
 GIT_INDEX_FILE=$TMP git rm -q --cached --ignore-unmatch -- <исключённые пути>
 GIT_INDEX_FILE=$TMP git write-tree
+# finally: rm -rf каталога $TMP
 ```
+
+Почему именно так. Сразу после `git init`, или пока в репозиторий ничего не
+добавлено, файла индекса нет. Тогда копирование пропускается, и `git add`
+создаёт временный индекс с нуля. Но `$TMP` должен быть **несуществующим
+путём** внутри временного каталога, а не файлом от `mktemp`: пустой файл git
+отвергает с `fatal: index file smaller than expected` (проверено). В
+`core/seal.ts` это `mkdtempSync` + `join(dir, 'index')` и `rmSync(dir, {
+recursive: true })` в `finally`. Тест фазы 2 на свежем репозитории без
+коммитов это закрепляет.
 
 Прототип в пустом репозитории дал такие результаты:
 - правка `review.md` отпечаток не меняет;
