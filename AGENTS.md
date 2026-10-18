@@ -1,7 +1,8 @@
 # AGENTS.md
 
 The source of truth for anyone - person or agent - changing this repository.
-Tool-specific files (`CLAUDE.md`) only point here.
+There is deliberately no `CLAUDE.md`: Claude Code (2.1.277 and later) reads
+this file itself when none exists, and one would stop it from doing so.
 
 `evidence-layer` is a zero-runtime-dependency Node 22+ package of checks that
 turn a review's assertions into claims that could be proved wrong. It is its
