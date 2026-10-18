@@ -25,7 +25,7 @@
  * mainline, so an ancestry check waves it straight through.
  */
 import type { Finding } from './cli'
-import { capture } from './proc'
+import { gitCapture } from './proc'
 
 export interface Sample {
   path: string
@@ -201,7 +201,7 @@ export function checkReceipt(
   //    `git cat-file -t` rather than the more idiomatic `<sha>^{commit}`: on
   //    Windows the shell eats the caret, and the check then fails for everyone
   //    on that platform for a reason that has nothing to do with the review.
-  const headExists = capture('git cat-file -t ' + receipt.headSha, repo) === 'commit'
+  const headExists = gitCapture(['cat-file', '-t', receipt.headSha], repo) === 'commit'
   findings.push({
     level: headExists ? 'pass' : 'error',
     claim: 'HEAD SHA ' + receipt.headSha.slice(0, 10) + ' exists in this repository',
@@ -241,9 +241,13 @@ export function checkBase(receipt: Receipt, repo: string): Finding[] {
   if (!receipt.baseSha || !SHA_RE.test(receipt.baseSha) || !receipt.targetBranch) {
     return [{ level: 'error', claim, detail: 'base SHA or target branch missing' }]
   }
+  if (!receipt.headSha || !SHA_RE.test(receipt.headSha)) {
+    return [{ level: 'error', claim, detail: 'no full HEAD SHA to find a merge-base from' }]
+  }
+  const headSha = receipt.headSha
 
   const remoteRef = 'refs/remotes/origin/' + receipt.targetBranch
-  if (!capture('git rev-parse --verify --quiet ' + remoteRef, repo)) {
+  if (!gitCapture(['rev-parse', '--verify', '--quiet', remoteRef], repo)) {
     return [
       {
         level: 'unverifiable',
@@ -253,7 +257,7 @@ export function checkBase(receipt: Receipt, repo: string): Finding[] {
     ]
   }
 
-  const mergeBase = capture('git merge-base origin/' + receipt.targetBranch + ' ' + receipt.headSha, repo)
+  const mergeBase = gitCapture(['merge-base', 'origin/' + receipt.targetBranch, headSha], repo)
   if (!mergeBase) {
     return [{ level: 'unverifiable', claim, detail: 'no merge-base found (shallow clone, or unrelated histories)' }]
   }
@@ -264,13 +268,10 @@ export function checkBase(receipt: Receipt, repo: string): Finding[] {
   // The interesting failure: the recorded base is the tip of a *local* branch of
   // the same name that has fallen behind. This is the 20x case - and an ancestry
   // check would have passed it, because a stale tip is still an ancestor.
-  const localTip = capture('git rev-parse --verify --quiet refs/heads/' + receipt.targetBranch, repo)
+  const localTip = gitCapture(['rev-parse', '--verify', '--quiet', 'refs/heads/' + receipt.targetBranch], repo)
   let detail = 'receipt says ' + receipt.baseSha.slice(0, 10) + ', merge-base is ' + mergeBase.slice(0, 10)
   if (localTip === receipt.baseSha) {
-    const behind = capture(
-      'git rev-list --count ' + receipt.baseSha + '..origin/' + receipt.targetBranch,
-      repo,
-    )
+    const behind = gitCapture(['rev-list', '--count', receipt.baseSha + '..origin/' + receipt.targetBranch], repo)
     detail =
       'the base is the tip of the LOCAL branch ' +
       receipt.targetBranch +
@@ -302,7 +303,7 @@ export function checkSamples(receipt: Receipt, markdown: string, repo: string): 
     if (!sample) {
       return { level: 'error', claim, detail: 'this review cites it, but no Sample integrity line quotes it', file: path }
     }
-    const content = capture('git show ' + receipt.headSha + ':' + path, repo)
+    const content = gitCapture(['show', receipt.headSha + ':' + path], repo)
     if (content === null) {
       return { level: 'error', claim, detail: path + ' does not exist at that commit', file: path }
     }
@@ -338,7 +339,7 @@ export function checkCitations(markdown: string, headSha: string, repo: string):
     if (seen.has(key)) continue
     seen.add(key)
 
-    const content = capture('git show ' + headSha + ':' + path, repo)
+    const content = gitCapture(['show', headSha + ':' + path], repo)
     if (content === null) {
       findings.push({ level: 'error', claim: 'citation ' + key, detail: 'no such file at the reviewed commit' })
       continue

@@ -318,10 +318,53 @@ export function runAsync(command: string, opts: RunAsyncOptions = {}): Promise<A
 /**
  * Trimmed stdout of a command, or `null` when it failed.
  *
- * For cheap git queries where "it did not work" is a legitimate answer that the
- * caller has to handle - not swallow.
+ * For a fixed command written in this package or the consuming project. It goes
+ * through a shell, so nothing read out of a review, a receipt or a host's input
+ * may be concatenated into it - use `gitCapture` for those.
  */
 export function capture(command: string, cwd?: string): string | null {
   const res = run(command, { cwd, timeoutMs: 30_000 })
   return res.exitCode === 0 ? res.output.trim() : null
+}
+
+/** What one git invocation returned: its exit code and both streams, kept apart. */
+export interface GitResult {
+  exitCode: number
+  stdout: string
+  stderr: string
+}
+
+/**
+ * Runs git with an argument array and no shell.
+ *
+ * The values these checks hand to git - a receipt's target branch, a path out
+ * of a Sample integrity table, a commit a caller passed in - are written by
+ * whoever wrote the review, which is exactly the party this package does not
+ * take on trust. Before 0.5.0 they were concatenated into a shell string, so a
+ * review could carry `$(...)` and `receipt` would run it. An argument array
+ * gives the shell nothing to interpret; what is left - an argument git itself
+ * reads as an option - is the caller's to rule out, with `--end-of-options`
+ * or a fixed prefix in front of the value.
+ *
+ * stdout is returned as git wrote it: none of `run`'s echo stripping, which
+ * would eat the first line of any file that starts with `> `, and stderr kept
+ * out of it, so a warning never reads as file content.
+ */
+export function git(args: string[], cwd?: string, timeoutMs = 30_000): GitResult {
+  const res = spawnSync('git', args, {
+    cwd,
+    shell: false,
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    maxBuffer: MAX_BUFFER_BYTES,
+  })
+  // A git that could not start, timed out or overflowed has no answer to give.
+  const exitCode = res.error || res.status === null ? 1 : res.status
+  return { exitCode, stdout: res.stdout ?? '', stderr: res.stderr ?? '' }
+}
+
+/** Trimmed stdout of a git invocation, or `null` when it failed. */
+export function gitCapture(args: string[], cwd?: string): string | null {
+  const res = git(args, cwd)
+  return res.exitCode === 0 ? res.stdout.trim() : null
 }

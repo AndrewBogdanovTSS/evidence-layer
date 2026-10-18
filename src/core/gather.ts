@@ -47,7 +47,7 @@ import { join } from 'node:path'
 import { artifactId, classifyCommand, formatArtifact } from './artifact'
 import { generateClaimSkeleton, generateSampleSkeleton } from './skeleton'
 import type { SkeletonArtifact } from './skeleton'
-import { capture, run, runAsync } from './proc'
+import { gitCapture, run, runAsync } from './proc'
 
 export interface Step {
   name: string
@@ -112,8 +112,10 @@ export function planStepsDefault(changedFiles: string[], skip: string[], opts: P
  * different codebase - stated confidently, and wrong.
  */
 export function assertWorkingTreeAt(head: string, repo: string): string {
-  const actual = capture('git rev-parse HEAD', repo)
-  const wanted = capture('git rev-parse ' + head, repo)
+  const actual = gitCapture(['rev-parse', 'HEAD'], repo)
+  // `--end-of-options`, so a `head` that starts with `-` is read as a revision
+  // and fails to resolve, rather than being read as a flag.
+  const wanted = gitCapture(['rev-parse', '--verify', '--end-of-options', head + '^{commit}'], repo)
   if (!actual || !wanted) throw new Error('could not resolve HEAD or ' + head)
   if (actual !== wanted) {
     throw new Error(
@@ -171,14 +173,16 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   const skip = opts.skip ?? []
 
   const headSha = assertWorkingTreeAt(head, opts.repo)
-  const baseSha = capture('git rev-parse ' + opts.base, opts.repo)
+  const baseSha = gitCapture(['rev-parse', '--verify', '--end-of-options', opts.base + '^{commit}'], opts.repo)
   if (!baseSha) throw new Error('could not resolve --base ' + opts.base)
 
   // Three dots: the diff since the branches diverged, which is the change under
   // review. Two dots would also fold in whatever the baseline did since.
   const range = baseSha + '...' + headSha
-  const names = capture('git diff --name-only ' + range, opts.repo) ?? ''
-  const changedFiles = names.split('\n').filter(Boolean)
+  // NUL-separated, so a path with a space, a newline or non-ASCII characters
+  // comes back as itself rather than quoted by `core.quotePath`.
+  const names = gitCapture(['diff', '--name-only', '-z', range], opts.repo) ?? ''
+  const changedFiles = names.split('\0').filter(Boolean)
 
   const parts: string[] = [
     '# Evidence bundle',
@@ -285,7 +289,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
 
   const cap = opts.sampleCap ?? 20
   const samples = changedFiles.slice(0, cap).map((path) => {
-    const content = capture('git show ' + headSha + ':' + path, opts.repo)
+    const content = gitCapture(['show', headSha + ':' + path], opts.repo)
     const line = content?.split('\n').find((l) => l.trim() !== '')?.trim() ?? '(could not read this file)'
     return { path, line }
   })
