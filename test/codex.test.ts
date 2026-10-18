@@ -86,6 +86,12 @@ describe('evidence-layer hook codex, as a process', () => {
     expect(hook('pre-tool-use', fixture('pre-tool-use-apply-patch.json', { CWD: dir, PATCH: patch('*** Update File: a.js') })).stdout).toBe('')
   })
 
+  it('never exits non-zero - not on garbage input, an unknown event, or an empty stdin', () => {
+    for (const [event, stdin] of [['stop', 'not json'], ['pre-tool-use', '[]'], ['nope', '{}'], ['session-start', '']]) {
+      expect(hook(event!, stdin!).status, event + ' ' + stdin).toBe(0)
+    }
+  })
+
   it('blocks a stop over an unbacked review with Codex\'s block shape, and exits 0', () => {
     const dir = tempRepo('el-codex-', { 'a.js': 'a\n' })
     hook('session-start', fixture('session-start.json', { CWD: dir }))

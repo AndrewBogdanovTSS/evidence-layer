@@ -20,11 +20,15 @@ import { describe, expect, it } from 'vitest'
 const here = fileURLToPath(new URL('.', import.meta.url))
 const CORE = join(here, '..', 'src', 'core')
 
-const IMPORT = /^\s*import\s+(?:type\s+)?(?:[\s\S]*?)\s*from\s*'([^']+)'/gm
+// Every way a module can pull another in: `import ... from`, `export ... from`
+// (a re-export loads the module just the same) and `import('...')`.
+const IMPORT =
+  /^\s*import\s+(?:type\s+)?(?:[\s\S]*?)\s*from\s*'([^']+)'|^\s*export\s+(?:type\s+)?(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s*from\s*'([^']+)'|\bimport\(\s*'([^']+)'\s*\)/gm
+
+const specifiers = (source: string): string[] => [...source.matchAll(IMPORT)].map((m) => (m[1] ?? m[2] ?? m[3])!)
 
 function importsOf(file: string): string[] {
-  const source = readFileSync(join(CORE, file), 'utf8')
-  return [...source.matchAll(IMPORT)].map((m) => m[1]!)
+  return specifiers(readFileSync(join(CORE, file), 'utf8'))
 }
 
 const files = readdirSync(CORE).filter((f) => f.endsWith('.ts'))
@@ -58,7 +62,7 @@ describe('src/core imports nothing that knows what project it is running in', ()
 
 const HOSTS = join(here, '..', 'src', 'hosts')
 const hostFiles = readdirSync(HOSTS).filter((f) => f.endsWith('.ts'))
-const hostImports = (file: string) => [...readFileSync(join(HOSTS, file), 'utf8').matchAll(IMPORT)].map((m) => m[1]!)
+const hostImports = (file: string) => specifiers(readFileSync(join(HOSTS, file), 'utf8'))
 
 describe('src/hosts speaks one host protocol each, and knows nothing else', () => {
   it('has files to check at all - the contract and at least one adapter', () => {

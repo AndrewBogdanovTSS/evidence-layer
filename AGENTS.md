@@ -13,7 +13,7 @@ own first consumer: every check runs against this repository too.
 ```bash
 pnpm install --frozen-lockfile
 pnpm typecheck
-pnpm test                    # builds, then runs the suite against dist/
+pnpm test                    # builds, then runs the suite - the CLI tests run dist/
 pnpm check:all --enforce     # every repository check, plus: does anything run them?
 ```
 
@@ -34,11 +34,14 @@ remove tests, update that sentence in the same change.
 - `src/core/` imports only `node:*` builtins and its own siblings - no project's
   stack, no adapters, no hosts (`test/boundary.test.ts`).
 - `src/hosts/` imports only builtins, `../core/*` and `./contract`.
-- No runtime dependencies. The published tarball carries `dist/`, the README
-  and the licence, nothing else (`test/bin.test.ts`).
+- No runtime dependencies (`check:docs`, and CI's smoke job runs the build on
+  bare `node`). The published tarball carries `dist/`, the README and the
+  licence, nothing else (`test/bin.test.ts`).
 - Text from a review, a receipt or a host's input never reaches a shell: call
   git through `git()` / `gitCapture()` in `src/core/proc.ts`, never by
-  concatenating it into `run()` or `capture()` (`test/injection.test.ts`).
+  concatenating it into `run()` or `capture()`. `test/injection.test.ts` holds
+  `receipt` to it with hostile branch names and paths; nothing scans for a new
+  concatenation, so this one is on review.
 - Five outcomes, never collapsed: `pass`, `warning`, `error`, `unverifiable`,
   `flaky`. A check that could not run is `unverifiable`, not a pass. Exit codes:
   0 clean, 1 error, 2 bad usage, 3 flaky - except `evidence-layer hook`, which
@@ -64,8 +67,11 @@ remove tests, update that sentence in the same change.
   `pnpm check:ladder`, which CI runs on every commit a push or pull request
   brings. On rungs 2 to 4 the word after the verb is read as a name - the
   symbol reused, the dependency used (`2 reuse formatWorkSummary`) - and must
-  appear in the diff, so prose there fails the check. Run it on your commit
-  before you push it.
+  appear in the diff, so prose there fails the check. Rungs 1 and 5 are
+  judgement and report `unverifiable`, and a commit with no trailer only
+  warns, so the check catches a wrong trailer, not a missing one. A function
+  that is an existing one renamed fails it whatever the trailer says. Run it
+  on your commit before you push it.
 - `Missed-By: <review or PR>` on a commit that fixes a bug a review let through.
   `governance` extracts these into `journal.jsonl`; that count is the layer's
   only measure of what reviews miss.

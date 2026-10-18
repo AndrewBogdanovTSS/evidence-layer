@@ -62,8 +62,8 @@ not a pass. **Three outcomes, never two.** A checker that reports success when i
 could not run manufactures confidence out of nothing.
 
 Then try this, because a check nobody has seen fail is indistinguishable from a
-check that cannot fail: change `178 tests` to `179 tests` in the README and run
-it again.
+check that cannot fail: change the test count in the README's "The suite is **N
+tests**" sentence by one and run it again.
 
 Note where this script lives: [`scripts/check-docs.ts`](../scripts/check-docs.ts),
 not in the package. Every claim it makes is a fact about *this* repository, and
@@ -453,8 +453,8 @@ The table is checked against `src/core/codes.ts` by `check:docs`, both ways.
 
 | Trigger | Mode |
 |---|---|
-| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on push and pull request | the suite on every supported Node version; `check:docs`, `check:ladder` on each new commit, and `check:all --enforce` once |
-| `.githooks/pre-push`, after `pnpm hooks:install` | warn-only, `--fast` |
+| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on push and pull request | the suite on Node 22 and 24, the built `dist/` on bare `node` 22.0.0, 22 and 24; `check:docs`, `check:ladder` on each new commit, and `check:all --enforce` once |
+| `.githooks/pre-push`, after `pnpm hooks:install` | `check:all --fast --enforce` |
 | the GitHub Action, `uses: ./` in the same workflow | `claims` over a fixture review, with this commit's build |
 
 The workflow is not merely a place to run the commands. It settles a conflict of
@@ -463,13 +463,13 @@ passing local run a *self-report* - anyone who skipped the gathering step skips
 the verifying step just as easily. CI is the independent runner. Same commands,
 different party.
 
-Each check is a separately named step, so the run page reads as a list of claims
-that were checked rather than one opaque green tick. Two of those steps assert
-that the **broken** fixtures are still rejected: a checker that quietly stops
-finding things is worse than no checker, because nobody notices.
+Inside `check:all`, each check is its own named finding, so the report reads as a
+list of claims that were checked rather than one opaque green tick - and some of
+them assert that the **broken** fixtures are still rejected: a checker that
+quietly stops finding things is worse than no checker, because nobody notices.
 
-Afterwards `pnpm ci:summary` renders the governance report into the job summary
-and comments it on the pull request. That is the consumer the delimited JSON block
+Afterwards `pnpm ci:summary` renders the governance report into the job
+summary. That is the consumer the delimited JSON block
 exists for - and when the block is missing it says **"no report"** in as many
 words, because a clean report and an absent one must never look the same.
 
@@ -477,9 +477,11 @@ words, because a clean report and an absent one must never look the same.
 is the runnable version, including a list of ways to make each check fail on
 purpose.
 
-Warn-only is deliberate. A gate switched on before its report is clean teaches
-people to route around it. Flipping to enforcing is one word - add `--enforce` to
-the governance step and delete its `continue-on-error`.
+`check:all` runs with `--enforce`. Its step carries `continue-on-error` only so
+the summary step after it still runs, and a last step fails the job when it
+failed - so a red report is a red build. A project adopting this can start
+warn-only, without `--enforce`: a gate switched on before its report is clean
+teaches people to route around it.
 
 The hook is defence in depth, not a gate: anyone can pass `--no-verify`. Saying
 so plainly beats implying a guarantee it cannot give.

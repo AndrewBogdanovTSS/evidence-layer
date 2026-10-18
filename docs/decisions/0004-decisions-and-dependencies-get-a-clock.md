@@ -5,7 +5,7 @@ date: 2026-09-16
 supersedes: null
 invariants:
   - Every decision record accepted in docs/decisions/ carries a review_by date that has not passed, or is filed under archive/; enforced by `pnpm check:all`.
-  - Every dependency this package declares in package.json is referenced somewhere in its own source, or explicitly exempted with a reason a reader can check; enforced by `pnpm check:deps`.
+  - Every dependency this package declares in package.json that has no textual reference in its own tracked files, and no exemption a reader can check, is reported - as a warning, since a text search finding nothing is weaker evidence than a failure; enforced by `pnpm check:deps`.
 review_by: 2027-09-16
 enforce_owner: Andrii Bohdanov
 ---

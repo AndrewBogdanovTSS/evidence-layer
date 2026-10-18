@@ -38,7 +38,7 @@ import {
   recordNewMisses,
   usage,
 } from '../index'
-import type { Finding } from '../index'
+import type { CodedFinding } from '../index'
 
 const HELP = `
 evidence-layer governance [--repo <path>] [--decisions <dir>] [--enforce] [--no-json] [--no-journal]
@@ -72,7 +72,7 @@ export function run(argv: string[]): void {
   const decisions = typeof args.decisions === 'string' ? args.decisions : join(repo, 'docs', 'decisions')
   const exceptions = typeof args.exceptions === 'string' ? args.exceptions : undefined
 
-  const findings: Finding[] = [
+  const findings: CodedFinding[] = [
     ...checkReachability(repo, decisions),
     ...(exceptions ? checkExceptions(repo, exceptions) : checkExceptions(repo)),
     ...checkDecisionHygiene(repo, decisions),

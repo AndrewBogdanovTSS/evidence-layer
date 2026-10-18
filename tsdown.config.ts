@@ -34,7 +34,9 @@ export default defineConfig({
   define: { __EVIDENCE_LAYER_VERSION__: JSON.stringify(pkg.version) },
   // The package's own shape is a claim too: publint checks the manifest against
   // what is actually in the tarball, attw checks the types resolve for the
-  // consumers `exports` says are supported.
+  // consumers `exports` says are supported. attw at `error`, because its
+  // default level only logs a warning - the build would pass with types no
+  // consumer can resolve, which is the failure DEC-0003 says the build catches.
   publint: true,
-  attw: true,
+  attw: { level: 'error' },
 })

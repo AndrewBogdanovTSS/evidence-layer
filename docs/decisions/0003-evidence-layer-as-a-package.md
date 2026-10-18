@@ -7,7 +7,7 @@ invariants:
   - Nothing under `src/core/` imports anything but Node builtins and its own siblings, so no project's stack can leak into the portable layer; enforced by `pnpm test`.
   - The version the CLI prints is substituted from package.json at build time rather than written down a second time; enforced by `pnpm test`.
   - The published tarball carries `dist/`, the README and the licence and nothing else - no source, no tests, no fixtures; enforced by `pnpm test`.
-  - Every claim this README makes about the package is checked against the package it describes; enforced by `pnpm check:docs`.
+  - The README's statements of fact about the package - its install name, engine range, runtime dependencies, import paths, commands, links, test count, supported hosts and reason codes - are checked against the package it describes; enforced by `pnpm check:docs`.
   - The package manifest and its type resolution are validated on every build, not discovered by the first person to install it; enforced by `pnpm build`.
 review_by: 2027-09-14
 enforce_owner: Andrii Bohdanov
