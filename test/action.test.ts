@@ -31,10 +31,10 @@ function workspace(pkg: 'installed' | 'old' | 'unbuilt-self' | 'none'): string {
   return dir
 }
 
-function action(dir: string, inputs: Record<string, string>) {
+function action(dir: string, inputs: Record<string, string>, extraEnv: Record<string, string> = {}) {
   const output = join(dir, 'github-output')
   writeFileSync(output, '')
-  const env: Record<string, string> = { ...(process.env as Record<string, string>), GITHUB_WORKSPACE: dir, GITHUB_OUTPUT: output }
+  const env: Record<string, string> = { ...(process.env as Record<string, string>), GITHUB_WORKSPACE: dir, GITHUB_OUTPUT: output, ...extraEnv }
   for (const [key, value] of Object.entries(inputs)) env['INPUT_' + key.toUpperCase()] = value
   const res = spawnSync(process.execPath, [ACTION], { encoding: 'utf8', env })
   const outputs = Object.fromEntries(
@@ -89,6 +89,31 @@ describe('the action', () => {
     const res = action(workspace('none'), { claims: 'good.md', version: 'latest' })
     expect(res.status).toBe(2)
     expect(res.stdout).toContain('exact version')
+  })
+
+  // The registry, stood in for: an `npx` on PATH that writes down what it was
+  // asked for and then runs this checkout's build as the package it fetched.
+  // POSIX only - the stand-in is a shell script.
+  it.skipIf(process.platform === 'win32')('with nothing installed, fetches exactly the version the action was released with, or the one asked for', () => {
+    const bin = mkdtempSync(join(tmpdir(), 'el-fake-npx-'))
+    const log = join(bin, 'npx.log')
+    writeFileSync(join(bin, 'npx'), '#!/bin/sh\necho "$@" >> "$NPX_LOG"\nshift 2\nexec "$NODE" "$EL_BIN" "$@"\n', { mode: 0o755 })
+    const env = { PATH: bin + ':' + process.env.PATH, NPX_LOG: log, NODE: process.execPath, EL_BIN: join(root, 'dist', 'bin', 'evidence-layer.mjs') }
+    const released = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version: string }).version
+
+    const fetched = action(workspace('none'), { claims: 'good.md, bad.md' }, env)
+    expect(fetched.stdout).toContain('evidence-layer ' + released + ', from npm')
+    expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual([
+      '--yes evidence-layer@' + released + ' claims good.md --format github',
+      '--yes evidence-layer@' + released + ' claims bad.md --format github',
+    ])
+    // What npx ran decides the step, exactly as an installed package would.
+    expect(fetched.outputs).toEqual({ 'exit-code': '1', conclusion: 'failure' })
+    expect(fetched.stdout).toMatch(/^::error file=bad\.md,line=\d+,title=claims\//m)
+
+    writeFileSync(log, '')
+    expect(action(workspace('none'), { claims: 'good.md', version: '0.6.0' }, env).outputs.conclusion).toBe('success')
+    expect(readFileSync(log, 'utf8').trim()).toBe('--yes evidence-layer@0.6.0 claims good.md --format github')
   })
 
   it('treats nothing to check as misconfigured, not as a pass', () => {

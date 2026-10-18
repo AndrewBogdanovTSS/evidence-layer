@@ -95,6 +95,50 @@ jobs:
       # artifact the build job produced.
       - run: pnpm test:unit
 
+  # The action the way most projects meet it: nothing installed, so it runs
+  # `npx evidence-layer@<version>` from the registry. Every other run of the
+  # action here (`uses: ./` below, and test/action.test.ts) finds this
+  # checkout's build or a stand-in npx; only this one fetches a real package.
+  # The version is the one npm has now, not package.json's - on a release
+  # commit, package.json names a version that is still being published.
+  action-from-npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: action
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: A project with nothing installed
+        id: project
+        run: |
+          cp action/examples/plain-node-project/reviews/good-claims.md review.md
+          cp action/examples/plain-node-project/reviews/bad-claims.md bad.md
+          echo "version=$(npm view evidence-layer version)" >> "$GITHUB_OUTPUT"
+      - name: The action, on a review whose claims hold
+        id: good
+        uses: ./action
+        with:
+          claims: review.md
+          version: ${{ steps.project.outputs.version }}
+      - name: The action, on a review whose claims do not
+        id: bad
+        continue-on-error: true
+        uses: ./action
+        with:
+          claims: bad.md
+          version: ${{ steps.project.outputs.version }}
+      - name: The outputs say what the checks found
+        env:
+          GOOD: ${{ steps.good.outputs.conclusion }}
+          BAD: ${{ steps.bad.outputs.conclusion }}
+          BAD_EXIT: ${{ steps.bad.outputs.exit-code }}
+        run: |
+          echo "good=$GOOD bad=$BAD bad exit-code=$BAD_EXIT"
+          test "$GOOD" = success && test "$BAD" = failure && test "$BAD_EXIT" = 1
+
   # Separate job, one Node version: these check the repository, not the code's
   # behaviour on a given runtime, so running them three times says nothing new.
   governance:

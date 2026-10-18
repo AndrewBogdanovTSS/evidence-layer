@@ -456,6 +456,7 @@ The table is checked against `src/core/codes.ts` by `check:docs`, both ways.
 | [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on push and pull request | the suite on Node 22 and 24, the built `dist/` on bare `node` 22.0.0, 22 and 24; `check:docs`, `check:ladder` on each new commit, and `check:all --enforce` once |
 | `.githooks/pre-push`, after `pnpm hooks:install` | `check:all --fast --enforce` |
 | the GitHub Action, `uses: ./` in the same workflow | `claims` over a fixture review, with this commit's build |
+| the GitHub Action, in a job with nothing installed | the same action fetching the published package through `npx`, on a review that passes and one that fails |
 
 The workflow is not merely a place to run the commands. It settles a conflict of
 interest: every check here can be run by whoever wrote the change, which makes a
