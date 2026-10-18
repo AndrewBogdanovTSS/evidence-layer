@@ -118,6 +118,14 @@ jobs:
           path: dist/
       - run: pnpm check:docs
 
+      # The action, run on this repository the way a project runs it. `uses: ./`
+      # resolves to this checkout's build (downloaded above), so what is tested
+      # is this commit's action and this commit's checks together.
+      - name: The GitHub Action, on a fixture review
+        uses: ./
+        with:
+          claims: examples/plain-node-project/reviews/good-claims.md
+
       # Captured rather than streamed, because the summary is rendered from the
       # machine-readable block the run emits - and it is rendered whether the
       # checks passed or not, since "no report" is the one outcome a reader

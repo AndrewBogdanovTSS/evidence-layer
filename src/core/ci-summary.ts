@@ -13,8 +13,10 @@
  * signal anyone has for "never ran," and telling that apart from "checked,
  * found nothing" is the whole discipline this layer is built around.
  */
-import { summarise } from './cli'
-import type { Finding } from './cli'
+import { appendFileSync } from 'node:fs'
+import { annotations, renderFindingsSummary, stopToken } from './annotations'
+import { report as printText, summarise } from './cli'
+import type { Finding, Format } from './cli'
 
 export const JSON_BEGIN = '---GOVERNANCE-JSON-BEGIN---'
 export const JSON_END = '---GOVERNANCE-JSON-END---'
@@ -102,6 +104,33 @@ export function emitReport(findings: Finding[], mode: string): void {
  */
 export function printJsonReport(findings: Finding[], mode: string, check: string): void {
   console.log(JSON.stringify(buildReport(findings, mode, check), null, 2))
+}
+
+/**
+ * What every check prints, in the format asked for. `github` is the text report
+ * a person reads in the log, preceded by one annotation per finding that is not
+ * a pass and followed - when the runner says where - by a job summary.
+ *
+ * The text report runs under `::stop-commands::`: it quotes the review, and a
+ * review line that happens to read `::add-mask::...` must be printed, not run
+ * (see `./annotations`).
+ */
+export function printFindings(
+  format: Format,
+  title: string,
+  findings: Finding[],
+  mode: string,
+  check: string,
+): void {
+  if (format === 'json') return printJsonReport(findings, mode, check)
+  if (format === 'text') return printText(title, findings)
+  for (const line of annotations(findings)) console.log(line)
+  const token = stopToken()
+  console.log('::stop-commands::' + token)
+  printText(title, findings)
+  console.log('::' + token + '::')
+  const summary = process.env.GITHUB_STEP_SUMMARY
+  if (summary) appendFileSync(summary, renderFindingsSummary(title, findings), 'utf8')
 }
 
 /** Pulls the machine-readable block out of a pile of console output. */

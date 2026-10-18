@@ -316,6 +316,34 @@ input on stdin and answers in Claude Code's own protocol - always with exit 0,
 because Claude Code reads an exit code as a decision, and this package's `2`
 (bad usage) is Claude Code's "block".
 
+## In CI: the GitHub Action
+
+```yaml
+- uses: actions/checkout@v5
+- uses: AndrewBogdanovTSS/evidence-layer@v0.7.0
+  with:
+    claims: review.md            # comma- or newline-separated
+    # receipt: review.md         # needs fetch-depth: 0 and the target branch
+    # governance: 'true'         # also run governance --enforce
+    # strict: 'true'             # warnings and unverifiable fail too
+```
+
+Every finding that is not a pass becomes an annotation on its line, titled by
+its [code](docs/evidence-layer.md#machine-readable-output), and the job
+summary lists them. The action runs the evidence-layer the project installed,
+so CI and a laptop give the same verdict; with none installed, it fetches the
+exact version the action was released with - never `latest`. Its outputs are
+`exit-code` and `conclusion` (`success`, `failure`, `flaky`, `misconfigured`),
+and a step with nothing to check, a missing review or an unusable package is
+`misconfigured`, never a pass.
+
+Outside the action, `--format github` on `claims`, `receipt` and `governance`
+does the same in any `run:` step. A review is text written by someone this
+package does not trust, so it is never handed to the runner as a command: the
+annotations are escaped as the runner reads them, and the report that quotes
+the review runs under `::stop-commands::` with a token chosen per run
+([DEC-0007](docs/decisions/0007-github-action.md)).
+
 ## Supported hosts
 
 | Host | Adapter | Protocol checked against |
@@ -416,7 +444,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **365 tests** across **27 files**, and that sentence is checked
+The suite is **377 tests** across **29 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

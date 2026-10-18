@@ -7,13 +7,13 @@
  * Exit codes: 0 clean - 1 at least one error - 2 bad usage.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { EXIT, exitCodeFor, formatOf, help, lintClaims, parseArgs, parseReceipt, printJsonReport, report, usage } from '../index'
+import { EXIT, exitCodeFor, formatOf, help, lintClaims, parseArgs, parseReceipt, printFindings, usage } from '../index'
 import { checkFreshness, checkProvenance, readCurrentRun } from '../core/seal'
 import type { CodedFinding } from '../index'
 
 const HELP = `
 evidence-layer claims <review.md> [--sha <expected-head>] [--seal] [--repo <path>] [--strict]
-                                  [--format text|json]
+                                  [--format text|json|github]
 
 Lints a review for grounding tags and their required backing.
 
@@ -24,7 +24,8 @@ Lints a review for grounding tags and their required backing.
   --repo    the checkout whose seal to read (default: the current directory)
   --strict  treat warnings and unverifiable findings as failures
   --format  json prints one report document - every finding with its code -
-            instead of the text; the exit code is the same either way
+            instead of the text; github adds annotations and a job summary to
+            the text, for a GitHub Actions step. The exit code is the same
 
 exit 0 = every claim is backed, 1 = at least one is not, 2 = bad usage
 `
@@ -60,7 +61,6 @@ export function run(argv: string[]): void {
       })
     }
   }
-  if (format === 'json') printJsonReport(findings, args.strict === true ? 'strict' : 'default', 'claims')
-  else report('Claims in ' + path, findings)
+  printFindings(format, 'Claims in ' + path, findings, args.strict === true ? 'strict' : 'default', 'claims')
   process.exit(exitCodeFor(findings, args.strict === true))
 }

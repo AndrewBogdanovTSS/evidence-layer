@@ -340,10 +340,12 @@ be true and useless.
 
 ## Machine-readable output
 
-`claims`, `receipt` and `governance` take `--format json`. Stdout is then one
-JSON document and nothing else - the same report `check:all` prints between its
-delimiters, schema 4 - and the exit code is the one the text mode would have
-given:
+`claims`, `receipt` and `governance` take `--format json`, and `--format
+github` for a GitHub Actions step - annotations titled by code, then the text,
+then a job summary (see the README's section on the Action). With `json`,
+stdout is one JSON document and nothing else - the same report `check:all`
+prints between its delimiters, schema 4 - and the exit code is the one the
+text mode would have given:
 
 ```json
 {
@@ -453,6 +455,7 @@ The table is checked against `src/core/codes.ts` by `check:docs`, both ways.
 |---|---|
 | [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on push and pull request | the suite on every supported Node version; `check:docs` and `check:all --enforce` once |
 | `.githooks/pre-push`, after `pnpm hooks:install` | warn-only, `--fast` |
+| the GitHub Action, `uses: ./` in the same workflow | `claims` over a fixture review, with this commit's build |
 
 The workflow is not merely a place to run the commands. It settles a conflict of
 interest: every check here can be run by whoever wrote the change, which makes a

@@ -19,6 +19,7 @@
  *   - `exceptions`         is a bypass still a live decision, or a forgotten one
  *   - `decision-hygiene`   is the decision behind a bypass itself still current
  *   - `ci-summary`         rendering the governance report for a CI job summary
+ *   - `annotations`        findings as GitHub Actions annotations, review text kept from the runner
  *   - `skeleton`           pre-filled claims and sample quotes, so honest stays cheap
  *   - `gather`             running the expensive checks before a review is written
  *
@@ -39,5 +40,6 @@ export * from './core/governance'
 export * from './core/exceptions'
 export * from './core/decision-hygiene'
 export * from './core/ci-summary'
+export * from './core/annotations'
 export * from './core/skeleton'
 export * from './core/gather'

@@ -1,0 +1,35 @@
+name: evidence-layer
+description: Check that every claim in a review is backed by evidence, and annotate the ones that are not.
+author: Andrii Bohdanov
+branding:
+  icon: check-square
+  color: green
+
+# A JavaScript action with no dependencies and no build step: `action/run.mjs`
+# is plain Node and runs straight from this repository at the ref the workflow
+# names. It does not carry the checks themselves - see the file for which
+# evidence-layer it runs and why.
+inputs:
+  claims:
+    description: Review files to check with `evidence-layer claims`, comma- or newline-separated.
+    default: review.md
+  receipt:
+    description: Review files whose Access Receipt to check with `evidence-layer receipt`. Needs a full clone (`fetch-depth 0`) and the target branch fetched.
+    default: ''
+  governance:
+    description: Also run `evidence-layer governance --enforce` over the repository (`true` or `false`).
+    default: 'false'
+  strict:
+    description: Treat warnings and unverifiable findings as failures (`true` or `false`).
+    default: 'false'
+  version:
+    description: An exact evidence-layer version to run when the project has none installed. Default - the version this action was released with.
+    default: ''
+outputs:
+  exit-code:
+    description: The worst exit code of the checks that ran - 0 clean, 1 error, 2 bad usage, 3 flaky.
+  conclusion:
+    description: success, failure, flaky or misconfigured.
+runs:
+  using: node24
+  main: action/run.mjs

@@ -42,7 +42,12 @@
     "./package.json": "./package.json"
   },
   "evidenceLayer": {
-    "hookProtocol": 1
+    "hookProtocol": 1,
+    "outputFormats": [
+      "text",
+      "json",
+      "github"
+    ]
   },
   "bin": {
     "evidence-layer": "./dist/bin/evidence-layer.mjs"
