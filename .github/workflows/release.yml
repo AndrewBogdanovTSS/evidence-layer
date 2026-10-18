@@ -75,8 +75,17 @@ jobs:
       # `--verify-tag` refuses to invent a release for a tag that is not on the
       # remote; `--generate-notes` writes the notes from the commits since the
       # previous tag, so the changelog is the history rather than a second
-      # account of it, written later, by someone who was not looking.
+      # account of it, written later, by someone who was not looking. A
+      # version that changes what users must do can carry its own notes in
+      # `docs/releases/<tag>.md`, committed with the release and reviewed with
+      # it; they go first, and the commit history still follows them.
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+        run: |
+          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --notes-file "$notes" --generate-notes
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          fi

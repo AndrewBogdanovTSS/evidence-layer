@@ -63,6 +63,24 @@ of that, and neither can CI on a pull request from a fork.
    install it. Retry episodes, fail-open by default and a journal that never
    counts an unchecked allow as a pass keep it from becoming a trap.
 
+## Why these choices, and what was measured
+
+The reasoning behind each choice - which review argued for it, what was taken
+and rejected from each, the security problem found on the way, what was
+measured and what a live Claude Code session showed - is recorded in
+[`runtime-gate-implementation-report.md`](../plans/runtime-gate-implementation-report.md),
+written at the end of the work. In short:
+
+- The shell injection in `receipt` was reproduced before it was fixed, and
+  fixed on its own, because it matters to every earlier version.
+- Revision 4's hardening was taken wherever it closes a failure that can
+  happen; its locks and publication state machine were not, because a gather
+  that fails is never published, so the case they guard cannot arise.
+- The pre-write check became its own module after the built output showed the
+  hook loading governance; the import graph is now checked, not assumed.
+- In a live session the loop closed as designed: one block on an untagged
+  claim, the agent's fix, one clean stop.
+
 ## Threat model
 
 The seal and the gate catch the **default** failure - a block typed in by hand,
