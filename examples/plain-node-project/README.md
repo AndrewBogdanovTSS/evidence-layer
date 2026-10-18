@@ -24,7 +24,17 @@ It exists twice over.
    | [`package.json`](package.json) | `evidence-layer` as a dev dependency (this checkout, via `file:../..`; in your project, the registry) and an `evidence` script |
    | [`scripts/evidence.mjs`](scripts/evidence.mjs) | gathers the evidence before a review is written: runs `npm test`, appends Node's test counts as a work summary, seals the run |
    | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | the suite, then the GitHub Action over the change's `review.md` and the decision records |
-   | [`.claude/settings.json`](.claude/settings.json), [`.codex/hooks.json`](.codex/hooks.json) | the runtime gate, written by `evidence-layer init claude` and `init codex`. The Codex command finds the package from the repository's top level, which here is evidence-layer's own, so in this nested copy it works only once the project is a repository of its own |
+   | [`.claude/settings.json`](.claude/settings.json), [`.codex/hooks.json`](.codex/hooks.json) | the runtime gate, written by `evidence-layer init claude` and `init codex` |
+   | [`scripts/standalone.mjs`](scripts/standalone.mjs) | `npm run standalone`: copies this project out as a repository of its own - see below. Not part of the setup; the copy leaves it behind |
+
+   The setup is for a project that is its own repository, and inside
+   evidence-layer's checkout this one is not. git answers every question from
+   the top level, which here is evidence-layer's, so both hosts' hooks would
+   check evidence-layer's `review.md` and keep their state in its `.git` - the
+   Codex command would not even find the package, which it looks for from
+   there - and a sealed run would fingerprint the whole checkout. So the
+   runtime gate and the seal are shown in a copy (step 0); every other step
+   runs from here.
    | [`docs/decisions/0001-example.md`](docs/decisions/0001-example.md) | two invariants, one enforced by a command and one by "a human" |
 
 ## The tour
@@ -34,9 +44,12 @@ says otherwise. Each takes seconds.
 
 ### 0. Gather, write, check - the loop this project is set up for
 
+In a copy that is a repository of its own, for the reason above:
+
 ```bash
 cd examples/plain-node-project
-npm install                               # links this checkout's evidence-layer
+npm run standalone                        # copies it out, links this checkout, commits; prints the path
+cd <the path it printed>
 npm run evidence -- --base HEAD           # writes evidence.local.md and seals the run
 ```
 
@@ -57,7 +70,12 @@ Every claim passes, every block is the one the run wrote, and the code is what
 it was gathered from. Now change `index.js` and run it again: the same review
 fails with `seal/stale`, naming the file - evidence about yesterday's code does
 not back a claim about today's. [`test/example.test.ts`](../../test/example.test.ts)
-runs exactly this loop on a standalone copy of the project.
+runs exactly this loop on a copy `npm run standalone` made.
+
+Start Claude Code or Codex in the copy and the runtime gate works on the copy:
+a `review.md` the session writes there, or the claims in its final message,
+are checked when the turn ends. Codex runs a project's hooks only once you
+trust them, in `/hooks`.
 
 ### 1. A review whose claims are backed
 

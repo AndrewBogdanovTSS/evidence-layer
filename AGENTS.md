@@ -32,6 +32,10 @@ action ref the README and the example's workflow show
 (`uses: ...evidence-layer@vX.Y.Z`) to package.json's version; `pnpm release`
 rewrites those in the release commit, so only a bump by hand has to.
 
+`examples/plain-node-project/` is a template here, not a repository: git, and
+so its hooks and its seal, answer for this checkout. `npm run standalone` in it
+makes the copy where they work, and `test/example.test.ts` runs on that copy.
+
 ## Rules the tests enforce
 
 - `src/core/` imports only `node:*` builtins and its own siblings - no project's

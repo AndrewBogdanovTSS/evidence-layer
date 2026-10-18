@@ -4,11 +4,15 @@
  * claims passes `claims --seal`, and editing the code afterwards makes the
  * same review fail - by name, with the file that changed.
  *
+ * The copy is made by the project's own `npm run standalone`, because inside
+ * this checkout the project is not a repository: git, and so every hook and
+ * seal, would answer for evidence-layer instead.
+ *
  * This is what `examples/plain-node-project/README.md` tells a reader to do,
  * so a step the README describes that stopped working fails here first.
  */
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,18 +22,21 @@ import { sh } from './helpers/git'
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const BIN = join(root, 'dist', 'bin', 'evidence-layer.mjs')
 
-/** The example as someone would have it: its own repository, evidence-layer installed. */
+const EXAMPLE = join(root, 'examples', 'plain-node-project')
+const standalone = (...args: string[]) =>
+  spawnSync(process.execPath, [join(EXAMPLE, 'scripts', 'standalone.mjs'), ...args], { cwd: EXAMPLE, encoding: 'utf8' })
+
+/**
+ * The example as someone would have it - its own repository, evidence-layer
+ * installed - made by the project's own `npm run standalone`, so the script
+ * the README sends a reader to is the one these tests run on.
+ */
 function standaloneCopy(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'el-example-'))
-  cpSync(join(root, 'examples', 'plain-node-project'), dir, { recursive: true })
-  rmSync(join(dir, 'node_modules'), { recursive: true, force: true })
-  sh(dir, 'init', '-q')
+  const dir = join(mkdtempSync(join(tmpdir(), 'el-example-')), 'widget-counter')
+  const res = standalone(dir)
+  expect(res.status, res.stderr).toBe(0)
   sh(dir, 'config', 'user.email', 't@t')
   sh(dir, 'config', 'user.name', 't')
-  sh(dir, 'add', '-A')
-  sh(dir, 'commit', '-qm', 'init')
-  mkdirSync(join(dir, 'node_modules'))
-  symlinkSync(root, join(dir, 'node_modules', 'evidence-layer'))
   return dir
 }
 
@@ -37,6 +44,32 @@ const claims = (dir: string) => {
   const res = spawnSync(process.execPath, [BIN, 'claims', 'review.md', '--seal', '--format', 'json'], { cwd: dir, encoding: 'utf8' })
   return { status: res.status, findings: (JSON.parse(res.stdout) as { findings: { level: string; code: string; detail: string }[] }).findings }
 }
+
+describe('npm run standalone', () => {
+  it('makes a repository of its own, with the checkout linked in and nothing of the template left over', () => {
+    const dir = standaloneCopy()
+    // Inside the checkout the answer is evidence-layer's top level, which is
+    // why the copy exists: every hook and seal asks git this.
+    expect(sh(EXAMPLE, 'rev-parse', '--show-toplevel')).toBe(root)
+    expect(realpathSync(sh(dir, 'rev-parse', '--show-toplevel'))).toBe(realpathSync(dir))
+    expect(sh(dir, 'status', '--porcelain')).toBe('')
+    expect(realpathSync(join(dir, 'node_modules', 'evidence-layer'))).toBe(realpathSync(root))
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { scripts: Record<string, string>; devDependencies: Record<string, string> }
+    expect(pkg.devDependencies['evidence-layer']).toBe('file:' + root)
+    expect(pkg.scripts.standalone).toBeUndefined()
+    expect(existsSync(join(dir, 'scripts', 'standalone.mjs'))).toBe(false)
+    expect(existsSync(join(dir, 'evidence.local.md'))).toBe(false)
+  })
+
+  it('refuses a directory that already has something in it, and copies nothing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'el-example-taken-'))
+    writeFileSync(join(dir, 'keep.txt'), 'mine\n')
+    const res = standalone(dir)
+    expect(res.status).toBe(2)
+    expect(res.stderr).toContain('not empty')
+    expect(readdirSync(dir)).toEqual(['keep.txt'])
+  })
+})
 
 describe('examples/plain-node-project, end to end', () => {
   it('gathers with counts, passes a review of the suggested claims, and fails it once the code changes', () => {

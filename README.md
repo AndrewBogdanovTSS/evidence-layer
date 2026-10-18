@@ -514,6 +514,12 @@ purpose: [`examples/plain-node-project/README.md`](examples/plain-node-project/R
 is the guided version, and the project is set up the way one using this
 package should be - evidence script, CI action, runtime-gate hooks.
 
+Inside this checkout it is a template, not a repository: git answers from
+evidence-layer's top level, so its hooks would check evidence-layer's
+`review.md` and its seal would fingerprint the whole checkout.
+`npm run standalone` in it copies it out as a repository of its own, with this
+checkout linked in - the copy `test/example.test.ts` runs on.
+
 ## The boundary is a test, not an intention
 
 Nothing under `src/core/` may import anything but Node builtins and its own
@@ -530,7 +536,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **423 tests** across **34 files**, and that sentence is checked
+The suite is **425 tests** across **34 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
