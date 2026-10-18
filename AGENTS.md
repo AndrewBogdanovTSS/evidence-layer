@@ -40,8 +40,12 @@ remove tests, update that sentence in the same change.
 - Text from a review, a receipt or a host's input never reaches a shell: call
   git through `git()` / `gitCapture()` in `src/core/proc.ts`, never by
   concatenating it into `run()` or `capture()`. `test/injection.test.ts` holds
-  `receipt` to it with hostile branch names and paths; nothing scans for a new
-  concatenation, so this one is on review.
+  `receipt` to it with hostile branch names and paths, and
+  `test/host-injection.test.ts` holds every hook event of both hosts to it,
+  with a payload in each field the agent writes and a working directory named
+  `$(...)`. `init` refuses a `--review` value a shell would interpret, since it
+  goes onto the hook's command line. Nothing scans for a new concatenation, so
+  a new call site is on review.
 - Five outcomes, never collapsed: `pass`, `warning`, `error`, `unverifiable`,
   `flaky`. A check that could not run is `unverifiable`, not a pass. Exit codes:
   0 clean, 1 error, 2 bad usage, 3 flaky - except `evidence-layer hook`, which

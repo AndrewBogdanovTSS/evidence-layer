@@ -58,6 +58,9 @@ type Settings = { hooks?: Record<string, MatcherGroup[]>; [key: string]: unknown
 export const OWNED_COMMAND_RE =
   /(?:evidence-layer(?:\.mjs)?["']?\s+hook\s+(?:claude|codex)|evidence-layer\/scripts\/run-hook\.mjs["']?)\s+(?:session-start|pre-tool-use|stop)\b/
 
+/** What `--review` may hold: paths a shell has no reason to touch - no spaces, quotes, `$`, backticks or separators. */
+export const REVIEW_PATHS_RE = /^[\w./,@+-]+$/
+
 /** Everything in the hook command before the event name. */
 export const LAUNCHER = 'node "$CLAUDE_PROJECT_DIR/node_modules/evidence-layer/dist/bin/evidence-layer.mjs" hook claude'
 export const SELF_LAUNCHER = 'node "$CLAUDE_PROJECT_DIR/plugins/evidence-layer/scripts/run-hook.mjs"'
@@ -153,7 +156,17 @@ export function run(argv: string[]): void {
   }
 
   const flags: string[] = []
-  if (typeof args.review === 'string') flags.push('--review ' + JSON.stringify(args.review))
+  if (typeof args.review === 'string') {
+    // The value goes onto a command line the host hands to its shell - on
+    // every session, for everyone who checks the file out. Quoting it would
+    // mean getting POSIX sh and cmd.exe quoting both right; a review path
+    // needs neither, so anything a shell would interpret is refused instead.
+    if (!REVIEW_PATHS_RE.test(args.review)) {
+      console.error('--review takes comma-separated paths of letters, digits and . _ / , @ + - only; nothing was written')
+      process.exit(EXIT.usage)
+    }
+    flags.push('--review ' + args.review)
+  }
   for (const flag of ['fail-closed', 'keep-blocking', 'strict']) if (args[flag] === true) flags.push('--' + flag)
 
   const own = isOwnRepository(repo)
