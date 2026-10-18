@@ -22,8 +22,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { EXIT, capture, help, parseArgs, report, run, usage } from '../src/index'
+import { EXIT, capture, git, help, parseArgs, report, run, usage } from '../src/index'
 import type { Finding } from '../src/index'
+import { ACTION_REF_FILES, pinActionRefs } from './action-refs'
 
 const HELP = `
 pnpm release [<bump>] [--dry-run] [--preid <id>] [--skip-checks]
@@ -229,20 +230,41 @@ async function main(): Promise<void> {
     process.exit(EXIT.failed)
   }
 
+  const message = 'chore(release): v' + target
   if (dryRun) {
     console.log('Would then run:')
-    console.log('  pnpm version ' + spec + (preid ? ' --preid ' + preid : ''))
+    console.log('  pnpm version ' + spec + (preid ? ' --preid ' + preid : '') + ' --no-git-tag-version')
+    console.log('  point ' + ACTION_REF_FILES.join(', ') + ' at @v' + target)
+    console.log('  git commit -m "' + message + '" && git tag -a v' + target)
     console.log('  git push --follow-tags')
     console.log('\nNothing was changed.\n')
     process.exit(EXIT.ok)
   }
 
-  const bump = run(
-    'pnpm version ' + spec + (preid ? ' --preid ' + preid : '') + ' --message "chore(release): v%s"',
-    { cwd: repo, timeoutMs: 120_000 },
-  )
+  // Bumped without the commit and tag `pnpm version` would make, so the
+  // action refs go into the same commit: one that still recommended the last
+  // release would fail `check:docs` on the very commit the tag points at.
+  const bump = run('pnpm version ' + spec + (preid ? ' --preid ' + preid : '') + ' --no-git-tag-version', {
+    cwd: repo,
+    timeoutMs: 120_000,
+  })
   console.log(bump.output)
   if (bump.exitCode !== 0) process.exit(EXIT.failed)
+
+  const pinned = pinActionRefs(repo, pkg.name, target)
+  if (pinned.length > 0) console.log('Pointed ' + pinned.join(', ') + ' at @v' + target)
+  for (const step of [
+    ['add', 'package.json', ...pinned],
+    ['commit', '-m', message],
+    ['tag', '-a', 'v' + target, '-m', message],
+  ]) {
+    const res = git(step, repo)
+    if (res.exitCode !== 0) {
+      console.error('`git ' + step[0] + '` failed:\n' + (res.stderr || res.stdout).trim())
+      console.error('Nothing was pushed. Undo with:  git reset --hard HEAD' + (step[0] === 'tag' ? '~1' : '') + '\n')
+      process.exit(EXIT.failed)
+    }
+  }
 
   // `--follow-tags` pushes the commit and the annotated tag together. Two
   // separate pushes can leave a tag behind on a failure, and a tag that never

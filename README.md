@@ -405,7 +405,9 @@ Every finding that is not a pass becomes an annotation on its line, titled by
 its [code](docs/evidence-layer.md#machine-readable-output), and the job
 summary lists them. The action runs the evidence-layer the project installed,
 so CI and a laptop give the same verdict; with none installed, it fetches the
-exact version the action was released with - never `latest`. Its outputs are
+exact version the action was released with - never `latest`. The ref above is
+the current release: `pnpm release` rewrites it, and `check:docs` fails when it
+names any other. Its outputs are
 `exit-code` and `conclusion` (`success`, `failure`, `flaky`, `misconfigured`),
 and a step with nothing to check, a missing review or an unusable package is
 `misconfigured`, never a pass.
@@ -528,7 +530,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **420 tests** across **33 files**, and that sentence is checked
+The suite is **423 tests** across **34 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

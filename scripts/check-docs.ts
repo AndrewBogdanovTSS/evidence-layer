@@ -1,5 +1,5 @@
 /**
- * `pnpm check:docs` - does this repository's README (and its reason-code table) still tell the truth?
+ * `pnpm check:docs` - does this repository's README (with its reason-code table, and the action release the example's workflow pins) still tell the truth?
  *
  * The consumer-side half of the layer, and the worked example of where the
  * line falls: every claim below is a fact about *this* package - its engine
@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { CODES, exitCodeFor, help, parseArgs, report, run } from '../src/index'
 import type { Finding } from '../src/index'
 import { parseTestCount } from '../src/adapters/node-default'
+import { ACTION_REF_FILES, findActionRefs } from './action-refs'
 
 const HELP = `
 pnpm check:docs [--repo <path>] [--fast]
@@ -242,6 +243,40 @@ function checkHostSupport(readme: string, repo: string): Finding[] {
 }
 
 /**
+ * The action release the README and the example's workflow tell a reader to
+ * write is this package's version. A pinned ref is the right thing to show,
+ * and the wrong thing to leave behind: written once, it keeps recommending the
+ * release it was written in. `pnpm release` rewrites them, so on the release
+ * commit and between releases they match; a bump by hand that forgets them
+ * fails here, by file and line.
+ */
+function checkActionRefs(repo: string, pkg: Pkg): Finding[] {
+  const refs = findActionRefs(repo, pkg.name)
+  if (refs.length === 0) {
+    return [
+      {
+        level: 'warning',
+        claim: 'the README shows which release of the action to use',
+        detail: 'no `uses: ...' + pkg.name + '@v...` line found in ' + ACTION_REF_FILES.join(' or '),
+        file: 'README.md',
+      },
+    ]
+  }
+  return refs.map((ref): Finding => ({
+    level: ref.version === pkg.version ? 'pass' : 'error',
+    claim: 'the action ref on the page names this release',
+    detail:
+      ref.version === pkg.version
+        ? '@v' + ref.version
+        : 'names @v' + ref.version + ', package.json is ' + pkg.version + ' - `pnpm release` rewrites these, a bump by hand has to as well',
+    file: ref.file,
+    line: ref.line,
+    expected: pkg.version,
+    observed: ref.version,
+  }))
+}
+
+/**
  * The reason-code table in `docs/evidence-layer.md` lists every code in
  * `src/core/codes.ts`, and nothing else. A code a consumer cannot look up is a
  * code nobody can rely on; a documented code no check produces is a promise
@@ -289,6 +324,7 @@ function main(): void {
     checkCommands(readme, repo, pkg),
     checkLinks(readme, repo),
     ...checkHostSupport(readme, repo),
+    ...checkActionRefs(repo, pkg),
     ...checkCodeTable(repo),
   ]
 

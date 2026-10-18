@@ -55,7 +55,10 @@ in the story. A README is a pile of assertions written once and trusted forever.
 This checks them: the test count in the README against the suite the runner
 actually reports, the engine range against `package.json`, the "zero runtime
 dependencies" claim against the dependency list, the documented commands
-against the CLI's own `--help`, and every relative link against the filesystem.
+against the CLI's own `--help`, every relative link against the filesystem,
+and the action release the README and the example's workflow pin against the
+package's version - a ref written once keeps recommending the release it was
+written in, so `pnpm release` rewrites it and this fails when it was not.
 
 Watch the command row when `dist/` is not on disk. It reports `unverifiable` -
 not a pass. **Three outcomes, never two.** A checker that reports success when it

@@ -27,7 +27,10 @@ the gate is inactive until it is built.
 
 `pnpm check:docs` (part of `check:all`) compares the README's sentence "The
 suite is **N tests** across **M files**" with the real suite. When you add or
-remove tests, update that sentence in the same change.
+remove tests, update that sentence in the same change. It also holds the
+action ref the README and the example's workflow show
+(`uses: ...evidence-layer@vX.Y.Z`) to package.json's version; `pnpm release`
+rewrites those in the release commit, so only a bump by hand has to.
 
 ## Rules the tests enforce
 
