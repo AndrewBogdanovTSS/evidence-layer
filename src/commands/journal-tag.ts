@@ -13,12 +13,13 @@
  * Exit codes: 0 tagged - 1 unknown id - 2 bad usage.
  */
 import { join } from 'node:path'
-import { EXIT, help, parseArgs, tagEntry, usage } from '../index'
+import { EXIT, help, parseArgs, stateDir, tagEntry, usage } from '../index'
 
 const HELP = `
 evidence-layer journal tag <entry-id> real|false          # a check's finding was real or false
 evidence-layer journal tag <entry-id> --caught yes|no     # could an existing check have caught this miss
 evidence-layer journal tag <entry-id> ... [--repo <path>] # default repo is the current directory
+evidence-layer journal tag <entry-id> real|false --gate   # a runtime gate block, in this checkout's gate journal
 `
 
 export function run(argv: string[]): void {
@@ -26,7 +27,8 @@ export function run(argv: string[]): void {
   if (args.help) help(HELP)
 
   const repo = typeof args.repo === 'string' ? args.repo : process.cwd()
-  const journalPath = join(repo, 'journal.jsonl')
+  const gateState = args.gate === true ? stateDir(repo) : null
+  const journalPath = gateState ? join(gateState, 'journal.jsonl') : join(repo, 'journal.jsonl')
 
   const [id, verdict] = args._ as string[]
   if (!id) usage(HELP)

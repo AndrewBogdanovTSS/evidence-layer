@@ -9,13 +9,17 @@
  * whichever project is running it, never to this package's own directory.
  */
 import { join } from 'node:path'
-import { help, parseArgs, readJournal, summariseByCheck } from '../index'
+import { help, parseArgs, readJournal, stateDir, summariseByCheck, summariseGate } from '../index'
 
 const HELP = `
-evidence-layer journal report [--repo <path>]
+evidence-layer journal report [--repo <path>] [--include-gate]
 
 Prints the accumulated findings-and-misses journal: per-check real/false/
 untagged counts, and open misses awaiting a couldHaveCaught tag.
+
+  --include-gate   also the runtime gate's journal, kept in this checkout's git
+                   directory: blocks (and how many were tagged real or false),
+                   clean allows, allows without a clean check, refused writes
 `
 
 export function run(argv: string[]): void {
@@ -59,4 +63,23 @@ export function run(argv: string[]): void {
     console.log(m.commit.slice(0, 10) + '  missed by ' + m.check + '  [' + tag + ']  id=' + m.id)
   }
   console.log('')
+
+  if (args['include-gate'] === true) {
+    const state = stateDir(repo)
+    const gatePath = state ? join(state, 'journal.jsonl') : null
+    const g = summariseGate(gatePath ? readJournal(gatePath) : [])
+    console.log('Runtime gate (this checkout only)')
+    console.log('---------------------------------')
+    if (g.blocks + g.cleanAllows + g.degradedAllows + g.denies === 0) {
+      console.log('(nothing recorded - the gate has not run in this checkout)')
+    } else {
+      console.log(
+        g.blocks + ' blocked stops (' + g.realBlocks + ' tagged real, ' + g.falseBlocks + ' false), ' +
+          g.cleanAllows + ' clean, ' + g.degradedAllows + ' let through without a clean check, ' +
+          g.denies + ' refused writes' + (g.medianMs !== null ? ', median ' + g.medianMs + ' ms' : ''),
+      )
+      console.log('Tag a block with: evidence-layer journal tag <id> real|false --gate')
+    }
+    console.log('')
+  }
 }

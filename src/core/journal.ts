@@ -227,3 +227,40 @@ export function summariseByCheck(journalPath: string): JournalSummary[] {
     flaky: list.filter((e) => e.outcome === 'flaky').length,
   }))
 }
+
+export interface GateSummary {
+  /** Stops the gate blocked, and how many of those were tagged real or false afterwards. */
+  blocks: number
+  realBlocks: number
+  falseBlocks: number
+  /** Stops it let through after a check with no errors. */
+  cleanAllows: number
+  /** Stops it let through without a clean check: retries ran out, it could not run, or no snapshot. */
+  degradedAllows: number
+  /** File writes into the ledger it refused. */
+  denies: number
+  /** Median time a decision took, in ms, over the entries that recorded one. */
+  medianMs: number | null
+}
+
+/**
+ * The runtime gate's own counts, from its journal. Operational numbers - how
+ * often it blocked, how often it let something through unchecked - not a rate
+ * of anything: a stop it never saw, it cannot count.
+ */
+export function summariseGate(entries: JournalEntry[]): GateSummary {
+  const gate = entries.filter((e) => e.gate !== undefined)
+  const blocks = gate.filter((e) => e.gate!.action === 'block')
+  const allows = gate.filter((e) => e.gate!.action === 'allow')
+  const times = gate.map((e) => e.gate!.elapsedMs).filter((t) => t > 0).sort((a, b) => a - b)
+  return {
+    blocks: blocks.length,
+    realBlocks: blocks.filter((e) => e.verified === 'real').length,
+    falseBlocks: blocks.filter((e) => e.verified === 'false').length,
+    cleanAllows: allows.filter((e) => e.gate!.outcome === 'checked' && e.outcome !== 'error').length,
+    degradedAllows: allows.filter((e) => e.gate!.outcome !== 'checked' || e.outcome === 'error').length,
+    denies: gate.filter((e) => e.gate!.action === 'deny').length,
+    medianMs: times.length > 0 ? times[Math.floor(times.length / 2)]! : null,
+  }
+}
+

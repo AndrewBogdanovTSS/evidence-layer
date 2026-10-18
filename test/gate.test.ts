@@ -290,3 +290,18 @@ describe('pre-write', () => {
     expect(readFileSync(join(dir, '.git', 'evidence-layer', 'journal.jsonl'), 'utf8')).toContain('gate:pre-write')
   })
 })
+
+describe('the gate journal, summarised', () => {
+  it('counts blocks, clean allows and degraded allows separately', async () => {
+    const { summariseGate } = await import('../src/core/journal')
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    stop(dir)
+    stop(dir)
+    stop(dir)
+    writeFileSync(join(dir, 'review.md'), HONEST)
+    stop(dir)
+    expect(summariseGate(gateJournal(dir))).toMatchObject({ blocks: 2, cleanAllows: 1, degradedAllows: 1, denies: 0 })
+  })
+})

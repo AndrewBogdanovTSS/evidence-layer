@@ -131,3 +131,21 @@ checkout producing a wrong verdict.
 - The launcher decides whether the package is new enough by asking it - the
   package's `evidence-layer/package.json` must declare `"evidenceLayer":
   { "hookProtocol": 1 }` - not by comparing version strings.
+
+## Observed in a live session
+
+Claude Code 2.1.302, `claude -p` with `--plugin-dir plugins/evidence-layer`, a
+scratch project with the package linked into `node_modules`, 2026-10-18:
+
+1. Asked to write a review containing only an unbacked claim, the agent
+   declined after reading the SessionStart context, and offered grounded
+   alternatives instead - before any Stop ran.
+2. Told the claim was a deliberate test, it wrote the line and tried to stop.
+   The gate blocked (34 ms) with "carries no grounding tag"; the agent added
+   `**Grounding**: UNVERIFIED`, stopped again, and the gate allowed it (29 ms).
+   Both decisions are in the gate journal as `checked/block/error` and
+   `checked/allow/pass`.
+
+One run, one project, one model: evidence that the loop closes as designed,
+not a measure of how often it does.
+

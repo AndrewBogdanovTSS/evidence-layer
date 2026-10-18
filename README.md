@@ -291,7 +291,9 @@ if it cannot run, the session continues and is told why. `--keep-blocking`,
 `--fail-closed` and `--strict` (both, and `unverifiable` blocks too) are the
 stricter trades. Every decision - including each allow that checked nothing,
 which is never recorded as a pass - goes into a journal in the checkout's git
-directory, not the committed one.
+directory, not the committed one; `npx evidence-layer journal report
+--include-gate` counts blocks, clean stops and stops let through without a
+clean check, and `journal tag <id> real|false --gate` marks a block.
 
 With the package installed in the project:
 
@@ -407,7 +409,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **355 tests** across **26 files**, and that sentence is checked
+The suite is **356 tests** across **26 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
