@@ -76,6 +76,7 @@ function checkFixtures(repo: string): Finding[] {
     { file: 'bad-claims.md', exit: EXIT.failed },
     { file: 'phantom-artifact.md', exit: EXIT.failed },
     { file: 'shotgun-artifact.md', exit: EXIT.ok },
+    { file: 'predicate-mismatch.md', exit: EXIT.failed },
   ]
 
   const findings = expectations.map(({ file, exit }): Finding => {

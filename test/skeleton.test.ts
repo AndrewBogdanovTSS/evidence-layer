@@ -16,7 +16,7 @@ describe('generateClaimSkeleton', () => {
   it('emits a Claim/Grounding/artifact triple per artifact', () => {
     const skeleton = generateClaimSkeleton([artifact('pnpm test', 0, 'tests-aaaaaa')])
     expect(skeleton).toContain('**Claim**:')
-    expect(skeleton).toContain('**Grounding**: VERIFIED[tests-aaaaaa]')
+    expect(skeleton).toContain('**Grounding**: VERIFIED[tests-aaaaaa: exit=0]')
     expect(skeleton).toContain('```artifact:tests-aaaaaa@f8ae76a')
   })
 
@@ -64,6 +64,33 @@ describe('generateClaimSkeleton', () => {
     const skeleton = generateClaimSkeleton([{ ...artifact('pnpm test', 124, 'tests-ffffff'), timedOut: true }])
     const findings = lintClaims(skeleton, 'skeleton.md')
     expect(findings.some((f) => f.level === 'error')).toBe(false)
+  })
+
+  it('fills in predicates read off the run, which the linter then holds the artifact to', () => {
+    const output = 'ok\n[SUMMARY tests: passed=71 failed=0 skipped=0 todo=0]'
+    const skeleton = generateClaimSkeleton([{ ...artifact('pnpm test', 0, 'tests-abcdef'), output }])
+    expect(skeleton).toContain('**Grounding**: VERIFIED[tests-abcdef: exit=0, passed>=71, failed=0]')
+    expect(lintClaims(skeleton, 'skeleton.md').filter((f) => f.level === 'error')).toEqual([])
+  })
+
+  it('writes predicates for a failing run that the linter accepts as a failure claim', () => {
+    const output = 'boom\n[SUMMARY tests: passed=3 failed=2 skipped=0 todo=0]'
+    const skeleton = generateClaimSkeleton([{ ...artifact('pnpm test', 1, 'tests-abcdef'), output }])
+    expect(skeleton).toContain('VERIFIED[tests-abcdef: exit=1, passed>=3, failed=2]')
+    expect(lintClaims(skeleton, 'skeleton.md').filter((f) => f.level === 'error')).toEqual([])
+  })
+
+  it('writes lint predicates from a lint summary', () => {
+    const output = '[SUMMARY lint: files=7 ignored=0 errors=0 warnings=0]'
+    const skeleton = generateClaimSkeleton([{ ...artifact('pnpm lint', 0, 'lint-abcdef'), output }])
+    expect(skeleton).toContain('VERIFIED[lint-abcdef: exit=0, files=7, ignored=0, errors=0, warnings=0]')
+    expect(lintClaims(skeleton, 'skeleton.md').filter((f) => f.level === 'error')).toEqual([])
+  })
+
+  it('writes only the stop reason for a run that never finished', () => {
+    const skeleton = generateClaimSkeleton([{ ...artifact('pnpm test', 137, 'tests-abcdef'), stopped: 'killed SIGKILL' as const }])
+    expect(skeleton).toContain('VERIFIED[tests-abcdef: stopped=killed]')
+    expect(lintClaims(skeleton, 'skeleton.md').filter((f) => f.level === 'error')).toEqual([])
   })
 
   it('round-trips through the artifact parser - the skeleton it writes is what the checker reads', () => {

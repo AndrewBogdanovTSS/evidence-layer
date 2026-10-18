@@ -28,6 +28,12 @@
  * An honest UNVERIFIED is worth more than a decorative VERIFIED: it tells the
  * reader exactly where the review is thin.
  *
+ * An addressed tag can also carry predicates - `VERIFIED[tests-a3f91c: exit=0,
+ * failed=0, passed>=71]` - which say outright which numbers on the artifact the
+ * claim rests on, instead of leaving them to be inferred from its wording. See
+ * `predicates.ts`. A bracket that is neither a bare id nor an id with
+ * predicates is an error, never a quiet fall back to bare `VERIFIED`.
+ *
  * It does check the outcome, where the outcome is mechanical: a claim that
  * reads as success cannot rest on a run that exited non-zero, a run that was
  * stopped before it finished backs only "did not complete", and a lint or test
@@ -42,9 +48,10 @@
  * that the artifact exists, was collected here, and was pointed at on purpose
  * rather than left nearby.
  */
-import { classifyCommand, fencedLineNumbers, findArtifactBlocks, parseWorkSummary, workDone } from './artifact'
-import type { StopReason } from './artifact'
+import { ARTIFACT_ID_RE, classifyCommand, fencedLineNumbers, findArtifactBlocks, parseWorkSummary, workDone } from './artifact'
+import type { ArtifactBlock, StopReason } from './artifact'
 import type { Finding } from './cli'
+import { evaluatePredicates, parsePredicates } from './predicates'
 
 /** How far below a legacy (unaddressed) VERIFIED tag its artifact block is allowed to sit. */
 export const ARTIFACT_WINDOW = 15
@@ -56,9 +63,13 @@ export const GRADES = ['VERIFIED', 'DOCUMENTED', 'INFERRED', 'UNVERIFIED'] as co
 export type Grade = (typeof GRADES)[number]
 
 const CLAIM_RE = /^\s*\*\*Claim\*\*:/
-// Built from GRADES so the list of grades exists in exactly one place, with an
-// optional `[id]` suffix for the addressed VERIFIED form.
-const GRADE_RE = new RegExp('\\b(' + GRADES.join('|') + ')(?:\\[([a-z]+-[0-9a-f]{6})\\])?')
+// Built from GRADES so the list of grades exists in exactly one place. The
+// bracket is captured whole - closed or not - and parsed separately, so that a
+// bracket which is not a valid address is reported as one rather than matching
+// nothing and leaving the tag to read as bare VERIFIED.
+const GRADE_RE = new RegExp('\\b(' + GRADES.join('|') + ')(\\[[^\\]\\n]*\\]?)?')
+// `[<id>]` or `[<id>: <predicates>]`, the id in exactly the grammar artifact.ts gives it.
+const ADDRESS_RE = new RegExp('^\\[(' + ARTIFACT_ID_RE.source.slice(1, -1) + ')(?:\\s*:(.*))?\\]$')
 // A citation is anything a reader can go and open: a URL, a spec section, an
 // issue id, or a file in this repository. The last form matters here - a project
 // without an issue tracker still has documents, and refusing to accept them
@@ -193,6 +204,12 @@ interface Claim {
   grade?: Grade
   /** Present only for the addressed `VERIFIED[id]` form. */
   gradeId?: string
+  /** The text after the colon in `VERIFIED[id: ...]`, when there is one. */
+  gradePredicates?: string
+  /** The bracket after VERIFIED, as written, when it is not a valid address. */
+  gradeMalformed?: string
+  /** The bracket after VERIFIED, as written - stripped before the claim's wording is read. */
+  gradeBracket?: string
   /** 0-based line the grade was found on. */
   gradeLine?: number
 }
@@ -208,8 +225,19 @@ export function findClaims(lines: string[], fenced: Set<number>): Claim[] {
       const found = GRADE_RE.exec(lines[j]!)
       if (found) {
         claim.grade = found[1] as Grade
-        claim.gradeId = found[2]
         claim.gradeLine = j
+        const bracket = found[2]
+        // Only VERIFIED is addressed; a bracket after any other grade is prose.
+        if (bracket !== undefined && claim.grade === 'VERIFIED') {
+          claim.gradeBracket = bracket
+          const address = ADDRESS_RE.exec(bracket)
+          if (address) {
+            claim.gradeId = address[1]
+            if (address[2] !== undefined) claim.gradePredicates = address[2]
+          } else {
+            claim.gradeMalformed = bracket
+          }
+        }
         break
       }
     }
@@ -239,6 +267,24 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     })
   }
 
+  // One id, two different blocks: at most one of them is what the id names, and
+  // a claim resolving the id would be checked against whichever came first.
+  // Identical copies are fine - the same block pasted twice is still that block.
+  for (const [id, blocks] of groupById(artifacts)) {
+    const bodies = new Set(blocks.map((b) => b.info + '\n' + b.body.join('\n')))
+    if (bodies.size > 1) {
+      findings.push({
+        level: 'error',
+        claim: 'artifact ' + id + ' is one artifact',
+        detail:
+          id + ' labels ' + bodies.size + ' different blocks (lines ' + blocks.map((b) => b.start + 1).join(', ') +
+          ') - an id is an address, and an address names one thing. Regenerate the evidence rather than editing a block',
+        file,
+        line: blocks[1]!.start + 1,
+      })
+    }
+  }
+
   // Legacy proximity mode may still consume an artifact positionally, so two
   // unaddressed VERIFIED tags cannot silently share one block either.
   const consumedByPosition = new Set<number>()
@@ -261,7 +307,23 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
 
     const gradeLine = claim.gradeLine!
     // The grounding line can carry part of the sentence ("VERIFIED[id] - typecheck passes").
-    const claimText = gradeLine === claim.line ? claim.text : claim.text + ' ' + lines[gradeLine]
+    // The bracket itself is not part of it: `passed>=71` inside a tag is a
+    // predicate, not the word "passed", and must not make a failure claim read
+    // as a success claim.
+    const sentence = gradeLine === claim.line ? claim.text : claim.text + ' ' + lines[gradeLine]
+    const claimText = claim.gradeBracket ? sentence.replace(claim.gradeBracket, '') : sentence
+
+    if (claim.grade === 'VERIFIED' && claim.gradeMalformed !== undefined) {
+      findings.push({
+        level: 'error',
+        claim: claim.text,
+        detail:
+          'VERIFIED' + claim.gradeMalformed + ' is not an address - write VERIFIED[<kind>-<6 hex>] or ' +
+          'VERIFIED[<kind>-<6 hex>: <key><op><value>, ...]',
+        ...where,
+      })
+      return
+    }
 
     if (claim.grade === 'VERIFIED' && claim.gradeId) {
       const artifact = artifacts.find((a) => a.id === claim.gradeId)
@@ -293,15 +355,35 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       usage.count += 1
       usage.lastLine = claim.line
       idUsage.set(claim.gradeId, usage)
+      const parsed = claim.gradePredicates !== undefined ? parsePredicates(claim.gradePredicates) : undefined
+      if (parsed && parsed.problems.length > 0) {
+        findings.push({
+          level: 'error',
+          claim: claim.text,
+          detail: 'VERIFIED[' + claim.gradeId + '] has predicates that cannot be checked: ' + parsed.problems.join('; '),
+          ...where,
+        })
+        return
+      }
       const problem = outcomeProblem(artifact, claimText, opts)
       if (problem) {
         findings.push({ level: 'error', claim: claim.text, detail: 'VERIFIED[' + claim.gradeId + '] ' + problem, ...where })
         return
       }
+      // In addition to the outcome rules, never instead of them: a weak
+      // predicate (`exit=0` over a run that checked nothing) does not get a
+      // claim past a rule it would otherwise fail.
+      const unmet = parsed ? evaluatePredicates(parsed.predicates, artifact) : []
+      if (unmet.length > 0) {
+        findings.push({ level: 'error', claim: claim.text, detail: 'VERIFIED[' + claim.gradeId + '] ' + unmet.join('; '), ...where })
+        return
+      }
       findings.push({
         level: 'pass',
         claim: claim.text,
-        detail: 'VERIFIED by `' + artifact.command + '` (exit ' + artifact.exitCode + '), addressed as ' + claim.gradeId,
+        detail:
+          'VERIFIED by `' + artifact.command + '` (exit ' + artifact.exitCode + '), addressed as ' + claim.gradeId +
+          (parsed ? ', and ' + parsed.predicates.map((p) => p.text).join(', ') + ' hold' : ''),
         ...where,
       })
       return
@@ -397,6 +479,15 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
 
   findings.push(...lintProse(lines, fenced, file))
   return findings
+}
+
+function groupById(artifacts: ArtifactBlock[]): Map<string, ArtifactBlock[]> {
+  const groups = new Map<string, ArtifactBlock[]>()
+  for (const a of artifacts) {
+    if (!a.id) continue
+    groups.set(a.id, [...(groups.get(a.id) ?? []), a])
+  }
+  return groups
 }
 
 /**

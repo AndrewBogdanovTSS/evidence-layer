@@ -202,6 +202,29 @@ rules are mechanical enough to check without reading the output for sense:
   `lintClaims(md, file, { requireWorkSummary: true })` also rejects a success
   claim over a lint or test artifact that carries no summary.
 
+Those rules read the claim's wording, which is deliberately narrow and only in
+English. A claim can also say outright which numbers it rests on, as
+predicates inside the tag:
+
+```markdown
+**Claim**: the suite runs 71 passing tests.
+**Grounding**: VERIFIED[tests-a3f91c: exit=0, passed>=71, failed=0]
+```
+
+Every key is read off the cited block, so a predicate checks the same way on
+any machine: `exit`, `stopped` (`none`, `timeout`, `overflow`, `killed`), and
+the work-summary counts - `passed failed skipped todo` on a test run, `files
+ignored errors warnings` on a lint run. Values are whole numbers; `stopped`
+takes only `=` and `!=`. An unknown key, a fragment that does not parse, a key
+given twice or a count the artifact does not carry is an error, never dropped,
+and so is a `VERIFIED[...]` bracket that is not an address at all - it does not
+fall back to bare `VERIFIED`. The skeleton writes the predicates for you, read
+off the run it gathered. There is no duration key: how long a run took is not
+a property of the code.
+
+Two different blocks under one id are an error too: an id is an address, and an
+address names one thing.
+
 `runAsync` is the runner for those steps. A timeout kills the whole process
 tree - a process group on POSIX, `taskkill /T` on Windows - rather than only
 the direct child, and it reports within a grace period even when some process
@@ -286,7 +309,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **256 tests** across **21 files**, and that sentence is checked
+The suite is **288 tests** across **23 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

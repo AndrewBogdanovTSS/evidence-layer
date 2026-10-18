@@ -145,6 +145,16 @@ explicit UNVERIFIED. One artifact backing more than two claims is a warning:
 sometimes legitimate, but usually a sign the review never gathered separate
 evidence for the rest.
 
+An addressed tag can also say which numbers on the artifact the claim rests
+on: `VERIFIED[tests-a3f91c: exit=0, passed>=71, failed=0]`. The outcome rules
+infer that from the claim's wording, narrowly and in English; a predicate states
+it, and the artifact can contradict it. The keys are a closed set read off the
+block itself - `exit`, `stopped`, and the work-summary counts - so a predicate
+checks the same way locally and in CI. Anything the checker cannot evaluate (an
+unknown key, a fragment that does not parse, a count the artifact does not
+carry, a bracket that is not an address) is an error rather than a predicate
+quietly dropped, because a dropped predicate is a typo that passes.
+
 Try it on the fixtures:
 
 ```bash
@@ -152,9 +162,10 @@ pnpm check:claims examples/plain-node-project/reviews/bad-claims.md       # 6 er
 pnpm check:claims examples/plain-node-project/reviews/good-claims.md      # clean
 pnpm check:claims examples/plain-node-project/reviews/phantom-artifact.md # ids reference nothing here
 pnpm check:claims examples/plain-node-project/reviews/shotgun-artifact.md # one artifact, four claims
+pnpm check:claims examples/plain-node-project/reviews/predicate-mismatch.md # the artifact says three, not four
 ```
 
-These four are asserted to keep behaving that way by `pnpm check:all`, which
+These five are asserted to keep behaving that way by `pnpm check:all`, which
 runs each of them and checks the exit code against the one written down above.
 A negative fixture that quietly starts passing is a checker that quietly
 stopped working.
@@ -165,8 +176,11 @@ two that could be proved wrong.
 
 Referencing an artifact is not supposed to cost more than writing a bare tag -
 see step 3 below. `pnpm evidence` computes every id and writes the
-`**Claim**` / `**Grounding**: VERIFIED[id]` pair already filled in; the honest
-move is to leave that line in place, not go looking an id up by hand.
+`**Claim**` / `**Grounding**: VERIFIED[id: predicates]` pair already filled
+in, the predicates read off the run it gathered; the honest move is to leave
+that line in place, not go looking an id up by hand. Predicates are optional in
+a review written by hand, so the 2.16x author-cost baseline - measured on the
+fixtures above, none of which needed them - is unchanged.
 
 ### 5. `pnpm check:receipt <review.md>` - was this written against this repo?
 

@@ -20,6 +20,7 @@
  */
 import { classifyCommand, formatArtifact, parseWorkSummary } from './artifact'
 import type { StopReason } from './artifact'
+import { suggestPredicates } from './predicates'
 import { formatCodeSpan } from './receipt'
 
 export interface SkeletonArtifact {
@@ -103,9 +104,14 @@ function claimSentence(command: string, exitCode: number, stopped?: StopReason, 
 }
 
 /**
- * One `**Claim**` / `**Grounding**: VERIFIED[id]` / artifact block per gathered
- * artifact whose kind maps to a claim. Delete what you did not mean to assert -
- * that is the only edit the honest path requires.
+ * One `**Claim**` / `**Grounding**: VERIFIED[id: predicates]` / artifact block
+ * per gathered artifact whose kind maps to a claim. Delete what you did not
+ * mean to assert - that is the only edit the honest path requires.
+ *
+ * The predicates are read off the same run the sentence describes, so they
+ * cost the author nothing: they arrive filled in, and keeping them is the same
+ * edit as keeping the tag. What they buy is a sentence whose numbers a script
+ * can hold the artifact to - "ran 71 passing tests" stops being prose.
  */
 export function generateClaimSkeleton(artifacts: SkeletonArtifact[]): string {
   const parts: string[] = []
@@ -115,7 +121,7 @@ export function generateClaimSkeleton(artifacts: SkeletonArtifact[]): string {
     if (!sentence) continue
     parts.push(
       '**Claim**: ' + sentence,
-      '**Grounding**: VERIFIED[' + a.id + ']',
+      '**Grounding**: VERIFIED[' + a.id + ': ' + suggestPredicates({ output: a.output, exitCode: a.exitCode, stopped }) + ']',
       '',
       formatArtifact(a.command, a.output, a.exitCode, { id: a.id, commit: a.commit, stopped }),
       '',

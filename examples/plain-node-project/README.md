@@ -66,7 +66,18 @@ Exit 0, with a warning. The block is real, the id is right, and four claims
 address it - three of which it says nothing about. Not an error, on purpose: a
 checker that failed this would teach people to split evidence artificially.
 
-### 5. Is anything actually running the checks?
+### 5. A real artifact, and the wrong number
+
+```bash
+npx evidence-layer claims examples/plain-node-project/reviews/predicate-mismatch.md
+```
+
+Exit 1. The id resolves, the run exited 0 and its work summary shows tests that
+ran - and the claim says four where the artifact says three. The tag carries a
+predicate, `passed>=4`, so the number is no longer only in the sentence where a
+script cannot reach it.
+
+### 6. Is anything actually running the checks?
 
 ```bash
 npx evidence-layer governance --repo examples/plain-node-project --decisions examples/plain-node-project/docs/decisions
@@ -84,7 +95,7 @@ case was found by building this fixture, not assumed - a scanner that only knew
 `npm run <name>` reported the script as unreached in the most common project
 layout there is.
 
-### 6. Render a run for CI
+### 7. Render a run for CI
 
 ```bash
 npx evidence-layer governance --repo examples/plain-node-project --decisions examples/plain-node-project/docs/decisions > run.txt
