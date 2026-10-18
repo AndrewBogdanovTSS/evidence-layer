@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { claudeCode } from '../src/hosts/claude-code'
-import { OWNED_COMMAND_RE, mergeClaudeSettings } from '../src/commands/init'
+import { OWNED_COMMAND_RE, SELF_LAUNCHER, isOwnRepository, mergeClaudeSettings } from '../src/commands/init'
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const BIN = join(root, 'dist', 'bin', 'evidence-layer.mjs')
@@ -146,6 +146,28 @@ describe('evidence-layer init claude', () => {
   it('does not claim a hook that merely mentions evidence-layer', () => {
     expect(OWNED_COMMAND_RE.test('echo evidence-layer is great')).toBe(false)
     expect(OWNED_COMMAND_RE.test('npx evidence-layer claims review.md')).toBe(false)
+    expect(OWNED_COMMAND_RE.test('node "$CLAUDE_PROJECT_DIR/other/scripts/run-hook.mjs" stop')).toBe(false)
+  })
+
+  it('in its own repository wires the plugin launcher, and replaces the installed-package entries with it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'el-init-self-'))
+    writeFileSync(join(dir, 'package.json'), '{"name":"evidence-layer"}')
+    mkdirSync(join(dir, 'plugins', 'evidence-layer', 'scripts'), { recursive: true })
+    writeFileSync(join(dir, 'plugins', 'evidence-layer', 'scripts', 'run-hook.mjs'), '')
+    expect(isOwnRepository(dir)).toBe(true)
+    expect(isOwnRepository(mkdtempSync(join(tmpdir(), 'el-init-')))).toBe(false)
+
+    writeFileSync(join(dir, 'package.json'), '{"name":"someone-else"}')
+    spawnSync(process.execPath, [BIN, 'init', 'claude', '--repo', dir], { encoding: 'utf8' })
+    writeFileSync(join(dir, 'package.json'), '{"name":"evidence-layer"}')
+    spawnSync(process.execPath, [BIN, 'init', 'claude', '--repo', dir], { encoding: 'utf8' })
+    const settings = JSON.parse(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8'))
+    for (const groups of Object.values(settings.hooks) as { hooks: { command: string }[] }[][]) {
+      const commands = groups.flatMap((g) => g.hooks.map((h) => h.command))
+      expect(commands).toHaveLength(1)
+      expect(commands[0]!.startsWith(SELF_LAUNCHER + ' ')).toBe(true)
+      expect(OWNED_COMMAND_RE.test(commands[0]!)).toBe(true)
+    }
   })
 
   it('writes the same bytes when run again, writes nothing on --dry-run, and honours --local', () => {
@@ -163,8 +185,14 @@ describe('evidence-layer init claude', () => {
 })
 
 describe('the plugin launcher', () => {
-  function project(withPackage: 'none' | 'this' | 'old'): string {
+  function project(withPackage: 'none' | 'this' | 'old' | 'self' | 'self-unbuilt'): string {
     const dir = repo()
+    if (withPackage === 'self' || withPackage === 'self-unbuilt') {
+      // A checkout of this package: its own package.json, and dist/ only once built.
+      const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: manifest.name, bin: manifest.bin, evidenceLayer: manifest.evidenceLayer }))
+      if (withPackage === 'self') symlinkSync(join(root, 'dist'), join(dir, 'dist'))
+    }
     if (withPackage === 'this') {
       mkdirSync(join(dir, 'node_modules'))
       symlinkSync(root, join(dir, 'node_modules', 'evidence-layer'))
@@ -204,5 +232,16 @@ describe('the plugin launcher', () => {
     expect(JSON.parse(started.stdout).hookSpecificOutput.additionalContext).toContain('**Claim**')
     writeFileSync(join(dir, 'review.md'), '**Claim**: the suite passes.\n')
     expect(JSON.parse(launch(dir, 'stop', fixture('stop.json', { CWD: dir, MESSAGE: 'x' })).stdout).decision).toBe('block')
+  })
+
+  it('in a checkout of this package, runs its build - and says the gate is inactive until there is one', () => {
+    const built = project('self')
+    expect(JSON.parse(launch(built, 'session-start', fixture('session-start.json', { CWD: built })).stdout).hookSpecificOutput.additionalContext).toContain('**Claim**')
+
+    const unbuilt = project('self-unbuilt')
+    const started = launch(unbuilt, 'session-start', fixture('session-start.json', { CWD: unbuilt }))
+    expect(started.status).toBe(0)
+    expect(JSON.parse(started.stdout).hookSpecificOutput.additionalContext).toMatch(/inactive.*pnpm build/)
+    expect(launch(unbuilt, 'stop', fixture('stop.json', { CWD: unbuilt, MESSAGE: 'x' })).stdout).toBe('')
   })
 })

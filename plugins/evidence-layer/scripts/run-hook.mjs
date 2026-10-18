@@ -6,8 +6,10 @@
  * The plugin ships no copy of the package. The project installs it, at the
  * version the project chose, and this file only has to find it - walking up
  * from the project directory, which covers pnpm workspaces and worktrees
- * inside a repository. Dependency-free, because it has to work in exactly the
- * case where nothing is installed.
+ * inside a repository. A directory whose own package.json is evidence-layer is
+ * the package too: that is how this repository runs its own gate, from the
+ * `dist/` its last build left. Dependency-free, because it has to work in
+ * exactly the case where nothing is installed.
  *
  * When the package is missing, or too old to know the hook protocol (it must
  * declare `"evidenceLayer": { "hookProtocol": 1 }` - a capability, not a
@@ -26,11 +28,20 @@ const HOOK_PROTOCOL = 1
 const [event, ...flags] = process.argv.slice(2)
 const strict = flags.includes('--fail-closed') || flags.includes('--strict')
 
+function isThisPackage(manifest) {
+  try {
+    return JSON.parse(readFileSync(manifest, 'utf8')).name === 'evidence-layer'
+  } catch {
+    return false
+  }
+}
+
 function findPackage(start) {
   let dir = resolve(start)
   for (;;) {
     const manifest = join(dir, 'node_modules', 'evidence-layer', 'package.json')
     if (existsSync(manifest)) return manifest
+    if (isThisPackage(join(dir, 'package.json'))) return join(dir, 'package.json')
     const parent = dirname(dir)
     if (parent === dir) return null
     dir = parent
@@ -73,6 +84,8 @@ if (!manifestPath || !manifest) {
   try {
     await import(pathToFileURL(bin).href)
   } catch (error) {
-    inactive('evidence-layer could not be loaded (' + (error instanceof Error ? error.message : String(error)) + ')')
+    // In this repository the usual cause is a checkout nobody has built yet.
+    const hint = existsSync(bin) ? '' : ' - is it built? (pnpm build)'
+    inactive('evidence-layer could not be loaded (' + (error instanceof Error ? error.message : String(error)) + ')' + hint)
   }
 }

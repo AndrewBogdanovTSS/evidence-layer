@@ -19,6 +19,12 @@ pnpm check:all --enforce     # every repository check, plus: does anything run t
 
 `pnpm hooks:install` wires the same fast checks into a pre-push hook.
 
+The runtime gate runs here too: `.claude/settings.json` (written by
+`evidence-layer init claude`, which notices it is in its own repository) runs
+the plugin's launcher, which runs this checkout's `dist/`. So the gate is the
+code of the last `pnpm build`, not of the working tree, and a fresh clone says
+the gate is inactive until it is built.
+
 `pnpm check:docs` (part of `check:all`) compares the README's sentence "The
 suite is **N tests** across **M files**" with the real suite. When you add or
 remove tests, update that sentence in the same change.

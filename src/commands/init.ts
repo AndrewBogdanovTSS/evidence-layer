@@ -12,6 +12,12 @@
  * entries are replaced in place, so running it again - after an upgrade, or
  * with different flags - leaves one entry per event, and the same input gives
  * the same file byte for byte.
+ *
+ * Run in this package's own repository, it wires the plugin's launcher instead
+ * of `node_modules/evidence-layer`, which a package never has of itself. Not
+ * `node dist/bin/...` directly: a fresh clone has no `dist/`, node would exit 1,
+ * and Claude Code reports a failed hook and carries on - a gate gone without
+ * the session being told. The launcher says it is inactive and why.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -38,9 +44,22 @@ type MatcherGroup = { matcher?: string; hooks: HookEntry[]; [key: string]: unkno
 type Settings = { hooks?: Record<string, MatcherGroup[]>; [key: string]: unknown }
 
 /** An entry is this package's when its command runs this package's Claude Code hook - nothing looser. */
-export const OWNED_COMMAND_RE = /evidence-layer(?:\.mjs)?["']?\s+hook\s+claude\s+(?:session-start|pre-tool-use|stop)\b/
+export const OWNED_COMMAND_RE =
+  /(?:evidence-layer(?:\.mjs)?["']?\s+hook\s+claude|evidence-layer\/scripts\/run-hook\.mjs["']?)\s+(?:session-start|pre-tool-use|stop)\b/
 
-const LAUNCHER = 'node "$CLAUDE_PROJECT_DIR/node_modules/evidence-layer/dist/bin/evidence-layer.mjs" hook claude'
+/** Everything in the hook command before the event name. */
+export const LAUNCHER = 'node "$CLAUDE_PROJECT_DIR/node_modules/evidence-layer/dist/bin/evidence-layer.mjs" hook claude'
+export const SELF_LAUNCHER = 'node "$CLAUDE_PROJECT_DIR/plugins/evidence-layer/scripts/run-hook.mjs"'
+
+/** True when `repo` is this package's own repository, which runs its gate from its own build. */
+export function isOwnRepository(repo: string): boolean {
+  try {
+    const manifest = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')) as { name?: unknown }
+    return manifest.name === 'evidence-layer' && existsSync(join(repo, 'plugins', 'evidence-layer', 'scripts', 'run-hook.mjs'))
+  } catch {
+    return false
+  }
+}
 
 const EVENTS: { name: string; arg: string; matcher?: string; timeout: number }[] = [
   { name: 'SessionStart', arg: 'session-start', timeout: 10 },
@@ -49,13 +68,13 @@ const EVENTS: { name: string; arg: string; matcher?: string; timeout: number }[]
 ]
 
 /** Merges the gate's hooks into a settings object, returning a new one. Pure, so it can be tested without a disk. */
-export function mergeClaudeSettings(settings: Settings, flags: string[]): Settings {
+export function mergeClaudeSettings(settings: Settings, flags: string[], launcher = LAUNCHER): Settings {
   const hooks: Record<string, MatcherGroup[]> = { ...(settings.hooks ?? {}) }
   for (const event of EVENTS) {
     const kept = (hooks[event.name] ?? [])
       .map((group) => ({ ...group, hooks: (group.hooks ?? []).filter((h) => !OWNED_COMMAND_RE.test(h.command ?? '')) }))
       .filter((group) => group.hooks.length > 0)
-    const command = [LAUNCHER, event.arg, ...flags].join(' ')
+    const command = [launcher, event.arg, ...flags].join(' ')
     kept.push({
       ...(event.matcher !== undefined && { matcher: event.matcher }),
       hooks: [{ type: 'command', command, timeout: event.timeout }],
@@ -88,7 +107,8 @@ export function run(argv: string[]): void {
   if (typeof args.review === 'string') flags.push('--review ' + JSON.stringify(args.review))
   for (const flag of ['fail-closed', 'keep-blocking', 'strict']) if (args[flag] === true) flags.push('--' + flag)
 
-  const text = JSON.stringify(mergeClaudeSettings(settings, flags), null, 2) + '\n'
+  const own = isOwnRepository(repo)
+  const text = JSON.stringify(mergeClaudeSettings(settings, flags, own ? SELF_LAUNCHER : LAUNCHER), null, 2) + '\n'
   if (args['dry-run'] === true) {
     console.log('would write ' + file + ':\n')
     console.log(text)
@@ -97,5 +117,9 @@ export function run(argv: string[]): void {
   mkdirSync(join(repo, '.claude'), { recursive: true })
   writeFileSync(file, text, 'utf8')
   console.log('wrote ' + file + ': SessionStart, PreToolUse and Stop now run evidence-layer\'s gate')
-  console.log('it needs evidence-layer installed in this project (npm install --save-dev evidence-layer)')
+  console.log(
+    own
+      ? 'this is evidence-layer\'s own repository: the gate runs the dist/ of the last pnpm build'
+      : 'it needs evidence-layer installed in this project (npm install --save-dev evidence-layer)',
+  )
 }
