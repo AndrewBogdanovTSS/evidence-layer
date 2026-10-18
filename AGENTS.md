@@ -1,0 +1,84 @@
+# AGENTS.md
+
+The source of truth for anyone - person or agent - changing this repository.
+Tool-specific files (`CLAUDE.md`) only point here.
+
+`evidence-layer` is a zero-runtime-dependency Node 22+ package of checks that
+turn a review's assertions into claims that could be proved wrong. It is its
+own first consumer: every check runs against this repository too.
+
+## Before you push
+
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test                    # builds, then runs the suite against dist/
+pnpm check:all --enforce     # every repository check, plus: does anything run them?
+```
+
+`pnpm hooks:install` wires the same fast checks into a pre-push hook.
+
+`pnpm check:docs` (part of `check:all`) compares the README's sentence "The
+suite is **N tests** across **M files**" with the real suite. When you add or
+remove tests, update that sentence in the same change.
+
+## Rules the tests enforce
+
+- `src/core/` imports only `node:*` builtins and its own siblings - no project's
+  stack, no adapters, no hosts (`test/boundary.test.ts`).
+- `src/hosts/` imports only builtins, `../core/*` and `./contract`.
+- No runtime dependencies. The published tarball carries `dist/`, the README
+  and the licence, nothing else (`test/bin.test.ts`).
+- Text from a review, a receipt or a host's input never reaches a shell: call
+  git through `git()` / `gitCapture()` in `src/core/proc.ts`, never by
+  concatenating it into `run()` or `capture()` (`test/injection.test.ts`).
+- Five outcomes, never collapsed: `pass`, `warning`, `error`, `unverifiable`,
+  `flaky`. A check that could not run is `unverifiable`, not a pass. Exit codes:
+  0 clean, 1 error, 2 bad usage, 3 flaky - except `evidence-layer hook`, which
+  always exits 0 and speaks the host's protocol.
+
+## How code here is written
+
+- Every module opens with a header saying which claim it makes falsifiable and
+  what it deliberately does not do. Keep that header true when you change the
+  module.
+- Comments explain why, especially why the obvious alternative was rejected.
+  Match the density and voice of the file you are in.
+- The honest path must be cheaper than the convenient one. A feature that makes
+  a correct review cost more than an unbacked one does not ship in that form.
+
+## Commits
+
+- Conventional prefixes: `feat:`, `fix:`, `docs:`, `test:`, `ci:`,
+  `chore(release):`.
+- `Ladder-Rung: <1-5> <what>` names the rung of the decision ladder the change
+  stopped at (1 does it need to exist, 2 reuse what is here, 3 the platform does
+  it, 4 an installed dependency does it, 5 write the minimum) - checked by
+  `pnpm check:ladder`.
+- `Missed-By: <review or PR>` on a commit that fixes a bug a review let through.
+  `governance` extracts these into `journal.jsonl`; that count is the layer's
+  only measure of what reviews miss.
+
+## Decisions and plans
+
+- `docs/decisions/NNNN-*.md` are decision records. Their frontmatter lists
+  `invariants`, each ending "enforced by \`pnpm <script>\`" - `governance`
+  checks that a git hook or CI workflow actually runs that script - plus a
+  `review_by` date that must not pass. A superseded record moves to
+  `docs/decisions/archive/`.
+- `docs/plans/` holds designs, reviews of them and implementation reports - the
+  reasoning behind a decision record, kept so it can be re-read later.
+
+## Releases
+
+`pnpm release [patch|minor|major]` checks, bumps, commits, tags and pushes; the
+tag starts `.github/workflows/release.yml`, which publishes to npm with
+provenance and creates the GitHub Release. Nothing is published from a
+laptop. A release that changes what users must do carries notes in
+`docs/releases/v<version>.md`, committed before the release; the workflow puts
+them ahead of the generated commit list.
+
+## Documents
+
+Every document in this repository - code comments, docs, release notes, commit
+messages - is written in English.
