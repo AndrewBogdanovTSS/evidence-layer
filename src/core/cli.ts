@@ -83,6 +83,13 @@ export interface Finding {
    */
   expected?: unknown
   observed?: unknown
+  /**
+   * Which rule produced the finding, as a stable word rather than a sentence -
+   * see `./codes`. Every finding this package's own checks produce has one;
+   * optional here because a project's own checks report through the same type
+   * and owe nobody a registry.
+   */
+  code?: string
 }
 
 /**
@@ -152,6 +159,20 @@ export function exitCodeFor(findings: Finding[], strict = false): number {
     return EXIT.failed
   }
   return EXIT.ok
+}
+
+export type Format = 'text' | 'json'
+
+/**
+ * `--format text|json`, text by default. Anything else is bad usage, not a
+ * silent fall back to text: a caller that asked for JSON and got prose would
+ * fail at its own `JSON.parse`, far from the cause.
+ */
+export function formatOf(args: Args, helpText: string): Format {
+  const format = args.format
+  if (format === undefined || format === 'text') return 'text'
+  if (format === 'json') return 'json'
+  return usage(helpText)
 }
 
 /**

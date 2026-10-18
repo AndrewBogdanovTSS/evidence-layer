@@ -24,7 +24,7 @@
  * <head>`, never by ancestry: a stale local tip is still an ancestor of the
  * mainline, so an ancestry check waves it straight through.
  */
-import type { Finding } from './cli'
+import type { CodedFinding } from './codes'
 import { gitCapture } from './proc'
 
 export interface Sample {
@@ -171,8 +171,8 @@ export function checkReceipt(
   markdown: string,
   repo: string,
   expectedSha?: string,
-): Finding[] {
-  const findings: Finding[] = []
+): CodedFinding[] {
+  const findings: CodedFinding[] = []
 
   // 1. Completeness. A missing field is not a small problem: the whole point of
   //    the receipt is that a reader can re-derive every value.
@@ -186,14 +186,14 @@ export function checkReceipt(
   ]
   for (const [key, label] of required) {
     if (receipt[key] === undefined || receipt[key] === '') {
-      findings.push({ level: 'error', claim: 'receipt records ' + label, detail: 'field missing or unparseable' })
+      findings.push({ level: 'error', code: 'receipt/missing-field', claim: 'receipt records ' + label, detail: 'field missing or unparseable' })
     }
   }
   if (receipt.samples.length === 0) {
-    findings.push({ level: 'error', claim: 'receipt records Sample integrity', detail: 'no Sample integrity line found' })
+    findings.push({ level: 'error', code: 'receipt/no-sample', claim: 'receipt records Sample integrity', detail: 'no Sample integrity line found' })
   }
   if (!receipt.headSha || !SHA_RE.test(receipt.headSha)) {
-    findings.push({ level: 'error', claim: 'HEAD SHA is a full 40-character commit id', detail: String(receipt.headSha) })
+    findings.push({ level: 'error', code: 'receipt/malformed-head', claim: 'HEAD SHA is a full 40-character commit id', detail: String(receipt.headSha) })
     return findings
   }
 
@@ -204,6 +204,7 @@ export function checkReceipt(
   const headExists = gitCapture(['cat-file', '-t', receipt.headSha], repo) === 'commit'
   findings.push({
     level: headExists ? 'pass' : 'error',
+    code: headExists ? 'receipt/head-exists' : 'receipt/unknown-head',
     claim: 'HEAD SHA ' + receipt.headSha.slice(0, 10) + ' exists in this repository',
     detail: headExists ? 'found' : 'unknown commit - the review was not written against this repo',
   })
@@ -212,6 +213,7 @@ export function checkReceipt(
   if (expectedSha) {
     findings.push({
       level: receipt.headSha === expectedSha ? 'pass' : 'error',
+      code: receipt.headSha === expectedSha ? 'receipt/expected-commit' : 'receipt/wrong-commit',
       claim: 'the review is about the expected commit',
       detail: receipt.headSha === expectedSha ? 'matches --sha' : 'receipt says ' + receipt.headSha + ', expected ' + expectedSha,
     })
@@ -227,6 +229,7 @@ export function checkReceipt(
     const ok = receipt.filesOpened >= receipt.filesInDiff
     findings.push({
       level: ok ? 'pass' : 'warning',
+      code: ok ? 'receipt/files-opened' : 'receipt/files-unopened',
       claim: 'every file in the diff was opened',
       detail: receipt.filesOpened + ' opened of ' + receipt.filesInDiff + ' in the diff',
     })
@@ -236,13 +239,13 @@ export function checkReceipt(
 }
 
 /** The baseline check. Equality, not ancestry - see the file header. */
-export function checkBase(receipt: Receipt, repo: string): Finding[] {
+export function checkBase(receipt: Receipt, repo: string): CodedFinding[] {
   const claim = 'Base SHA is the merge-base with origin/' + (receipt.targetBranch ?? '?')
   if (!receipt.baseSha || !SHA_RE.test(receipt.baseSha) || !receipt.targetBranch) {
-    return [{ level: 'error', claim, detail: 'base SHA or target branch missing' }]
+    return [{ level: 'error', code: 'receipt/base-missing', claim, detail: 'base SHA or target branch missing' }]
   }
   if (!receipt.headSha || !SHA_RE.test(receipt.headSha)) {
-    return [{ level: 'error', claim, detail: 'no full HEAD SHA to find a merge-base from' }]
+    return [{ level: 'error', code: 'receipt/malformed-head', claim, detail: 'no full HEAD SHA to find a merge-base from' }]
   }
   const headSha = receipt.headSha
 
@@ -251,6 +254,7 @@ export function checkBase(receipt: Receipt, repo: string): Finding[] {
     return [
       {
         level: 'unverifiable',
+        code: 'receipt/no-remote-ref',
         claim,
         detail: 'no ' + remoteRef + ' in this clone - fetch it, or accept that this cannot be checked here',
       },
@@ -259,10 +263,10 @@ export function checkBase(receipt: Receipt, repo: string): Finding[] {
 
   const mergeBase = gitCapture(['merge-base', 'origin/' + receipt.targetBranch, headSha], repo)
   if (!mergeBase) {
-    return [{ level: 'unverifiable', claim, detail: 'no merge-base found (shallow clone, or unrelated histories)' }]
+    return [{ level: 'unverifiable', code: 'receipt/no-merge-base', claim, detail: 'no merge-base found (shallow clone, or unrelated histories)' }]
   }
   if (mergeBase === receipt.baseSha) {
-    return [{ level: 'pass', claim, detail: mergeBase.slice(0, 10) }]
+    return [{ level: 'pass', code: 'receipt/base', claim, detail: mergeBase.slice(0, 10) }]
   }
 
   // The interesting failure: the recorded base is the tip of a *local* branch of
@@ -281,7 +285,7 @@ export function checkBase(receipt: Receipt, repo: string): Finding[] {
       receipt.targetBranch +
       '. Every one of those commits is being attributed to the branch under review.'
   }
-  return [{ level: 'error', claim, detail }]
+  return [{ level: 'error', code: 'receipt/wrong-base', claim, detail }]
 }
 
 /**
@@ -290,27 +294,28 @@ export function checkBase(receipt: Receipt, repo: string): Finding[] {
  * applies - at least one sample, so a prose-only review is not exempted
  * entirely.
  */
-export function checkSamples(receipt: Receipt, markdown: string, repo: string): Finding[] {
+export function checkSamples(receipt: Receipt, markdown: string, repo: string): CodedFinding[] {
   const referenced = citedPaths(markdown)
   const targets = referenced.length > 0 ? referenced : receipt.samples.slice(0, 1).map((s) => s.path)
   if (targets.length === 0) {
-    return [{ level: 'error', claim: 'at least one file was quoted verbatim', detail: 'no citations and no Sample integrity line' }]
+    return [{ level: 'error', code: 'receipt/no-citations', claim: 'at least one file was quoted verbatim', detail: 'no citations and no Sample integrity line' }]
   }
 
-  return targets.map((path): Finding => {
+  return targets.map((path): CodedFinding => {
     const claim = 'the cited file `' + path + '` was really read'
     const sample = receipt.samples.find((s) => s.path === path)
     if (!sample) {
-      return { level: 'error', claim, detail: 'this review cites it, but no Sample integrity line quotes it', file: path }
+      return { level: 'error', code: 'receipt/unsampled', claim, detail: 'this review cites it, but no Sample integrity line quotes it', file: path }
     }
     const content = gitCapture(['show', receipt.headSha + ':' + path], repo)
     if (content === null) {
-      return { level: 'error', claim, detail: path + ' does not exist at that commit', file: path }
+      return { level: 'error', code: 'receipt/sample-missing-file', claim, detail: path + ' does not exist at that commit', file: path }
     }
     const firstLine = content.split('\n').find((l) => l.trim() !== '')?.trim() ?? ''
     const quoted = sample.line.trim()
     return {
       level: firstLine === quoted ? 'pass' : 'error',
+      code: firstLine === quoted ? 'receipt/sample' : 'receipt/sample-mismatch',
       claim,
       detail:
         firstLine === quoted
@@ -328,8 +333,8 @@ export function checkSamples(receipt: Receipt, markdown: string, repo: string): 
  * prose. A citation that does not resolve is the signature of a review that was
  * assembled rather than read.
  */
-export function checkCitations(markdown: string, headSha: string, repo: string): Finding[] {
-  const findings: Finding[] = []
+export function checkCitations(markdown: string, headSha: string, repo: string): CodedFinding[] {
+  const findings: CodedFinding[] = []
   const re = /`([\w./@-]+\.[a-z]+):(\d+)`/g
   const seen = new Set<string>()
   let match: RegExpExecArray | null
@@ -341,20 +346,28 @@ export function checkCitations(markdown: string, headSha: string, repo: string):
 
     const content = gitCapture(['show', headSha + ':' + path], repo)
     if (content === null) {
-      findings.push({ level: 'error', claim: 'citation ' + key, detail: 'no such file at the reviewed commit' })
+      findings.push({
+        level: 'error',
+        code: 'receipt/citation-missing-file',
+        claim: 'citation ' + key,
+        detail: 'no such file at the reviewed commit',
+      })
       continue
     }
     const total = content.split('\n').length
     const line = Number(lineNo)
+    const resolves = line >= 1 && line <= total
     findings.push({
-      level: line >= 1 && line <= total ? 'pass' : 'error',
+      level: resolves ? 'pass' : 'error',
+      code: resolves ? 'receipt/citation' : 'receipt/citation-out-of-range',
       claim: 'citation ' + key,
-      detail: line <= total ? 'resolves (' + total + ' lines)' : 'file has only ' + total + ' lines',
+      detail: resolves ? 'resolves (' + total + ' lines)' : line < 1 ? 'lines are numbered from 1' : 'file has only ' + total + ' lines',
     })
   }
   if (findings.length === 0) {
     findings.push({
       level: 'warning',
+      code: 'receipt/no-line-citations',
       claim: 'the review cites specific lines',
       detail: 'no `path:line` citations found - findings without locations cannot be checked',
     })

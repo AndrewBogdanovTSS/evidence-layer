@@ -25,8 +25,10 @@ export const JSON_END = '---GOVERNANCE-JSON-END---'
  * 1 - the original block.
  * 2 - unchanged shape, emitted unconditionally rather than only on failure.
  * 3 - findings carry `line`, and the optional `expected`/`observed` values.
+ * 4 - findings carry `code` (see `./codes`), and a report says which `check`
+ *     produced it. The same document is what `--format json` prints.
  */
-export const REPORT_SCHEMA = 3
+export const REPORT_SCHEMA = 4
 
 export interface ReportFinding {
   level: string
@@ -36,10 +38,13 @@ export interface ReportFinding {
   line?: number
   expected?: unknown
   observed?: unknown
+  code?: string
 }
 
 export interface Report {
   schema: number
+  /** The command that produced the findings - `claims`, `receipt`, `governance` - when it says. */
+  check?: string
   mode: string
   generatedAt: string
   summary: string
@@ -56,9 +61,10 @@ export interface Report {
  * that emits them, so the only thing keeping them equal was that nobody had
  * edited one of the two.
  */
-export function buildReport(findings: Finding[], mode: string): Report {
+export function buildReport(findings: Finding[], mode: string, check?: string): Report {
   return {
     schema: REPORT_SCHEMA,
+    ...(check !== undefined && { check }),
     mode,
     generatedAt: new Date().toISOString(),
     summary: summarise(findings),
@@ -70,6 +76,7 @@ export function buildReport(findings: Finding[], mode: string): Report {
       line: f.line,
       expected: f.expected,
       observed: f.observed,
+      code: f.code,
     })),
   }
 }
@@ -85,6 +92,16 @@ export function emitReport(findings: Finding[], mode: string): void {
   console.log(JSON_BEGIN)
   console.log(JSON.stringify(buildReport(findings, mode), null, 2))
   console.log(JSON_END)
+}
+
+/**
+ * `--format json`: the report alone, with nothing before or after it, so the
+ * whole of stdout is one document `JSON.parse` accepts. No delimiters - they
+ * exist to find the block in a log that is mostly not the block, and here
+ * there is nothing else. The exit code is the text mode's, unchanged.
+ */
+export function printJsonReport(findings: Finding[], mode: string, check: string): void {
+  console.log(JSON.stringify(buildReport(findings, mode, check), null, 2))
 }
 
 /** Pulls the machine-readable block out of a pile of console output. */

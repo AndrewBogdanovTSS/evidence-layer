@@ -50,7 +50,7 @@
  */
 import { ARTIFACT_ID_RE, classifyCommand, fencedLineNumbers, findArtifactBlocks, parseWorkSummary, workDone } from './artifact'
 import type { ArtifactBlock, StopReason } from './artifact'
-import type { Finding } from './cli'
+import type { CodedFinding } from './codes'
 import { evaluatePredicates, parsePredicates } from './predicates'
 
 /** How far below a legacy (unaddressed) VERIFIED tag its artifact block is allowed to sit. */
@@ -264,7 +264,7 @@ export interface LintOptions extends OutcomeOptions {
   prose?: boolean
 }
 
-export function lintClaims(markdown: string, file: string, opts: LintOptions = {}): Finding[] {
+export function lintClaims(markdown: string, file: string, opts: LintOptions = {}): CodedFinding[] {
   const lines = markdown.split(/\r?\n/)
   const fenced = fencedLineNumbers(lines)
   const claims = findClaims(lines, fenced)
@@ -272,11 +272,12 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     ...findArtifactBlocks(lines),
     ...(opts.artifactSource !== undefined ? findArtifactBlocks(opts.artifactSource.split(/\r?\n/)) : []),
   ]
-  const findings: Finding[] = []
+  const findings: CodedFinding[] = []
 
   if (claims.length === 0 && opts.prose !== false) {
     findings.push({
       level: 'warning',
+      code: 'claims/none',
       claim: 'the review states claims',
       detail: 'no `**Claim**:` lines found - nothing here can be checked',
       file,
@@ -293,6 +294,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     if (bodies.size > 1) {
       findings.push({
         level: 'error',
+        code: 'claims/id-conflict',
         claim: 'artifact ' + id + ' is one artifact',
         detail:
           id + ' labels ' + bodies.size + ' different blocks (lines ' + blocks.map((b) => b.start + 1).join(', ') +
@@ -316,6 +318,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     if (!claim.grade) {
       findings.push({
         level: 'error',
+        code: 'claims/untagged',
         claim: claim.text,
         detail: 'carries no grounding tag (VERIFIED / DOCUMENTED / INFERRED / UNVERIFIED)',
         ...where,
@@ -334,6 +337,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     if (claim.grade === 'VERIFIED' && claim.gradeMalformed !== undefined) {
       findings.push({
         level: 'error',
+        code: 'claims/malformed-address',
         claim: claim.text,
         detail:
           'VERIFIED' + claim.gradeMalformed + ' is not an address - write VERIFIED[<kind>-<6 hex>] or ' +
@@ -348,6 +352,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       if (!artifact) {
         findings.push({
           level: 'error',
+          code: 'claims/unknown-artifact',
           claim: claim.text,
           detail: 'VERIFIED[' + claim.gradeId + '] references an artifact that does not exist in this document',
           ...where,
@@ -357,6 +362,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       if (opts.expectedHeadSha && artifact.commit && !opts.expectedHeadSha.startsWith(artifact.commit)) {
         findings.push({
           level: 'error',
+          code: 'claims/wrong-commit',
           claim: claim.text,
           detail:
             'VERIFIED[' +
@@ -377,6 +383,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       if (parsed && parsed.problems.length > 0) {
         findings.push({
           level: 'error',
+          code: 'claims/bad-predicate',
           claim: claim.text,
           detail: 'VERIFIED[' + claim.gradeId + '] has predicates that cannot be checked: ' + parsed.problems.join('; '),
           ...where,
@@ -385,7 +392,13 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       }
       const problem = outcomeProblem(artifact, claimText, opts)
       if (problem) {
-        findings.push({ level: 'error', claim: claim.text, detail: 'VERIFIED[' + claim.gradeId + '] ' + problem, ...where })
+        findings.push({
+          level: 'error',
+          code: 'claims/outcome-mismatch',
+          claim: claim.text,
+          detail: 'VERIFIED[' + claim.gradeId + '] ' + problem,
+          ...where,
+        })
         return
       }
       // In addition to the outcome rules, never instead of them: a weak
@@ -393,11 +406,18 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       // claim past a rule it would otherwise fail.
       const unmet = parsed ? evaluatePredicates(parsed.predicates, artifact) : []
       if (unmet.length > 0) {
-        findings.push({ level: 'error', claim: claim.text, detail: 'VERIFIED[' + claim.gradeId + '] ' + unmet.join('; '), ...where })
+        findings.push({
+          level: 'error',
+          code: 'claims/predicate-unmet',
+          claim: claim.text,
+          detail: 'VERIFIED[' + claim.gradeId + '] ' + unmet.join('; '),
+          ...where,
+        })
         return
       }
       findings.push({
         level: 'pass',
+        code: 'claims/verified',
         claim: claim.text,
         detail:
           'VERIFIED by `' + artifact.command + '` (exit ' + artifact.exitCode + '), addressed as ' + claim.gradeId +
@@ -414,6 +434,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       if (idx === -1) {
         findings.push({
           level: 'error',
+          code: 'claims/no-nearby-artifact',
           claim: claim.text,
           detail: 'VERIFIED, but no valid artifact block within ' + ARTIFACT_WINDOW + ' lines',
           ...where,
@@ -423,17 +444,19 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       consumedByPosition.add(idx)
       const problem = outcomeProblem(artifacts[idx]!, claimText, opts)
       if (problem) {
-        findings.push({ level: 'error', claim: claim.text, detail: 'VERIFIED ' + problem, ...where })
+        findings.push({ level: 'error', code: 'claims/outcome-mismatch', claim: claim.text, detail: 'VERIFIED ' + problem, ...where })
         return
       }
       findings.push({
         level: 'pass',
+        code: 'claims/verified-nearby',
         claim: claim.text,
         detail: 'VERIFIED by `' + artifacts[idx]!.command + '` (exit ' + artifacts[idx]!.exitCode + ')',
         ...where,
       })
       findings.push({
         level: 'warning',
+        code: 'claims/bare-verified',
         claim: claim.text,
         detail:
           'bare VERIFIED only confirms a block is nearby, not that it is the block this claim is about - ' +
@@ -448,6 +471,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       const ok = CITATION_RE.test(window)
       findings.push({
         level: ok ? 'pass' : 'error',
+        code: ok ? 'claims/documented' : 'claims/uncited',
         claim: claim.text,
         detail: ok ? 'DOCUMENTED with a citation' : 'DOCUMENTED, but cites nothing (URL, § section, or issue id)',
         ...where,
@@ -461,6 +485,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
         .filter((l, i) => !fenced.has(gradeLine + 1 + i) && NUMBERED_STEP_RE.test(l)).length
       findings.push({
         level: steps >= 2 ? 'pass' : 'error',
+        code: steps >= 2 ? 'claims/inferred' : 'claims/short-chain',
         claim: claim.text,
         detail:
           steps >= 2
@@ -473,6 +498,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
 
     findings.push({
       level: 'pass',
+      code: 'claims/unverified',
       claim: claim.text,
       detail: 'UNVERIFIED, and says so - which is the honest outcome, not a failure',
       ...where,
@@ -487,6 +513,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     if (usage.count > SHOTGUN_THRESHOLD) {
       findings.push({
         level: 'warning',
+        code: 'claims/shotgun',
         claim: 'artifact ' + id + ' backs ' + usage.count + ' claims',
         detail: 'each artifact should back at most ' + SHOTGUN_THRESHOLD + ' - consider gathering separate evidence',
         file,
@@ -521,8 +548,8 @@ function groupById(artifacts: ArtifactBlock[]): Map<string, ArtifactBlock[]> {
  * an opinion was expressed; see `demo/reviews/boundary-limits.md` for both
  * halves of that boundary, executable rather than left as a paragraph of prose.
  */
-export function lintProse(lines: string[], fenced: Set<number>, file: string): Finding[] {
-  const findings: Finding[] = []
+export function lintProse(lines: string[], fenced: Set<number>, file: string): CodedFinding[] {
+  const findings: CodedFinding[] = []
   const nearby = (i: number, re: RegExp, radius = 3): boolean =>
     lines
       .slice(Math.max(0, i - radius), Math.min(lines.length, i + radius + 1))
@@ -537,6 +564,7 @@ export function lintProse(lines: string[], fenced: Set<number>, file: string): F
     if (vague && !nearby(i, /\bUNVERIFIED\b/, 1)) {
       findings.push({
         level: 'error',
+        code: 'claims/vague-comparison',
         claim: '"' + vague[0].trim() + '"',
         detail: 'compared to what, measured how? Back it or tag the line UNVERIFIED',
         ...where,
@@ -553,6 +581,7 @@ export function lintProse(lines: string[], fenced: Set<number>, file: string): F
     ) {
       findings.push({
         level: 'error',
+        code: 'claims/success-without-effect',
         claim: '"' + success[0] + '"',
         detail: 'a success claim with no stated effect - add `**Effect**:` saying what changed and how you know',
         ...where,
@@ -562,6 +591,7 @@ export function lintProse(lines: string[], fenced: Set<number>, file: string): F
     if (SYCOPHANCY_RES.some((re) => re.test(line))) {
       findings.push({
         level: 'warning',
+        code: 'claims/sycophancy',
         claim: line.trim().slice(0, 60),
         detail: 'agreement is not evidence - revise on evidence, not on pressure',
         ...where,

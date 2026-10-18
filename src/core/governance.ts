@@ -18,7 +18,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import type { Finding } from './cli'
+import type { CodedFinding } from './codes'
 
 export interface Invariant {
   text: string
@@ -130,12 +130,13 @@ export function reachableCommands(repo: string): Set<string> {
 export const REACHABILITY_CAVEAT =
   'reachability is computed from literal command strings; a command assembled at runtime will not be seen'
 
-export function checkReachability(repo: string, decisionsDir?: string): Finding[] {
+export function checkReachability(repo: string, decisionsDir?: string): CodedFinding[] {
   const invariants = readInvariants(decisionsDir ?? join(repo, 'docs', 'decisions'))
   if (invariants.length === 0) {
     return [
       {
         level: 'warning',
+        code: 'governance/no-invariants',
         claim: 'decision records declare enforceable invariants',
         detail: 'no decision records with invariants found - nothing to resolve',
       },
@@ -147,13 +148,13 @@ export function checkReachability(repo: string, decisionsDir?: string): Finding[
     scripts?: Record<string, string>
   }).scripts ?? {}
 
-  return invariants.map((inv): Finding => {
+  return invariants.map((inv): CodedFinding => {
     const claim = inv.text.length > 90 ? inv.text.slice(0, 90) + '...' : inv.text
     // Repo-relative, so the output is the same on every machine and can be
     // pasted into a review without leaking someone's home directory.
     const file = relative(repo, inv.file).replace(/\\/g, '/')
     if (!inv.command) {
-      return { level: 'warning', claim, detail: 'names no runnable command, so its enforcement cannot be checked', file }
+      return { level: 'warning', code: 'governance/no-command', claim, detail: 'names no runnable command, so its enforcement cannot be checked', file }
     }
     // `pnpm check:claims demo/x.md` -> `check:claims`. `npm run check:claims`
     // -> `check:claims`. `npm test` -> `test` (npm's shorthand form, stripped
@@ -163,19 +164,26 @@ export function checkReachability(repo: string, decisionsDir?: string): Finding[
     // `npm test`") was misread as naming a script called "npm".
     const scriptName = inv.command.replace(/^(?:pnpm|npm run|npm|yarn run|yarn)\s+/, '').split(/\s+/)[0]!
     if (!(scriptName in scripts)) {
-      return { level: 'error', claim, detail: '"' + inv.command + '" is not a script in package.json', file }
+      return { level: 'error', code: 'governance/unknown-script', claim, detail: '"' + inv.command + '" is not a script in package.json', file }
     }
     if (!reached.has(scriptName)) {
       if (inv.runtimeComposed) {
         return {
           level: 'unverifiable',
+          code: 'governance/runtime-composed',
           claim,
           detail: '`' + scriptName + '` self-disclosed as a runtime-composed trigger - ' + REACHABILITY_CAVEAT,
           file,
         }
       }
-      return { level: 'error', claim, detail: '`' + scriptName + '` exists but no trigger reaches it. It is documented, not enforced.', file }
+      return {
+        level: 'error',
+        code: 'governance/unreached',
+        claim,
+        detail: '`' + scriptName + '` exists but no trigger reaches it. It is documented, not enforced.',
+        file,
+      }
     }
-    return { level: 'pass', claim, detail: '`' + scriptName + '` is reachable from a wired trigger', file }
+    return { level: 'pass', code: 'governance/reached', claim, detail: '`' + scriptName + '` is reachable from a wired trigger', file }
   })
 }

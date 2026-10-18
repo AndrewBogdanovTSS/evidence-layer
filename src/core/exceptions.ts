@@ -26,7 +26,7 @@
  * Cheap to write, expensive to leave open: that is the point.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import type { Finding } from './cli'
+import type { CodedFinding } from './codes'
 
 export interface Exception {
   date: string
@@ -59,14 +59,14 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
  * same reason a clean governance report is still printed in full: a silent
  * zero and an unmeasured zero must never look the same.
  */
-export function checkExceptions(repo: string, path = 'docs/governance-exceptions.md', today = new Date()): Finding[] {
+export function checkExceptions(repo: string, path = 'docs/governance-exceptions.md', today = new Date()): CodedFinding[] {
   const fullPath = repo + '/' + path
   if (!existsSync(fullPath)) {
-    return [{ level: 'pass', claim: 'governance exceptions', detail: '0 active, 0 expired (no exceptions file)', file: path }]
+    return [{ level: 'pass', code: 'exceptions/summary', claim: 'governance exceptions', detail: '0 active, 0 expired (no exceptions file)', file: path }]
   }
 
   const exceptions = parseExceptions(readFileSync(fullPath, 'utf8'))
-  const findings: Finding[] = []
+  const findings: CodedFinding[] = []
   let active = 0
   let expired = 0
 
@@ -74,6 +74,7 @@ export function checkExceptions(repo: string, path = 'docs/governance-exceptions
     if (!DATE_RE.test(ex.expires)) {
       findings.push({
         level: 'error',
+        code: 'exceptions/undated',
         claim: 'exception for ' + ex.check + ' has a valid expiry date',
         detail: '"' + ex.expires + '" is not a YYYY-MM-DD date - an exception without an expiry is not valid',
         file: path,
@@ -85,6 +86,7 @@ export function checkExceptions(repo: string, path = 'docs/governance-exceptions
       expired += 1
       findings.push({
         level: 'error',
+        code: 'exceptions/expired',
         claim: 'exception for ' + ex.check + ' (issued by ' + ex.issuedBy + ' on ' + ex.date + ') has expired',
         detail: 'expired ' + ex.expires + ' - "' + ex.reason + '". Renew deliberately or fix the underlying check.',
         file: path,
@@ -96,6 +98,7 @@ export function checkExceptions(repo: string, path = 'docs/governance-exceptions
 
   findings.push({
     level: 'pass',
+    code: 'exceptions/summary',
     claim: 'governance exceptions',
     detail: active + ' active, ' + expired + ' expired',
     file: path,

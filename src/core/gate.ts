@@ -36,6 +36,7 @@ import { dirname, join } from 'node:path'
 import { fencedLineNumbers } from './artifact'
 import { findClaims, lintClaims } from './claims'
 import type { Finding, Level } from './cli'
+import type { CodedFinding } from './codes'
 import { gateFailure, journalOutcome, levelOf } from './gate-decision'
 import type { GateDecision, GateEvent, GateOptions, GateOutcome } from './gate-decision'
 import { appendEntry } from './journal'
@@ -180,7 +181,7 @@ function sessionStart(event: Extract<GateEvent, { kind: 'session-start' }>, opts
 // ---------------------------------------------------------------------------
 // stop
 
-function checkReview(root: string, path: string, current: CurrentRun): Finding[] {
+function checkReview(root: string, path: string, current: CurrentRun): CodedFinding[] {
   const markdown = readFileSync(join(root, path), 'utf8')
   const receipt = parseReceipt(markdown)
   const findings = lintClaims(markdown, path, { expectedHeadSha: receipt.headSha })
@@ -189,7 +190,7 @@ function checkReview(root: string, path: string, current: CurrentRun): Finding[]
   return findings
 }
 
-function checkMessage(root: string, message: string, current: CurrentRun): Finding[] {
+function checkMessage(root: string, message: string, current: CurrentRun): CodedFinding[] {
   const bundle = 'run' in current ? current.run.bundle : undefined
   const findings = lintClaims(message, 'final message', { prose: false, artifactSource: bundle })
   findings.push(...sealFindings(root, message, 'final message', current, { fromBundle: true }))
@@ -219,12 +220,14 @@ function sealFindings(
   file: string,
   current: CurrentRun,
   opts: { fromBundle: boolean },
-): Finding[] {
+): CodedFinding[] {
   const ids = citedIds(text)
   if (ids.length === 0) return []
-  if ('broken' in current) return [{ level: 'error', claim: 'the evidence ledger holds together', detail: current.broken, file }]
+  if ('broken' in current) return [{ level: 'error', code: 'seal/broken', claim: 'the evidence ledger holds together', detail: current.broken, file }]
   if ('none' in current) {
-    return [{ level: 'unverifiable', claim: 'the cited blocks came from the gatherer', detail: current.none + ' - gather evidence first', file }]
+    return [
+      { level: 'unverifiable', code: 'seal/no-run', claim: 'the cited blocks came from the gatherer', detail: current.none + ' - gather evidence first', file },
+    ]
   }
   const run = current.run
   // Blocks resolved from the bundle are sealed by construction - the bundle's

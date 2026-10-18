@@ -349,6 +349,13 @@ inherited opt-out can still be cancelled with `NO_COLOR=`. Colour is not gated
 on `isTTY`: sandboxed sessions and CI log viewers have no terminal attached and
 render ANSI perfectly well.
 
+For a program rather than a person, `claims`, `receipt` and `governance` take
+`--format json`: stdout is one JSON report and nothing else, and the exit code
+is the same. Each finding carries a `code` - `claims/predicate-unmet`,
+`receipt/wrong-base`, `seal/stale` - naming the rule that produced it. The
+sentences will be reworded; a released code keeps its meaning. Every code is
+listed in [`docs/evidence-layer.md`](docs/evidence-layer.md#machine-readable-output).
+
 ## What "zero-config" means, precisely
 
 `claims`, `receipt`, `ci-summary`, `journal`, governance, exceptions and misses
@@ -409,7 +416,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **358 tests** across **26 files**, and that sentence is checked
+The suite is **365 tests** across **27 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

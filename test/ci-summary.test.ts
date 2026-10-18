@@ -37,7 +37,7 @@ describe('emitReport', () => {
     spy.mockRestore()
 
     const output = lines.join('\n')
-    expect(output).toContain('\n  "schema": 3,')
+    expect(output).toContain('\n  "schema": 4,')
     expect(extractReport(output)?.findings[0]).toEqual({ level: 'pass', claim: 'a', detail: 'b' })
   })
 })

@@ -54,7 +54,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { classifyCommand, fencedLineNumbers, findArtifactBlocks } from './artifact'
 import type { FencedBlock, StopReason } from './artifact'
 import { findClaims } from './claims'
-import type { Finding } from './cli'
+import type { CodedFinding } from './codes'
 import { git, gitCapture } from './proc'
 
 /** Untracked files above this are compared by size and mtime, not hashed into the tree. */
@@ -460,10 +460,10 @@ export function readCurrentRun(repo: string): CurrentRun {
  * byte-for-byte (canonically) the one it wrote. Claims whose id resolves to no
  * block are left to `lintClaims`, which already reports them.
  */
-export function checkProvenance(markdown: string, file: string, run: Run): Finding[] {
+export function checkProvenance(markdown: string, file: string, run: Run): CodedFinding[] {
   const lines = markdown.split(/\r?\n/)
   const blocks = findArtifactBlocks(lines)
-  const findings: Finding[] = []
+  const findings: CodedFinding[] = []
   const seen = new Set<string>()
   for (const claim of findClaims(lines, fencedLineNumbers(lines))) {
     const id = claim.gradeId
@@ -476,6 +476,7 @@ export function checkProvenance(markdown: string, file: string, run: Run): Findi
     if (!sealed) {
       findings.push({
         level: 'error',
+        code: 'seal/not-gathered',
         claim: 'artifact ' + id + ' came from the gatherer',
         detail:
           'run ' + run.seal.runId + ' produced no artifact ' + id +
@@ -489,6 +490,7 @@ export function checkProvenance(markdown: string, file: string, run: Run): Findi
       edited
         ? {
             level: 'error',
+            code: 'seal/edited',
             claim: 'artifact ' + id + ' came from the gatherer',
             detail:
               'the block at line ' + (edited.start + 1) + ' differs from the one run ' + run.seal.runId +
@@ -497,6 +499,7 @@ export function checkProvenance(markdown: string, file: string, run: Run): Findi
           }
         : {
             level: 'pass',
+            code: 'seal/provenance',
             claim: 'artifact ' + id + ' came from the gatherer',
             detail: 'identical to the block run ' + run.seal.runId + ' wrote',
             ...where,
@@ -516,16 +519,17 @@ export function checkProvenance(markdown: string, file: string, run: Run): Findi
  * comparison could not be made; `pass` otherwise - and the pass says exactly
  * what it covers.
  */
-export function checkFreshness(repo: string, run: Run): Finding {
+export function checkFreshness(repo: string, run: Run): CodedFinding {
   const claim = 'the code is what run ' + run.seal.runId + ' was gathered from'
   const now = sourceFingerprint(repo, run.seal.excluded)
-  if ('unverifiable' in now) return { level: 'unverifiable', claim, detail: now.unverifiable }
+  if ('unverifiable' in now) return { level: 'unverifiable', code: 'seal/unhashable', claim, detail: now.unverifiable }
   const current = now.fingerprint
   if (!sameSource(run.seal.source, current)) {
     const root = repoRoot(repo) ?? repo
     const paths = changedPaths(root, run.seal.source, current)
     return {
       level: 'error',
+      code: 'seal/stale',
       claim,
       detail:
         'the code changed after the evidence was gathered' +
@@ -538,12 +542,14 @@ export function checkFreshness(repo: string, run: Run): Finding {
   if (current.coverage === 'partial') {
     return {
       level: 'unverifiable',
+      code: 'seal/partial-coverage',
       claim,
       detail: 'the hashed content matches, but ' + current.partialBecause.join('; ') + ' - that part cannot be shown unchanged',
     }
   }
   return {
     level: 'pass',
+    code: 'seal/fresh',
     claim,
     detail: 'every tracked and non-ignored file has the content it had when the run was gathered (not ignored files, dependencies or the environment)',
   }

@@ -6,6 +6,7 @@
  * any particular project's stack:
  *
  *   - `cli`               argument parsing, the five-outcome model, exit codes
+ *   - `codes`             which rule produced a finding, as a word a program can match
  *   - `artifact`          the evidence grammar - a command, its output, its exit code, its address
  *   - `proc`               running a command and recording what actually happened
  *   - `journal`            findings and misses, one schema, so usefulness has a clock
@@ -25,6 +26,7 @@
  * that file for exactly what "zero-config" does and does not cover.
  */
 export * from './core/cli'
+export * from './core/codes'
 export * from './core/artifact'
 export * from './core/proc'
 export * from './core/journal'

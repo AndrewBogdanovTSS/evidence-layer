@@ -6,10 +6,10 @@
  * Exit codes: 0 receipt holds - 1 at least one error - 2 bad usage.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { EXIT, checkReceipt, exitCodeFor, help, parseArgs, parseReceipt, report, usage } from '../index'
+import { EXIT, checkReceipt, exitCodeFor, formatOf, help, parseArgs, parseReceipt, printJsonReport, report, usage } from '../index'
 
 const HELP = `
-evidence-layer receipt <review.md> [--repo <path>] [--sha <expected-head>] [--strict]
+evidence-layer receipt <review.md> [--repo <path>] [--sha <expected-head>] [--strict] [--format text|json]
 
 Checks the Access Receipt at the top of a review against the repository.
 
@@ -17,6 +17,8 @@ Checks the Access Receipt at the top of a review against the repository.
   --sha     the head commit the review is supposed to be about; pass it whenever
             something other than the review itself knows the answer
   --strict  treat warnings and unverifiable results as failures
+  --format  json prints one report document - every finding with its code -
+            instead of the text; the exit code is the same either way
 
 exit 0 = the receipt holds, 1 = it does not, 2 = bad usage
 `
@@ -24,6 +26,7 @@ exit 0 = the receipt holds, 1 = it does not, 2 = bad usage
 export function run(argv: string[]): void {
   const args = parseArgs(argv)
   if (args.help) help(HELP)
+  const format = formatOf(args, HELP)
 
   const path = (args._ as string[])[0] ?? (typeof args.path === 'string' ? args.path : undefined)
   if (!path) usage(HELP)
@@ -41,6 +44,7 @@ export function run(argv: string[]): void {
     typeof args.sha === 'string' ? args.sha : undefined,
   )
 
-  report('Access receipt in ' + path, findings)
+  if (format === 'json') printJsonReport(findings, args.strict === true ? 'strict' : 'default', 'receipt')
+  else report('Access receipt in ' + path, findings)
   process.exit(exitCodeFor(findings, args.strict === true))
 }

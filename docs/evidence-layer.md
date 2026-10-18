@@ -338,6 +338,115 @@ record archived under `docs/decisions/archive/` is never scanned, on purpose:
 an archived record's date is expected to be in the past, and flagging it would
 be true and useless.
 
+## Machine-readable output
+
+`claims`, `receipt` and `governance` take `--format json`. Stdout is then one
+JSON document and nothing else - the same report `check:all` prints between its
+delimiters, schema 4 - and the exit code is the one the text mode would have
+given:
+
+```json
+{
+  "schema": 4,
+  "check": "claims",
+  "mode": "default",
+  "generatedAt": "2026-10-18T14:43:52.827Z",
+  "summary": "1 checked - 1 failed, 0 flaky, 0 warnings, 0 unverifiable",
+  "findings": [
+    {
+      "level": "error",
+      "claim": "the suite runs four passing tests, including the new string case.",
+      "detail": "VERIFIED[tests-333881] `passed>=4` does not hold - the artifact says passed=3",
+      "file": "examples/plain-node-project/reviews/predicate-mismatch.md",
+      "line": 17,
+      "code": "claims/predicate-unmet"
+    }
+  ]
+}
+```
+
+`claim` and `detail` are written for a person and will be reworded. `code` is
+written for a program: it names the rule that produced the finding, and a
+released code keeps its meaning - a rule whose meaning changes gets a new code
+([DEC-0006](decisions/0006-reason-codes.md)). A code is not a verdict: the level
+is still one of the five, and a rule that can pass or fail has one code for the
+pass and one naming each way it fails. Every code, and nothing else:
+
+| Code | Meaning |
+|---|---|
+| `claims/none` | the review has no `**Claim**:` lines, so nothing in it can be checked |
+| `claims/untagged` | a claim carries no grounding tag |
+| `claims/id-conflict` | one artifact id labels two different blocks |
+| `claims/malformed-address` | a `VERIFIED[...]` bracket is not an artifact address |
+| `claims/unknown-artifact` | a `VERIFIED[id]` names an artifact the document does not contain |
+| `claims/wrong-commit` | the cited artifact was collected at a different commit than the review is about |
+| `claims/bad-predicate` | a predicate in a `VERIFIED[id: ...]` tag cannot be checked |
+| `claims/outcome-mismatch` | the cited artifact's exit code or summary contradicts what the claim says |
+| `claims/predicate-unmet` | the cited artifact does not satisfy a predicate the claim states |
+| `claims/verified` | a `VERIFIED[id]` claim is backed by the artifact it names |
+| `claims/no-nearby-artifact` | a bare `VERIFIED` has no artifact block close enough below it |
+| `claims/verified-nearby` | a bare `VERIFIED` claim is backed by the artifact block below it |
+| `claims/bare-verified` | a bare `VERIFIED` proves only that a block is nearby - an address would say which |
+| `claims/documented` | a `DOCUMENTED` claim cites its source |
+| `claims/uncited` | a `DOCUMENTED` claim cites nothing |
+| `claims/inferred` | an `INFERRED` claim shows a chain of two or more steps |
+| `claims/short-chain` | an `INFERRED` claim shows fewer than two numbered steps |
+| `claims/unverified` | a claim is tagged `UNVERIFIED`, which is honest, not a failure |
+| `claims/shotgun` | one artifact backs more claims than one artifact should |
+| `claims/vague-comparison` | a comparison that says neither to what nor measured how |
+| `claims/success-without-effect` | a success word with no stated effect |
+| `claims/sycophancy` | agreement offered in place of evidence |
+| `receipt/missing-field` | the Access Receipt lacks a required field |
+| `receipt/no-sample` | the Access Receipt has no Sample integrity line |
+| `receipt/malformed-head` | the HEAD SHA is not a full 40-character commit id |
+| `receipt/head-exists` | the HEAD SHA is a commit in this repository |
+| `receipt/unknown-head` | the HEAD SHA is not a commit in this repository |
+| `receipt/expected-commit` | the review is about the commit it was expected to be about |
+| `receipt/wrong-commit` | the review is about a different commit than expected |
+| `receipt/files-opened` | every file in the diff was opened |
+| `receipt/files-unopened` | fewer files were opened than the diff contains |
+| `receipt/base-missing` | the receipt records no base SHA or target branch |
+| `receipt/no-remote-ref` | the target branch is not in this clone, so the base cannot be checked here |
+| `receipt/no-merge-base` | no merge-base exists here, so the base cannot be checked |
+| `receipt/base` | the base SHA is the merge-base with the target branch |
+| `receipt/wrong-base` | the base SHA is not the merge-base with the target branch |
+| `receipt/no-citations` | the review neither cites nor quotes any file |
+| `receipt/unsampled` | a cited file has no Sample integrity quote |
+| `receipt/sample-missing-file` | a sampled file does not exist at the reviewed commit |
+| `receipt/sample` | a sampled file's first line is what the receipt quotes |
+| `receipt/sample-mismatch` | a sampled file's first line is not what the receipt quotes |
+| `receipt/citation-missing-file` | a `path:line` citation names a file that does not exist at the reviewed commit |
+| `receipt/citation` | a `path:line` citation resolves |
+| `receipt/citation-out-of-range` | a `path:line` citation points past the end of the file |
+| `receipt/no-line-citations` | the review cites no specific lines |
+| `seal/no-run` | there is no sealed run in this checkout to check against |
+| `seal/broken` | the sealed run is unreadable or inconsistent |
+| `seal/not-gathered` | the current run produced no artifact with this id |
+| `seal/edited` | the cited block differs from the one the run wrote |
+| `seal/provenance` | the cited block is the one the run wrote |
+| `seal/unhashable` | the working directory cannot be fingerprinted here |
+| `seal/stale` | the code changed after the evidence was gathered |
+| `seal/partial-coverage` | what was hashed is unchanged, but part of the tree could not be hashed |
+| `seal/fresh` | the code is what it was when the evidence was gathered |
+| `governance/no-invariants` | no decision record declares an invariant |
+| `governance/no-command` | an invariant names no runnable command |
+| `governance/unknown-script` | an invariant names a script package.json does not have |
+| `governance/runtime-composed` | an invariant's trigger is composed at runtime and cannot be traced |
+| `governance/unreached` | no git hook or CI workflow runs an invariant's script |
+| `governance/reached` | a git hook or CI workflow runs the invariant's script |
+| `governance/new-miss` | a `Missed-By:` trailer was recorded into the journal |
+| `exceptions/summary` | how many governance exceptions are active and expired |
+| `exceptions/undated` | an exception has no valid expiry date |
+| `exceptions/expired` | an exception has expired |
+| `decisions/summary` | how many accepted decision records are current and stale |
+| `decisions/no-status` | a decision record declares no status |
+| `decisions/not-accepted` | a decision record is not accepted, so a review date does not apply |
+| `decisions/bad-review-date` | an accepted decision record has no valid `review_by` date |
+| `decisions/overdue` | an accepted decision record is past its `review_by` date |
+| `decisions/current` | an accepted decision record is within its `review_by` date |
+
+The table is checked against `src/core/codes.ts` by `check:docs`, both ways.
+
 ## What runs it
 
 | Trigger | Mode |

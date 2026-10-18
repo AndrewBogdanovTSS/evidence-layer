@@ -1,5 +1,5 @@
 /**
- * `pnpm check:docs` - does this repository's README still tell the truth?
+ * `pnpm check:docs` - does this repository's README (and its reason-code table) still tell the truth?
  *
  * The consumer-side half of the layer, and the worked example of where the
  * line falls: every claim below is a fact about *this* package - its engine
@@ -16,7 +16,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { exitCodeFor, help, parseArgs, report, run } from '../src/index'
+import { CODES, exitCodeFor, help, parseArgs, report, run } from '../src/index'
 import type { Finding } from '../src/index'
 import { parseTestCount } from '../src/adapters/node-default'
 
@@ -241,6 +241,37 @@ function checkHostSupport(readme: string, repo: string): Finding[] {
   return findings
 }
 
+/**
+ * The reason-code table in `docs/evidence-layer.md` lists every code in
+ * `src/core/codes.ts`, and nothing else. A code a consumer cannot look up is a
+ * code nobody can rely on; a documented code no check produces is a promise
+ * about a rule that is not there. Both directions are errors, one finding each
+ * way, naming the codes.
+ */
+function checkCodeTable(repo: string): Finding[] {
+  const file = 'docs/evidence-layer.md'
+  const doc = readFileSync(join(repo, file), 'utf8')
+  const section = /## Machine-readable output\n([\s\S]*?)(?:\n## |$)/.exec(doc)?.[1] ?? ''
+  const documented = new Set([...section.matchAll(/^\|\s*`([a-z]+\/[a-z-]+)`\s*\|/gm)].map((m) => m[1]!))
+  const registered = Object.keys(CODES)
+  const undocumented = registered.filter((c) => !documented.has(c))
+  const unknown = [...documented].filter((c) => !(c in CODES))
+  return [
+    {
+      level: undocumented.length === 0 ? 'pass' : 'error',
+      claim: 'every reason code is documented',
+      detail: undocumented.length === 0 ? registered.length + ' codes in the table' : 'not in the table: ' + undocumented.join(', '),
+      file,
+    },
+    {
+      level: unknown.length === 0 ? 'pass' : 'error',
+      claim: 'the reason-code table names only codes the checks produce',
+      detail: unknown.length === 0 ? 'every row is in src/core/codes.ts' : 'not in src/core/codes.ts: ' + unknown.join(', '),
+      file,
+    },
+  ]
+}
+
 function main(): void {
   const args = parseArgs(process.argv.slice(2))
   if (args.help) help(HELP)
@@ -258,6 +289,7 @@ function main(): void {
     checkCommands(readme, repo, pkg),
     checkLinks(readme, repo),
     ...checkHostSupport(readme, repo),
+    ...checkCodeTable(repo),
   ]
 
   findings.push(

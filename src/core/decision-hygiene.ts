@@ -26,7 +26,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import type { Finding } from './cli'
+import type { CodedFinding } from './codes'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -58,13 +58,13 @@ function parseFrontmatterFields(text: string): Record<string, string> {
  * superseded) is reported rather than skipped, so every file this scanned is
  * still visible in the output.
  */
-export function checkDecisionHygiene(repo: string, decisionsDir?: string, today: Date = new Date()): Finding[] {
+export function checkDecisionHygiene(repo: string, decisionsDir?: string, today: Date = new Date()): CodedFinding[] {
   const dir = decisionsDir ?? join(repo, 'docs', 'decisions')
   if (!existsSync(dir)) {
-    return [{ level: 'pass', claim: 'decision record hygiene', detail: '0 active, 0 stale (no decisions directory)' }]
+    return [{ level: 'pass', code: 'decisions/summary', claim: 'decision record hygiene', detail: '0 active, 0 stale (no decisions directory)' }]
   }
 
-  const findings: Finding[] = []
+  const findings: CodedFinding[] = []
   let active = 0
   let stale = 0
 
@@ -75,12 +75,13 @@ export function checkDecisionHygiene(repo: string, decisionsDir?: string, today:
     const status = fields.status
 
     if (!status) {
-      findings.push({ level: 'warning', claim: id + ' declares a status', detail: 'no `status:` field in the frontmatter', file })
+      findings.push({ level: 'warning', code: 'decisions/no-status', claim: id + ' declares a status', detail: 'no `status:` field in the frontmatter', file })
       continue
     }
     if (status !== 'accepted') {
       findings.push({
         level: 'pass',
+        code: 'decisions/not-accepted',
         claim: id + ' review date',
         detail: 'status is `' + status + '`, not `accepted` - a review date does not apply',
         file,
@@ -92,6 +93,7 @@ export function checkDecisionHygiene(repo: string, decisionsDir?: string, today:
     if (!reviewBy || !DATE_RE.test(reviewBy)) {
       findings.push({
         level: 'error',
+        code: 'decisions/bad-review-date',
         claim: id + ' has a valid review_by date',
         detail:
           (reviewBy ? '"' + reviewBy + '"' : 'no `review_by` field') +
@@ -106,6 +108,7 @@ export function checkDecisionHygiene(repo: string, decisionsDir?: string, today:
       stale += 1
       findings.push({
         level: 'error',
+        code: 'decisions/overdue',
         claim: id + ' is still current',
         detail:
           'review_by ' + reviewBy + ' has passed - re-ratify with a new date, or move it to docs/decisions/archive/ if it has been superseded',
@@ -113,10 +116,10 @@ export function checkDecisionHygiene(repo: string, decisionsDir?: string, today:
       })
     } else {
       active += 1
-      findings.push({ level: 'pass', claim: id + ' is still current', detail: 'accepted, review by ' + reviewBy, file })
+      findings.push({ level: 'pass', code: 'decisions/current', claim: id + ' is still current', detail: 'accepted, review by ' + reviewBy, file })
     }
   }
 
-  findings.push({ level: 'pass', claim: 'decision record hygiene', detail: active + ' active, ' + stale + ' stale' })
+  findings.push({ level: 'pass', code: 'decisions/summary', claim: 'decision record hygiene', detail: active + ' active, ' + stale + ' stale' })
   return findings
 }
