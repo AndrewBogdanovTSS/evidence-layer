@@ -43,11 +43,13 @@
  *     claim than "this command passed against this diff."
  */
 import { existsSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { artifactId, classifyCommand, formatArtifact } from './artifact'
 import { generateClaimSkeleton, generateSampleSkeleton } from './skeleton'
 import type { SkeletonArtifact } from './skeleton'
 import { gitCapture, run, runAsync } from './proc'
+import { changedPaths, publishRun, sameSource, sourceFingerprint, toRootRelative } from './seal'
+import type { RunArtifact, SourceFingerprint } from './seal'
 
 export interface Step {
   name: string
@@ -156,6 +158,19 @@ export interface GatherOptions {
    * of this bundle and a caller has to ask for it on purpose.
    */
   audit?: boolean
+  /**
+   * Publish this gather as a sealed run (see `seal.ts`), so a check can later
+   * tell a block the gatherer wrote from one written by hand, and evidence
+   * about today's code from evidence about yesterday's. Default `true`.
+   */
+  seal?: boolean
+  /**
+   * The review files that will be written after gathering, relative to `repo`.
+   * Left out of the source fingerprint along with the bundle itself, because
+   * writing them is what happens next and must not read as the code changing.
+   * Default `['review.md']`.
+   */
+  reviewPaths?: string[]
 }
 
 export interface GatherResult {
@@ -165,6 +180,15 @@ export interface GatherResult {
   outPath: string
   /** Whether `git status` reported nothing beyond the reviewed commit itself. */
   treeClean: boolean
+  /** Whether this gather was published as the current sealed run. */
+  sealed: boolean
+  runId?: string
+  /** Why it was not sealed, when it was not. */
+  notSealedBecause?: string
+  /** Paths that changed while the steps ran - the reason it was not sealed, when there are any. */
+  treeChanged: string[]
+  /** `partial` when part of the source was compared by metadata only. Present once a fingerprint was taken. */
+  coverage?: 'complete' | 'partial'
 }
 
 export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult> {
@@ -173,6 +197,37 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   const skip = opts.skip ?? []
 
   const headSha = assertWorkingTreeAt(head, opts.repo)
+
+  // The source the steps are about to read, observed before each runs and once
+  // after the last. Equal checkpoints mean the tree was the same *at those
+  // moments* - a file changed and changed back between two of them is not
+  // ruled out - but a step that writes into the tree (a formatter, a code
+  // generator, a test that leaves a file behind) is caught at its own step.
+  const sealing = opts.seal ?? true
+  const excluded = toRootRelative(opts.repo, [resolve(out), ...(opts.reviewPaths ?? ['review.md']).map((p) => resolve(opts.repo, p))], process.cwd())
+  let notSealedBecause: string | undefined = sealing ? undefined : 'sealing was turned off'
+  let checkpoint: SourceFingerprint | undefined
+  if (sealing) {
+    const first = sourceFingerprint(opts.repo, excluded)
+    if ('unverifiable' in first) notSealedBecause = first.unverifiable
+    else checkpoint = first.fingerprint
+  }
+  const firstCheckpoint = checkpoint
+  const changes: { step: string; paths: string[] }[] = []
+  const observe = (step: string): void => {
+    if (!checkpoint) return
+    const next = sourceFingerprint(opts.repo, excluded)
+    if ('unverifiable' in next) {
+      notSealedBecause = next.unverifiable
+      checkpoint = undefined
+      return
+    }
+    if (!sameSource(checkpoint, next.fingerprint)) {
+      changes.push({ step, paths: changedPaths(opts.repo, checkpoint, next.fingerprint) ?? ['(could not list the paths)'] })
+    }
+    checkpoint = next.fingerprint
+  }
+  const runArtifacts: RunArtifact[] = []
   const baseSha = gitCapture(['rev-parse', '--verify', '--end-of-options', opts.base + '^{commit}'], opts.repo)
   if (!baseSha) throw new Error('could not resolve --base ' + opts.base)
 
@@ -200,6 +255,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   if (!skip.includes('diff')) {
     const stat = run('git diff --stat ' + range, { cwd: opts.repo, timeoutMs: 60_000 })
     const id = artifactId(stat.command, headSha, stat.output)
+    runArtifacts.push({ id, command: stat.command, commit: headSha.slice(0, 7), exitCode: stat.exitCode, output: stat.output })
     parts.push('## diff', '', formatArtifact(stat.command, stat.output, stat.exitCode, { id, commit: headSha }), '')
   }
 
@@ -213,6 +269,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     const status = run('git status --porcelain=v1 --untracked-files=all', { cwd: opts.repo, timeoutMs: 30_000 })
     treeClean = status.output.trim() === ''
     const id = artifactId(status.command, headSha, status.output)
+    runArtifacts.push({ id, command: status.command, commit: headSha.slice(0, 7), exitCode: status.exitCode, output: status.output })
     parts.push(
       '## working tree',
       '',
@@ -236,7 +293,9 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
       continue
     }
     const res = await runAsync(step.command, { cwd: opts.repo, timeoutMs: 300_000 })
+    observe(step.name)
     const id = artifactId(res.command, headSha, res.output)
+    runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
     parts.push(formatArtifact(res.command, res.output, res.exitCode, { id, commit: headSha, stopped: res.stopped }), '')
     if (classifyCommand(res.command) !== 'diff') {
       claimArtifacts.push({
@@ -262,7 +321,9 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
 
   if (opts.audit) {
     const res = await runAsync('pnpm audit', { cwd: opts.repo, timeoutMs: 60_000 })
+    observe('dependency audit')
     const id = artifactId(res.command, headSha, res.output)
+    runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
     parts.push(
       '## dependency audit',
       '',
@@ -302,7 +363,42 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     )
   }
 
-  writeFileSync(out, parts.join('\n'), 'utf8')
-  console.log('\nwrote ' + out + ' - cite these blocks and claims instead of asserting what they would have said\n')
-  return { headSha, baseSha, changedFiles, outPath: out, treeClean }
+  if (changes.length > 0) {
+    notSealedBecause = 'the tree changed while the steps ran'
+    parts.push(
+      '## the tree changed while gathering',
+      '',
+      '_Not sealed: the steps below wrote into the files they were checking, so the evidence above is not about one version of the code. Fix or ignore these paths and gather again._',
+      '',
+      ...changes.map((c) => '- during ' + c.step + ': ' + c.paths.map((p) => '`' + p + '`').join(', ')),
+      '',
+    )
+  }
+
+  const bundle = parts.join('\n')
+  writeFileSync(out, bundle, 'utf8')
+  console.log('\nwrote ' + out + ' - cite these blocks and claims instead of asserting what they would have said')
+
+  let runId: string | undefined
+  if (!notSealedBecause && firstCheckpoint && checkpoint) {
+    // Throws on a short-id collision: two artifacts under one id would leave
+    // one of them unaddressable, and that is worth a failed gather.
+    const published = publishRun(opts.repo, { headSha, source: checkpoint, excluded, bundle, artifacts: runArtifacts })
+    runId = published.seal.runId
+    console.log('sealed as run ' + runId + (checkpoint.coverage === 'partial' ? ' (partial coverage: ' + checkpoint.partialBecause.join('; ') + ')' : '') + '\n')
+  } else {
+    console.log('not sealed: ' + notSealedBecause + '\n')
+  }
+  return {
+    headSha,
+    baseSha,
+    changedFiles,
+    outPath: out,
+    treeClean,
+    sealed: runId !== undefined,
+    ...(runId !== undefined && { runId }),
+    ...(notSealedBecause !== undefined && { notSealedBecause }),
+    treeChanged: [...new Set(changes.flatMap((c) => c.paths))].sort(),
+    ...(firstCheckpoint && { coverage: (checkpoint ?? firstCheckpoint).coverage }),
+  }
 }

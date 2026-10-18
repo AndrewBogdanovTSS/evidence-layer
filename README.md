@@ -230,6 +230,40 @@ tree - a process group on POSIX, `taskkill /T` on Windows - rather than only
 the direct child, and it reports within a grace period even when some process
 in the tree will not release the output.
 
+## The seal: was this block gathered, and is it still about this code?
+
+`claims` proves a tag points at a block in the document. On its own it cannot
+tell a block the gatherer wrote from one typed in by hand, or a review written
+right after the tests ran from one written after three more edits - which is
+what an agent does by default: it edits the code after running the suite, then
+reports the suite.
+
+So every `gatherEvidence()` also publishes a **sealed run** into the checkout's
+git directory (`git rev-parse --git-path evidence-layer`, never the source
+tree): the bundle it wrote, a hash of every artifact block in it, and a
+fingerprint of the source it ran against - a git tree id of the working
+directory's *content*, computed through a throwaway index so the real one is
+never touched. A gather whose own steps wrote into the files they were checking
+(a formatter, a code generator, a test that leaves a file behind) is not sealed,
+and the bundle names the step and the path.
+
+```bash
+npx evidence-layer claims review.md --seal
+```
+
+adds two checks. Every cited block must be one the current run produced,
+unedited. And the code must still be what that run was gathered from: editing a
+file after gathering is an error naming the file, while committing content that
+did not change is not, and neither is writing the review itself. A pass says
+exactly what it covers - tracked and non-ignored files, not ignored ones,
+dependencies or the environment - and an untracked file too large to hash makes
+it `unverifiable`, never a pass.
+
+The seal is not an attestation. It lives where the same agent can write, so it
+catches the default failure, not someone rewriting it on purpose; CI, which
+gathers its own evidence, stays the independent party. Without `--seal`,
+nothing changes and nothing local is read.
+
 ## Exit codes are a contract
 
 | code | meaning |
@@ -309,7 +343,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **288 tests** across **23 files**, and that sentence is checked
+The suite is **312 tests** across **24 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

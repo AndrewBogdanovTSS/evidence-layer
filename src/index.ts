@@ -11,6 +11,8 @@
  *   - `journal`            findings and misses, one schema, so usefulness has a clock
  *   - `misses`             extracting `Missed-By:` trailers from git history into the journal
  *   - `claims`             is every claim in a review backed by what it points at
+ *   - `predicates`         the numbers a claim says its artifact must show
+ *   - `seal`               the local ledger of what the gatherer produced, and from which source
  *   - `receipt`            was this review written against a real, correctly-based checkout
  *   - `governance`         does anything actually run the checks that claim enforcement
  *   - `exceptions`         is a bypass still a live decision, or a forgotten one
@@ -28,6 +30,8 @@ export * from './core/proc'
 export * from './core/journal'
 export * from './core/misses'
 export * from './core/claims'
+export * from './core/predicates'
+export * from './core/seal'
 export * from './core/receipt'
 export * from './core/governance'
 export * from './core/exceptions'

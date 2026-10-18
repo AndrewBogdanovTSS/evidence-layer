@@ -350,10 +350,16 @@ export interface GitResult {
  * would eat the first line of any file that starts with `> `, and stderr kept
  * out of it, so a warning never reads as file content.
  */
-export function git(args: string[], cwd?: string, timeoutMs = 30_000): GitResult {
+export function git(
+  args: string[],
+  cwd?: string,
+  timeoutMs = 30_000,
+  env?: Record<string, string>,
+): GitResult {
   const res = spawnSync('git', args, {
     cwd,
     shell: false,
+    env: env ? { ...process.env, ...env } : undefined,
     encoding: 'utf8',
     timeout: timeoutMs,
     maxBuffer: MAX_BUFFER_BYTES,
