@@ -118,6 +118,29 @@ jobs:
           path: dist/
       - run: pnpm check:docs
 
+      # Every commit the push or pull request brings, not only the tip: a
+      # trailer that names no symbol, or a function copied under new names, is
+      # a fact about one commit, and a later commit cannot fix it. Merges are
+      # left out - their diff is the branches', not anyone's decision. When
+      # there is no previous commit to start from (a new branch, a force push)
+      # the tip is checked alone, which is less, and the log says which.
+      - name: check:ladder, on every new commit
+        env:
+          BEFORE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          AFTER: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            range="$BEFORE..$AFTER"
+          else
+            echo "no previous commit to start from - checking $AFTER alone"
+            range="$AFTER^!"
+          fi
+          status=0
+          for commit in $(git rev-list --no-merges --reverse "$range"); do
+            pnpm check:ladder "$commit" || status=1
+          done
+          exit $status
+
       # The action, run on this repository the way a project runs it. `uses: ./`
       # resolves to this checkout's build (downloaded above), so what is tested
       # is this commit's action and this commit's checks together.

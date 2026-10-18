@@ -453,7 +453,7 @@ The table is checked against `src/core/codes.ts` by `check:docs`, both ways.
 
 | Trigger | Mode |
 |---|---|
-| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on push and pull request | the suite on every supported Node version; `check:docs` and `check:all --enforce` once |
+| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on push and pull request | the suite on every supported Node version; `check:docs`, `check:ladder` on each new commit, and `check:all --enforce` once |
 | `.githooks/pre-push`, after `pnpm hooks:install` | warn-only, `--fast` |
 | the GitHub Action, `uses: ./` in the same workflow | `claims` over a fixture review, with this commit's build |
 

@@ -61,7 +61,11 @@ remove tests, update that sentence in the same change.
 - `Ladder-Rung: <1-5> <what>` names the rung of the decision ladder the change
   stopped at (1 does it need to exist, 2 reuse what is here, 3 the platform does
   it, 4 an installed dependency does it, 5 write the minimum) - checked by
-  `pnpm check:ladder`.
+  `pnpm check:ladder`, which CI runs on every commit a push or pull request
+  brings. On rungs 2 to 4 the word after the verb is read as a name - the
+  symbol reused, the dependency used (`2 reuse formatWorkSummary`) - and must
+  appear in the diff, so prose there fails the check. Run it on your commit
+  before you push it.
 - `Missed-By: <review or PR>` on a commit that fixes a bug a review let through.
   `governance` extracts these into `journal.jsonl`; that count is the layer's
   only measure of what reviews miss.
