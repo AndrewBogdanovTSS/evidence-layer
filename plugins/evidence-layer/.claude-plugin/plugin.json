@@ -1,0 +1,11 @@
+{
+  "name": "evidence-layer",
+  "description": "A runtime gate for Claude Code: when the agent stops, the claims it made in its review or final answer are checked against the evidence it gathered, and an unbacked claim blocks the stop until it is fixed.",
+  "author": {
+    "name": "Andrii Bohdanov"
+  },
+  "homepage": "https://github.com/AndrewBogdanovTSS/evidence-layer#readme",
+  "repository": "https://github.com/AndrewBogdanovTSS/evidence-layer",
+  "license": "MIT",
+  "keywords": ["evidence", "claims", "review", "verification"]
+}

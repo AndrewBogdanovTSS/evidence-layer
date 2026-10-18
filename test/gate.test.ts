@@ -1,0 +1,292 @@
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { artifactId, formatArtifact } from '../src/core/artifact'
+import { decide, isProtected, journalOutcome, levelOf } from '../src/core/gate'
+import type { GateDecision, GateOptions } from '../src/core/gate'
+import { readJournal } from '../src/core/journal'
+import { publishRun, sourceFingerprint, stateDir } from '../src/core/seal'
+
+function sh(dir: string, ...args: string[]): string {
+  return execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim()
+}
+
+function repo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'el-gate-'))
+  sh(dir, 'init', '-q')
+  sh(dir, 'config', 'user.email', 't@t')
+  sh(dir, 'config', 'user.name', 't')
+  mkdirSync(join(dir, 'src'))
+  writeFileSync(join(dir, 'src/a.js'), 'a\n')
+  sh(dir, 'add', '-A')
+  sh(dir, 'commit', '-qm', 'init')
+  return dir
+}
+
+const start = (cwd: string, sessionId = 's1', opts: GateOptions = {}) =>
+  decide({ kind: 'session-start', cwd, sessionId, source: 'startup' }, opts)
+const stop = (cwd: string, opts: GateOptions = {}, extra: { message?: string; reentry?: boolean; sessionId?: string } = {}) =>
+  decide({ kind: 'stop', cwd, sessionId: extra.sessionId ?? 's1', reentry: extra.reentry ?? false, message: extra.message }, opts)
+
+const UNBACKED = '# Review\n\n**Claim**: the suite passes.\n'
+const HONEST = '# Review\n\n**Claim**: whether the suite passes.\n**Grounding**: UNVERIFIED\n'
+
+const TESTS_OUTPUT = 'ok\n[SUMMARY tests: passed=3 failed=0 skipped=0 todo=0]'
+
+/** Gathers a sealed run holding one test artifact, the way gatherEvidence would. */
+function sealTests(dir: string): { id: string; block: string } {
+  const head = sh(dir, 'rev-parse', 'HEAD')
+  const id = artifactId('pnpm test', head, TESTS_OUTPUT)
+  const block = formatArtifact('pnpm test', TESTS_OUTPUT, 0, { id, commit: head })
+  const fp = sourceFingerprint(dir, ['review.md', 'evidence.local.md'])
+  if ('unverifiable' in fp) throw new Error(fp.unverifiable)
+  publishRun(dir, {
+    headSha: head,
+    source: fp.fingerprint,
+    excluded: ['evidence.local.md', 'review.md'],
+    bundle: '# Evidence bundle\n\n' + block + '\n',
+    artifacts: [{ id, command: 'pnpm test', exitCode: 0, output: TESTS_OUTPUT }],
+  })
+  return { id, block }
+}
+
+const backedReview = (b: { id: string; block: string }) =>
+  '# Review\n\n**Claim**: the suite ran 3 passing tests.\n**Grounding**: VERIFIED[' + b.id + ': exit=0, passed>=3]\n\n' + b.block + '\n'
+
+const gateJournal = (dir: string) => readJournal(join(stateDir(dir)!, 'journal.jsonl'))
+
+describe('session-start', () => {
+  it('hands the agent the claim grammar and says whether evidence is sealed', () => {
+    const decision = start(repo())
+    expect(decision.action).toBe('context')
+    if (decision.action === 'context') {
+      expect(decision.text).toContain('**Claim**')
+      expect(decision.text).toContain('No sealed evidence run')
+    }
+  })
+
+  it('outside a git repository, stays out of the way', () => {
+    expect(start(mkdtempSync(join(tmpdir(), 'el-nogit-'))).outcome).toBe('not-applicable')
+  })
+})
+
+describe('stop - which reviews it checks', () => {
+  it('checks nothing when this session changed no review and made no claims', () => {
+    const dir = repo()
+    start(dir)
+    expect(stop(dir, {}, { message: 'All done, see the diff.' }).outcome).toBe('not-applicable')
+  })
+
+  it('does not check a review left modified before the session started', () => {
+    const dir = repo()
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    start(dir)
+    expect(stop(dir).outcome).toBe('not-applicable')
+  })
+
+  it('keeps the session snapshot across a resume, so a review written before it still counts', () => {
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    decide({ kind: 'session-start', cwd: dir, sessionId: 's1', source: 'resume' })
+    expect(stop(dir).action).toBe('block')
+  })
+
+  it('without a snapshot, says it did not check rather than passing', () => {
+    const dir = repo()
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    const decision = stop(dir)
+    expect(decision.outcome).toBe('no-snapshot')
+    expect(decision.level).toBe('unverifiable')
+    expect(decision.action).toBe('allow')
+  })
+
+  it('finds the repository from a subdirectory the agent cd-ed into', () => {
+    const dir = repo()
+    start(join(dir, 'src'))
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    expect(stop(join(dir, 'src')).action).toBe('block')
+  })
+})
+
+describe('stop - retry episodes', () => {
+  it('blocks twice, then lets the agent through with the errors still attached', () => {
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    expect(stop(dir, {}, { reentry: false }).action).toBe('block')
+    // The host's reentry flag is true from the second stop on; it must not be
+    // what ends the episode while the session file can count.
+    expect(stop(dir, {}, { reentry: true }).action).toBe('block')
+    const third = stop(dir, {}, { reentry: true })
+    expect(third.action).toBe('allow')
+    expect(third.outcome).toBe('retry-exhausted')
+    expect(third.level).toBe('error')
+    // Editing the text without fixing it does not hand out fresh blocks.
+    writeFileSync(join(dir, 'review.md'), UNBACKED + '\nmore words\n')
+    expect(stop(dir, {}, { reentry: true }).outcome).toBe('retry-exhausted')
+  })
+
+  it('closes the episode on a clean check, so a later failure gets fresh blocks', () => {
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    stop(dir)
+    stop(dir)
+    writeFileSync(join(dir, 'review.md'), HONEST)
+    const clean = stop(dir)
+    expect(clean).toMatchObject({ action: 'allow', outcome: 'checked' })
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    expect(stop(dir).action).toBe('block')
+  })
+
+  it('keeps blocking when asked to', () => {
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    for (let i = 0; i < 5; i++) expect(stop(dir, { keepBlocking: true }).action).toBe('block')
+  })
+
+  it('falls back to the host reentry flag only when it cannot keep a count', () => {
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    const sessions = join(stateDir(dir)!, 'sessions')
+    for (const f of execFileSync('ls', [sessions], { encoding: 'utf8' }).trim().split('\n')) {
+      writeFileSync(join(sessions, f), 'not json')
+    }
+    // Corrupt state means "changed reviews" is unknown, so the review is not
+    // checked; a message with claims still is, and is what exercises the fallback.
+    const message = '**Claim**: the suite passes.'
+    expect(stop(dir, {}, { message, reentry: false }).action).toBe('block')
+    expect(stop(dir, {}, { message, reentry: true })).toMatchObject({ action: 'allow', outcome: 'fail-open-error' })
+    expect(stop(dir, { failClosed: true }, { message, reentry: true }).action).toBe('block')
+  })
+})
+
+describe('stop - the seal', () => {
+  it('passes a review whose block came from the sealed run, and blocks once the code changes', () => {
+    const dir = repo()
+    start(dir)
+    const sealed = sealTests(dir)
+    writeFileSync(join(dir, 'review.md'), backedReview(sealed))
+    expect(stop(dir)).toMatchObject({ action: 'allow', outcome: 'checked', level: 'pass' })
+
+    writeFileSync(join(dir, 'src/a.js'), 'edited after the tests ran\n')
+    writeFileSync(join(dir, 'review.md'), backedReview(sealed) + '\n')
+    const stale = stop(dir)
+    expect(stale.action).toBe('block')
+    if (stale.action === 'block') expect(stale.reason).toContain('src/a.js')
+  })
+
+  it('blocks a block that was edited after it was gathered', () => {
+    const dir = repo()
+    start(dir)
+    const sealed = sealTests(dir)
+    writeFileSync(join(dir, 'review.md'), backedReview(sealed).replace('ok\n', 'ok, and more\n'))
+    const decision = stop(dir)
+    expect(decision.action).toBe('block')
+    if (decision.action === 'block') expect(decision.reason).toContain('edited after it was gathered')
+  })
+
+  it('in strict mode, blocks a claim it could not hold to any seal', () => {
+    const dir = repo()
+    start(dir)
+    const id = artifactId('pnpm test', 'f8ae76a', TESTS_OUTPUT)
+    const unsealed = { id, block: formatArtifact('pnpm test', TESTS_OUTPUT, 0, { id, commit: 'f8ae76a' }) }
+    writeFileSync(join(dir, 'review.md'), backedReview(unsealed))
+    expect(stop(dir).level).toBe('unverifiable')
+    expect(stop(dir).action).toBe('allow')
+    expect(stop(dir, { strict: true }).action).toBe('block')
+  })
+})
+
+describe('stop - claims in the final message', () => {
+  it('resolves a cited id against the sealed bundle, since a chat reply carries no blocks', () => {
+    const dir = repo()
+    start(dir)
+    const sealed = sealTests(dir)
+    const message = 'Done.\n\n**Claim**: the suite ran 3 passing tests.\n**Grounding**: VERIFIED[' + sealed.id + ': passed>=3]'
+    expect(stop(dir, {}, { message })).toMatchObject({ action: 'allow', level: 'pass' })
+  })
+
+  it('blocks a cited id that no sealed run produced, and a predicate the artifact contradicts', () => {
+    const dir = repo()
+    start(dir)
+    const sealed = sealTests(dir)
+    expect(stop(dir, {}, { message: '**Claim**: tests pass.\n**Grounding**: VERIFIED[tests-000000]' }).action).toBe('block')
+    expect(
+      stop(dir, {}, { message: '**Claim**: 5 tests pass.\n**Grounding**: VERIFIED[' + sealed.id + ': passed>=5]', sessionId: 's2' })
+        .action,
+    ).toBe('block')
+  })
+
+  it('does not grade ordinary prose, or a Claim line inside a code example', () => {
+    const dir = repo()
+    start(dir)
+    const message = 'It works now and is much cleaner.\n\n```markdown\n**Claim**: the suite passes.\n```\n'
+    expect(stop(dir, {}, { message }).outcome).toBe('not-applicable')
+  })
+})
+
+describe('the gate journal', () => {
+  it('records an exhausted episode as an error and a check it could not make as unverifiable - never a pass', () => {
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    stop(dir)
+    stop(dir)
+    stop(dir)
+    const dir2 = repo()
+    writeFileSync(join(dir2, 'review.md'), UNBACKED)
+    stop(dir2)
+    expect(gateJournal(dir).map((e) => [e.gate?.outcome, e.outcome])).toEqual([
+      ['checked', 'error'],
+      ['checked', 'error'],
+      ['retry-exhausted', 'error'],
+    ])
+    expect(gateJournal(dir2).map((e) => [e.gate?.outcome, e.outcome])).toEqual([['no-snapshot', 'unverifiable']])
+  })
+
+  it('maps outcomes onto the five levels without inventing a pass', () => {
+    expect(journalOutcome('checked', 'warning')).toBe('warning')
+    expect(journalOutcome('retry-exhausted', 'error')).toBe('error')
+    expect(journalOutcome('fail-open-error', 'unverifiable')).toBe('unverifiable')
+    expect(journalOutcome('not-applicable', null)).toBeNull()
+    expect(levelOf([{ level: 'warning', claim: '', detail: '' }, { level: 'unverifiable', claim: '', detail: '' }])).toBe(
+      'unverifiable',
+    )
+  })
+})
+
+describe('pre-write', () => {
+  const write = (cwd: string, path: string): GateDecision => decide({ kind: 'pre-write', cwd, paths: [path] })
+
+  it('denies a write into the ledger, by any route to it', () => {
+    const dir = repo()
+    const state = join(dir, '.git', 'evidence-layer')
+    mkdirSync(state, { recursive: true })
+    expect(write(dir, join(state, 'current.json')).action).toBe('deny')
+    expect(write(join(dir, 'src'), '../.git/evidence-layer/runs/x/seal.json').action).toBe('deny')
+    symlinkSync(join(dir, '.git'), join(dir, 'gitlink'))
+    expect(write(dir, join(dir, 'gitlink', 'evidence-layer', 'new.json')).action).toBe('deny')
+  })
+
+  it('denies writes into a worktree\'s ledger too, and allows ordinary files', () => {
+    const dir = repo()
+    const wt = dir + '-wt'
+    sh(dir, 'worktree', 'add', '-q', wt)
+    const wtState = join(dir, '.git', 'worktrees', wt.split('/').at(-1)!, 'evidence-layer', 'current.json')
+    expect(isProtected(wt, wtState)).toBe(true)
+    expect(write(wt, join(wt, 'src', 'a.js')).action).toBe('allow')
+    expect(write(dir, join(dir, '.git', 'config')).action).toBe('allow')
+  })
+
+  it('records a deny in the gate journal', () => {
+    const dir = repo()
+    write(dir, join(dir, '.git', 'evidence-layer', 'current.json'))
+    expect(readFileSync(join(dir, '.git', 'evidence-layer', 'journal.jsonl'), 'utf8')).toContain('gate:pre-write')
+  })
+})

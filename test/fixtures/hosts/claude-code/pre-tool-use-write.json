@@ -1,0 +1,10 @@
+{
+  "session_id": "3f6c2d1e-0a9b-4c8d-9e7f-1a2b3c4d5e6f",
+  "transcript_path": "/home/user/.claude/projects/example/3f6c2d1e-0a9b-4c8d-9e7f-1a2b3c4d5e6f.jsonl",
+  "cwd": "__CWD__",
+  "permission_mode": "default",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",
+  "tool_input": { "file_path": "__PATH__", "content": "x" },
+  "tool_use_id": "toolu_01ABC"
+}

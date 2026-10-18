@@ -13,7 +13,7 @@
  *
  * Exit codes: 0 clean - 1 at least one error - 3 flaky - 2 bad usage.
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { exitCodeFor, help, parseArgs, report, run } from '../src/index'
@@ -205,6 +205,42 @@ function checkLinks(readme: string, repo: string): Finding {
   }
 }
 
+/**
+ * "Supports Claude Code" is a claim about a protocol this repository does not
+ * control, so the README may make it only for a host that has an adapter in
+ * `src/hosts/` *and* recorded inputs in `test/fixtures/hosts/<name>/` - the
+ * fixtures are what the adapter's tests run against. A host named in the
+ * README's support table without both is an error; an adapter without
+ * fixtures is one too, because nothing pins what it reads.
+ */
+function checkHostSupport(readme: string, repo: string): Finding[] {
+  const hostsDir = join(repo, 'src', 'hosts')
+  const adapters = existsSync(hostsDir)
+    ? readdirSync(hostsDir).filter((f) => f.endsWith('.ts') && f !== 'contract.ts').map((f) => f.slice(0, -3))
+    : []
+  const findings: Finding[] = adapters.map((name): Finding => {
+    const dir = join(repo, 'test', 'fixtures', 'hosts', name)
+    const fixtures = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json')) : []
+    return {
+      level: fixtures.length > 0 ? 'pass' : 'error',
+      claim: 'the ' + name + ' adapter is pinned by recorded inputs',
+      detail: fixtures.length > 0 ? fixtures.length + ' fixtures in test/fixtures/hosts/' + name : 'no fixtures in test/fixtures/hosts/' + name,
+      file: 'src/hosts/' + name + '.ts',
+    }
+  })
+  // The support table: `| <Host> | <adapter file> | ...` rows under "Supported hosts".
+  const section = /## Supported hosts\n([\s\S]*?)(?:\n## |$)/.exec(readme)?.[1] ?? ''
+  for (const [, host, adapter] of section.matchAll(/^\|\s*([^|]+?)\s*\|\s*`src\/hosts\/([\w-]+)\.ts`/gm)) {
+    findings.push({
+      level: adapters.includes(adapter!) ? 'pass' : 'error',
+      claim: 'the README\'s support for ' + host + ' has an adapter behind it',
+      detail: adapters.includes(adapter!) ? 'src/hosts/' + adapter + '.ts' : 'no src/hosts/' + adapter + '.ts',
+      file: 'README.md',
+    })
+  }
+  return findings
+}
+
 function main(): void {
   const args = parseArgs(process.argv.slice(2))
   if (args.help) help(HELP)
@@ -221,6 +257,7 @@ function main(): void {
     ...checkExports(readme, pkg),
     checkCommands(readme, repo, pkg),
     checkLinks(readme, repo),
+    ...checkHostSupport(readme, repo),
   ]
 
   findings.push(

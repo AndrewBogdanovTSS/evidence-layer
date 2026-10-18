@@ -41,6 +41,9 @@
     },
     "./package.json": "./package.json"
   },
+  "evidenceLayer": {
+    "hookProtocol": 1
+  },
   "bin": {
     "evidence-layer": "./dist/bin/evidence-layer.mjs"
   },

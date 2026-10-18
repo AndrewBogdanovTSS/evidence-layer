@@ -1,0 +1,9 @@
+{
+  "session_id": "3f6c2d1e-0a9b-4c8d-9e7f-1a2b3c4d5e6f",
+  "transcript_path": "/home/user/.claude/projects/example/3f6c2d1e-0a9b-4c8d-9e7f-1a2b3c4d5e6f.jsonl",
+  "cwd": "__CWD__",
+  "permission_mode": "default",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "__MESSAGE__"
+}

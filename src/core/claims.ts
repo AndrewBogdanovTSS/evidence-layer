@@ -249,16 +249,32 @@ export function findClaims(lines: string[], fenced: Set<number>): Claim[] {
 export interface LintOptions extends OutcomeOptions {
   /** The commit the review claims to be about, when known - enables the id/commit mismatch check. */
   expectedHeadSha?: string
+  /**
+   * A second document whose artifact blocks a VERIFIED id may resolve to, as
+   * well as the checked text's own - a sealed bundle, when the claims are in a
+   * chat message that carries no blocks of its own. Only where ids are looked
+   * up changes; the claims are still read from the checked text alone.
+   */
+  artifactSource?: string
+  /**
+   * Apply the prose rules (vague comparatives, success words with no stated
+   * effect). Default `true`. Off for a conversational reply, where ordinary
+   * prose is not graded and only `**Claim**:` lines are.
+   */
+  prose?: boolean
 }
 
 export function lintClaims(markdown: string, file: string, opts: LintOptions = {}): Finding[] {
   const lines = markdown.split(/\r?\n/)
   const fenced = fencedLineNumbers(lines)
   const claims = findClaims(lines, fenced)
-  const artifacts = findArtifactBlocks(lines)
+  const artifacts = [
+    ...findArtifactBlocks(lines),
+    ...(opts.artifactSource !== undefined ? findArtifactBlocks(opts.artifactSource.split(/\r?\n/)) : []),
+  ]
   const findings: Finding[] = []
 
-  if (claims.length === 0) {
+  if (claims.length === 0 && opts.prose !== false) {
     findings.push({
       level: 'warning',
       claim: 'the review states claims',
@@ -271,7 +287,9 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
   // a claim resolving the id would be checked against whichever came first.
   // Identical copies are fine - the same block pasted twice is still that block.
   for (const [id, blocks] of groupById(artifacts)) {
-    const bodies = new Set(blocks.map((b) => b.info + '\n' + b.body.join('\n')))
+    // Compared line by line, trimmed - the same canonical form the seal hashes -
+    // so trailing spaces an editor added do not make one block two.
+    const bodies = new Set(blocks.map((b) => [b.info, ...b.body].map((l) => l.trim()).join('\n')))
     if (bodies.size > 1) {
       findings.push({
         level: 'error',
@@ -477,7 +495,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     }
   }
 
-  findings.push(...lintProse(lines, fenced, file))
+  if (opts.prose !== false) findings.push(...lintProse(lines, fenced, file))
   return findings
 }
 

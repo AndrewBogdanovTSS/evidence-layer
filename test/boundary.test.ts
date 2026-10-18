@@ -55,3 +55,29 @@ describe('src/core imports nothing that knows what project it is running in', ()
     }
   })
 })
+
+const HOSTS = join(here, '..', 'src', 'hosts')
+const hostFiles = readdirSync(HOSTS).filter((f) => f.endsWith('.ts'))
+const hostImports = (file: string) => [...readFileSync(join(HOSTS, file), 'utf8').matchAll(IMPORT)].map((m) => m[1]!)
+
+describe('src/hosts speaks one host protocol each, and knows nothing else', () => {
+  it('has files to check at all - the contract and at least one adapter', () => {
+    expect(hostFiles).toContain('contract.ts')
+    expect(hostFiles.length).toBeGreaterThan(1)
+  })
+
+  for (const file of hostFiles) {
+    it(file + ' imports only node builtins, the core and its own contract', () => {
+      for (const specifier of hostImports(file)) {
+        const allowed = specifier.startsWith('node:') || specifier.startsWith('../core/') || specifier === './contract'
+        expect(allowed, specifier + ' in hosts/' + file).toBe(true)
+      }
+    })
+  }
+
+  it('is never imported by the core - a host is a detail of the hook command, not of the checks', () => {
+    for (const file of files) {
+      for (const specifier of importsOf(file)) expect(specifier.includes('hosts/'), specifier + ' in core/' + file).toBe(false)
+    }
+  })
+})

@@ -115,8 +115,9 @@ concrete near-miss.
 
 ## The commands
 
-One executable, five commands, six checks - `journal` is the one command with
-subcommands:
+One executable, seven commands - `journal` is the one command with
+subcommands, and `hook` and `init` are the runtime gate's (see
+[below](#in-an-agents-session-the-runtime-gate)):
 
 ```bash
 npx evidence-layer claims review.md          # is every claim backed by evidence?
@@ -264,6 +265,69 @@ catches the default failure, not someone rewriting it on purpose; CI, which
 gathers its own evidence, stays the independent party. Without `--seal`,
 nothing changes and nothing local is read.
 
+## In an agent's session: the runtime gate
+
+CI checks a review after a person can already read it. The gate runs the same
+checks at the moment the agent says it is done, so an unbacked "tests pass" is
+caught by the agent that wrote it:
+
+- **When the session starts**, it tells the agent the claim grammar and
+  records which review files exist, so that it later checks only what *this*
+  session wrote.
+- **Before each file write**, it refuses a write into its own ledger - an
+  accidental-write guard, not a sandbox: a shell command can still write there.
+- **When the agent stops**, it runs `claims`, `receipt` and, against the sealed
+  run, provenance and freshness - over every review file the session changed
+  (default `review.md`) and the `**Claim**:` lines of the agent's final reply,
+  whose ids resolve against the sealed bundle. Ordinary prose is not graded. An
+  error blocks the stop with the findings as the reason, and the agent fixes its
+  claims.
+
+Two budgets keep it from becoming a trap. A **retry episode** opens at the first
+stop with errors and closes at the first clean one; inside it the gate blocks
+at most twice, then lets the agent through with the errors attached - editing
+text does not reset it, only a clean check does. And the gate **fails open**:
+if it cannot run, the session continues and is told why. `--keep-blocking`,
+`--fail-closed` and `--strict` (both, and `unverifiable` blocks too) are the
+stricter trades. Every decision - including each allow that checked nothing,
+which is never recorded as a pass - goes into a journal in the checkout's git
+directory, not the committed one.
+
+With the package installed in the project:
+
+```bash
+npx evidence-layer init claude            # or --local for .claude/settings.local.json
+```
+
+writes the three hooks into `.claude/settings.json`, keeps every hook that is
+not its own, and replaces its own in place when run again. Or install the
+Claude Code plugin from this repository, which finds the package the project
+installed and says the gate is inactive when there is none:
+
+```text
+/plugin marketplace add AndrewBogdanovTSS/evidence-layer
+/plugin install evidence-layer@evidence-layer
+```
+
+`npx evidence-layer hook claude <event>` is what both run. It reads the hook's
+input on stdin and answers in Claude Code's own protocol - always with exit 0,
+because Claude Code reads an exit code as a decision, and this package's `2`
+(bad usage) is Claude Code's "block".
+
+## Supported hosts
+
+| Host | Adapter | Protocol checked against |
+| --- | --- | --- |
+| Claude Code | `src/hosts/claude-code.ts` | code.claude.com/docs/en/hooks, read 2026-10-17 |
+
+A host is listed here only with an adapter and recorded inputs it is tested
+against (`test/fixtures/hosts/`), and `check:docs` holds the table to that. The
+inputs are written from the documented schema, not captured from a live
+session, so they show the adapter keeps to the protocol as documented - not
+that a later release of the host still speaks it. Other hosts (Codex, others)
+follow once their hook protocol is documented well enough to write fixtures
+against.
+
 ## Exit codes are a contract
 
 | code | meaning |
@@ -343,7 +407,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **312 tests** across **24 files**, and that sentence is checked
+The suite is **355 tests** across **26 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

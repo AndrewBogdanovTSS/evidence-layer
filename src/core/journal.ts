@@ -48,6 +48,20 @@ export interface JournalEntry {
   verified?: 'real' | 'false' | null
   /** For a miss only: could an existing check plausibly have caught it? Filled in by review, not guessed. */
   couldHaveCaught?: 'yes' | 'no' | null
+  /**
+   * For a runtime gate decision only: why it decided what it did. `outcome`
+   * above is the assessment's level; this says whether that level came from a
+   * check that ran, a retry budget that ran out, or a gate that could not run -
+   * so an allow that checked nothing is never counted as a pass.
+   */
+  gate?: {
+    event: string
+    outcome: string
+    action: string
+    reviews: string[]
+    runId?: string
+    elapsedMs: number
+  }
 }
 
 function newId(): string {

@@ -1,0 +1,14 @@
+{
+  "name": "evidence-layer",
+  "description": "The evidence-layer runtime gate for Claude Code.",
+  "owner": {
+    "name": "Andrii Bohdanov"
+  },
+  "plugins": [
+    {
+      "name": "evidence-layer",
+      "source": "./plugins/evidence-layer",
+      "description": "Checks the claims an agent makes against the evidence it gathered, when it stops."
+    }
+  ]
+}

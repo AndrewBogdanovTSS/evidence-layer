@@ -34,11 +34,14 @@ evidence-layer <command> [options]
   governance                is anything actually running the checks?
   journal report            what the checks have actually found, over time
   journal tag <id> ...      mark a finding real or false, or a miss catchable
+  hook <host> <event>       the runtime gate, as an agent host's hook runs it
+  init claude               add the runtime gate to a project's Claude Code settings
 
   --help                    this text, or a command's own with --help after it
   --version                 the version of this package
 
 exit 0 = clean, 1 = at least one error, 2 = bad usage, 3 = flaky
+(hook always exits 0 - its decision is in its output, in the host's protocol)
 `
 
 type Command = (argv: string[]) => void | Promise<void>
@@ -50,12 +53,16 @@ const ciSummary: Loader = async () => (await import('../src/commands/ci-summary'
 const governance: Loader = async () => (await import('../src/commands/governance')).run
 const journalReport: Loader = async () => (await import('../src/commands/journal-report')).run
 const journalTag: Loader = async () => (await import('../src/commands/journal-tag')).run
+const hook: Loader = async () => (await import('../src/commands/hook')).run
+const init: Loader = async () => (await import('../src/commands/init')).run
 
 const COMMANDS: Record<string, Loader> = {
   claims,
   receipt,
   'ci-summary': ciSummary,
   governance,
+  hook,
+  init,
   // The names these checks had as scripts in the repository this package was
   // extracted from. Same functions, no second implementation to drift.
   'check:claims': claims,

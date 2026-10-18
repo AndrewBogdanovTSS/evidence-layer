@@ -1,0 +1,101 @@
+/**
+ * `evidence-layer init claude` - wires the runtime gate into a project's
+ * Claude Code settings, explicitly, on request.
+ *
+ * Never run at install time. A package that writes into a project's agent
+ * configuration from a postinstall script is deciding for the project what
+ * its agent may do, and this one does not get to.
+ *
+ * The merge owns exactly the entries whose command is this package's hook
+ * command (`evidence-layer... hook claude <event>`) and touches nothing else:
+ * every other hook, matcher group and setting is kept as it was. Its own
+ * entries are replaced in place, so running it again - after an upgrade, or
+ * with different flags - leaves one entry per event, and the same input gives
+ * the same file byte for byte.
+ */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { EXIT, help, parseArgs, usage } from '../core/cli'
+
+const HELP = `
+evidence-layer init claude [--local] [--dry-run] [--repo <path>] [--review <paths>]
+                           [--fail-closed] [--keep-blocking] [--strict]
+
+Adds the runtime gate's hooks to .claude/settings.json (or, with --local, to
+.claude/settings.local.json, which is not meant to be committed). Keeps every
+hook that is not evidence-layer's; replaces evidence-layer's own in place.
+
+  --dry-run   print the file it would write, and write nothing
+  --repo      the project root (default: the current directory)
+  --review, --fail-closed, --keep-blocking, --strict
+              passed through to \`evidence-layer hook\` - see its --help
+
+exit 0 = written (or printed), 2 = bad usage
+`
+
+type HookEntry = { type: string; command: string; timeout?: number; [key: string]: unknown }
+type MatcherGroup = { matcher?: string; hooks: HookEntry[]; [key: string]: unknown }
+type Settings = { hooks?: Record<string, MatcherGroup[]>; [key: string]: unknown }
+
+/** An entry is this package's when its command runs this package's Claude Code hook - nothing looser. */
+export const OWNED_COMMAND_RE = /evidence-layer(?:\.mjs)?["']?\s+hook\s+claude\s+(?:session-start|pre-tool-use|stop)\b/
+
+const LAUNCHER = 'node "$CLAUDE_PROJECT_DIR/node_modules/evidence-layer/dist/bin/evidence-layer.mjs" hook claude'
+
+const EVENTS: { name: string; arg: string; matcher?: string; timeout: number }[] = [
+  { name: 'SessionStart', arg: 'session-start', timeout: 10 },
+  { name: 'PreToolUse', arg: 'pre-tool-use', matcher: 'Write|Edit|MultiEdit|NotebookEdit', timeout: 10 },
+  { name: 'Stop', arg: 'stop', timeout: 120 },
+]
+
+/** Merges the gate's hooks into a settings object, returning a new one. Pure, so it can be tested without a disk. */
+export function mergeClaudeSettings(settings: Settings, flags: string[]): Settings {
+  const hooks: Record<string, MatcherGroup[]> = { ...(settings.hooks ?? {}) }
+  for (const event of EVENTS) {
+    const kept = (hooks[event.name] ?? [])
+      .map((group) => ({ ...group, hooks: (group.hooks ?? []).filter((h) => !OWNED_COMMAND_RE.test(h.command ?? '')) }))
+      .filter((group) => group.hooks.length > 0)
+    const command = [LAUNCHER, event.arg, ...flags].join(' ')
+    kept.push({
+      ...(event.matcher !== undefined && { matcher: event.matcher }),
+      hooks: [{ type: 'command', command, timeout: event.timeout }],
+    })
+    hooks[event.name] = kept
+  }
+  return { ...settings, hooks }
+}
+
+export function run(argv: string[]): void {
+  const args = parseArgs(argv)
+  if (args.help) help(HELP)
+  const [host] = args._ as string[]
+  if (host !== 'claude') usage(HELP)
+
+  const repo = typeof args.repo === 'string' ? args.repo : process.cwd()
+  const file = join(repo, '.claude', args.local === true ? 'settings.local.json' : 'settings.json')
+
+  let settings: Settings = {}
+  if (existsSync(file)) {
+    try {
+      settings = JSON.parse(readFileSync(file, 'utf8')) as Settings
+    } catch {
+      console.error(file + ' is not valid JSON - fix it first; nothing was written')
+      process.exit(EXIT.usage)
+    }
+  }
+
+  const flags: string[] = []
+  if (typeof args.review === 'string') flags.push('--review ' + JSON.stringify(args.review))
+  for (const flag of ['fail-closed', 'keep-blocking', 'strict']) if (args[flag] === true) flags.push('--' + flag)
+
+  const text = JSON.stringify(mergeClaudeSettings(settings, flags), null, 2) + '\n'
+  if (args['dry-run'] === true) {
+    console.log('would write ' + file + ':\n')
+    console.log(text)
+    process.exit(EXIT.ok)
+  }
+  mkdirSync(join(repo, '.claude'), { recursive: true })
+  writeFileSync(file, text, 'utf8')
+  console.log('wrote ' + file + ': SessionStart, PreToolUse and Stop now run evidence-layer\'s gate')
+  console.log('it needs evidence-layer installed in this project (npm install --save-dev evidence-layer)')
+}
