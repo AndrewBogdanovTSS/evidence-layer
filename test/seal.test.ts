@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -112,6 +112,59 @@ describe('sourceFingerprint', () => {
     expect(readFileSync(join(wt, '.git'), 'utf8')).toMatch(/^gitdir: /)
     expect(stateDir(wt)).toBe(join(dir, '.git', 'worktrees', wt.split('/').at(-1)!, 'evidence-layer'))
     expect(fp(wt).treeId).toBe(fp(dir).treeId)
+  })
+})
+
+describe('sourceFingerprint moves for every change git can see, and names it', () => {
+  // DEC-0005: editing any non-ignored file always moves the fingerprint. An
+  // edit is one kind of change; these are the others a working tree has.
+  const cases: [string, (dir: string) => void, string[]][] = [
+    ['a deleted tracked file', (dir) => rmSync(join(dir, 'src/a.js')), ['src/a.js']],
+    ['a renamed file - as its old path and its new one', (dir) => renameSync(join(dir, 'src/a.js'), join(dir, 'src/b.js')), ['src/a.js', 'src/b.js']],
+    ['a deleted directory, every file in it', (dir) => rmSync(join(dir, 'src'), { recursive: true }), ['src/a.js', 'src/nested/c.js']],
+    ['a deleted untracked file', (dir) => rmSync(join(dir, 'notes.txt')), ['notes.txt']],
+    ['a symbolic link pointed elsewhere', (dir) => (rmSync(join(dir, 'link')), symlinkSync('src/nested/c.js', join(dir, 'link'))), ['link']],
+  ]
+  if (process.platform !== 'win32') {
+    // Git records only the executable bit, and only where `core.fileMode` is
+    // on - the default on POSIX; Windows has no bit to record, so no change.
+    cases.push(['a file made executable', (dir) => chmodSync(join(dir, 'src/a.js'), 0o755), ['src/a.js']])
+  }
+
+  for (const [what, change, named] of cases) {
+    it(what, () => {
+      const dir = repo({ 'src/a.js': 'a\n', 'src/nested/c.js': 'c\n' })
+      symlinkSync('src/a.js', join(dir, 'link'))
+      writeFileSync(join(dir, 'notes.txt'), 'untracked, not ignored\n')
+      const before = fp(dir)
+      change(dir)
+      const after = fp(dir)
+      expect(after.treeId).not.toBe(before.treeId)
+      expect(changedPaths(dir, before, after)).toEqual(named)
+    })
+  }
+
+  it('comes back to the same id when the change is undone, and does not move for an ignored file', () => {
+    const dir = repo({ 'src/a.js': 'a\n', '.gitignore': 'build/\n' })
+    const before = fp(dir).treeId
+    renameSync(join(dir, 'src/a.js'), join(dir, 'src/b.js'))
+    renameSync(join(dir, 'src/b.js'), join(dir, 'src/a.js'))
+    expect(fp(dir).treeId).toBe(before)
+    mkdirSync(join(dir, 'build'))
+    writeFileSync(join(dir, 'build/out.js'), 'generated\n')
+    expect(fp(dir).treeId).toBe(before)
+  })
+
+  it('makes a sealed run stale for a rename, naming both paths', () => {
+    const dir = repo({ 'src/a.js': 'a\n' })
+    const b = block('Tests 1 passed (1)')
+    publish(dir, [b])
+    renameSync(join(dir, 'src/a.js'), join(dir, 'src/renamed.js'))
+    const current = readCurrentRun(dir)
+    const finding = 'run' in current ? checkFreshness(dir, current.run) : null
+    expect(finding).toMatchObject({ level: 'error', code: 'seal/stale' })
+    expect(finding!.detail).toContain('src/a.js')
+    expect(finding!.detail).toContain('src/renamed.js')
   })
 })
 

@@ -27,7 +27,11 @@
  * The source fingerprint is a git tree id of the working directory's
  * *content*, computed through a throwaway index so the real one is never
  * touched: it does not move when a commit records content that did not
- * change, and it does move when any tracked or non-ignored file does.
+ * change, and it does move when any tracked or non-ignored file does - is
+ * edited, added, deleted, renamed, or made executable, or a symbolic link is
+ * pointed elsewhere. What git does not record, it cannot see: the executable
+ * bit where `core.fileMode` is off (the Windows default), other permission
+ * bits, timestamps, and empty directories.
  *
  * What it is not: an attestation. The seal lives in `.git/`, which the same
  * agent can write to. It catches the default failure - a block written by
