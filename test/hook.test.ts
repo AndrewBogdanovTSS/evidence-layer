@@ -11,17 +11,12 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { claudeCode } from '../src/hosts/claude-code'
 import { OWNED_COMMAND_RE, SELF_LAUNCHER, isOwnRepository, mergeClaudeSettings } from '../src/commands/init'
+import { hostFixture } from './helpers/fixtures'
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const BIN = join(root, 'dist', 'bin', 'evidence-layer.mjs')
 const LAUNCHER = join(root, 'plugins', 'evidence-layer', 'scripts', 'run-hook.mjs')
-const FIXTURES = join(root, 'test', 'fixtures', 'hosts', 'claude-code')
-
-function fixture(name: string, fill: Record<string, string>): string {
-  let text = readFileSync(join(FIXTURES, name), 'utf8')
-  for (const [key, value] of Object.entries(fill)) text = text.replaceAll('"__' + key + '__"', JSON.stringify(value))
-  return text
-}
+const fixture = (name: string, fill: Record<string, string>) => hostFixture('claude-code', name, fill)
 
 function repo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'el-hook-'))

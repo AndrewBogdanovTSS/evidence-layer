@@ -27,18 +27,19 @@ evidence-layer hook <host> <event> [--review <paths>] [--fail-closed] [--keep-bl
 Runs the runtime gate for one agent-host hook event: input on stdin, the
 decision on stdout in the host's own protocol. Always exits 0.
 
-  hosts       claude (events: session-start, pre-tool-use, stop)
+  hosts       claude, codex (events: session-start, pre-tool-use, stop)
   --review    comma-separated review files to check at stop (default: review.md)
   --fail-closed    block instead of allowing when the gate itself cannot run
   --keep-blocking  never let a retry episode run out of blocks
   --strict    both of the above, and block on unverifiable findings too
 
-Set up by \`evidence-layer init claude\`, or by the Claude Code plugin in this
-package's repository.
+Set up by \`evidence-layer init claude\` or \`evidence-layer init codex\`, or by
+the Claude Code plugin in this package's repository.
 `
 
 const HOSTS: Record<string, () => Promise<HostAdapter>> = {
   claude: async () => (await import('../hosts/claude-code')).claudeCode,
+  codex: async () => (await import('../hosts/codex')).codex,
 }
 
 function readStdin(): string {

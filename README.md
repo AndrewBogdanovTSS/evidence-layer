@@ -342,10 +342,26 @@ installed and says the gate is inactive when there is none:
 /plugin install evidence-layer@evidence-layer
 ```
 
-`npx evidence-layer hook claude <event>` is what both run. It reads the hook's
-input on stdin and answers in Claude Code's own protocol - always with exit 0,
-because Claude Code reads an exit code as a decision, and this package's `2`
-(bad usage) is Claude Code's "block".
+For Codex:
+
+```bash
+npx evidence-layer init codex             # writes .codex/hooks.json
+```
+
+merges the same three hooks into `.codex/hooks.json` the same way. Codex runs a
+project's hooks only once they are trusted, so approve them in `/hooks` - and
+again after `init` runs with different flags, since a changed command is a new
+hook to Codex. Codex gives a hook no project-directory variable, so the command
+finds the package from `git rev-parse --show-toplevel`, as Codex's
+documentation does; on Windows, where hooks run under `cmd.exe`, it uses
+`npx --no-install` instead. Codex edits files with `apply_patch`, so the
+pre-write guard reads every path the patch adds, updates, deletes or moves a
+file to.
+
+`npx evidence-layer hook claude|codex <event>` is what all of these run. It
+reads the hook's input on stdin and answers in the host's own protocol - always
+with exit 0, because both hosts read an exit code as a decision, and this
+package's `2` (bad usage) is their "block".
 
 ## In CI: the GitHub Action
 
@@ -380,14 +396,14 @@ the review runs under `::stop-commands::` with a token chosen per run
 | Host | Adapter | Protocol checked against |
 | --- | --- | --- |
 | Claude Code | `src/hosts/claude-code.ts` | code.claude.com/docs/en/hooks, read 2026-10-17 |
+| Codex | `src/hosts/codex.ts` | developers.openai.com/codex/hooks and `codex-rs/hooks/schema/generated` at openai/codex 8c07694, read 2026-10-18 |
 
 A host is listed here only with an adapter and recorded inputs it is tested
 against (`test/fixtures/hosts/`), and `check:docs` holds the table to that. The
 inputs are written from the documented schema, not captured from a live
 session, so they show the adapter keeps to the protocol as documented - not
-that a later release of the host still speaks it. Other hosts (Codex, others)
-follow once their hook protocol is documented well enough to write fixtures
-against.
+that a later release of the host still speaks it. Other hosts follow once their
+hook protocol is documented well enough to write fixtures against.
 
 ## Exit codes are a contract
 
@@ -477,7 +493,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **389 tests** across **30 files**, and that sentence is checked
+The suite is **401 tests** across **31 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

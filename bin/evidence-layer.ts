@@ -35,7 +35,7 @@ evidence-layer <command> [options]
   journal report            what the checks have actually found, over time
   journal tag <id> ...      mark a finding real or false, or a miss catchable
   hook <host> <event>       the runtime gate, as an agent host's hook runs it
-  init claude               add the runtime gate to a project's Claude Code settings
+  init claude|codex         add the runtime gate to a project's Claude Code or Codex hooks
 
   --help                    this text, or a command's own with --help after it
   --version                 the version of this package

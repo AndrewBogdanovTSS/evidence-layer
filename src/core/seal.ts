@@ -55,6 +55,7 @@ import { classifyCommand, fencedLineNumbers, findArtifactBlocks } from './artifa
 import type { FencedBlock, StopReason } from './artifact'
 import { findClaims } from './claims'
 import type { CodedFinding } from './codes'
+import { isRecord } from './json'
 import { git, gitCapture } from './proc'
 
 /** Untracked files above this are compared by size and mtime, not hashed into the tree. */
@@ -389,7 +390,6 @@ export function publishRun(repo: string, input: PublishInput): Run {
   return { dir, seal, bundle: input.bundle }
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 /** Shape-checks a parsed seal. A cast is not a check: the file is on disk, and anything can be on disk. */
 export function validateSeal(value: unknown): Seal | string {
