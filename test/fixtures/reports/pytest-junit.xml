@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="1" skipped="2" tests="6" time="0.024" timestamp="2026-10-18T17:26:50" hostname="ci"><testcase classname="test_x" name="test_a" time="0.000" /><testcase classname="test_x" name="test_b" time="0.000"><failure message="assert False">&gt;   def test_b(): assert False
+                  ^^^^^^^^^^^^
+E   assert False
+
+test_x.py:3: AssertionError</failure></testcase><testcase classname="test_x" name="test_c" time="0.000"><skipped type="pytest.skip" message="x">test_x.py:4: x</skipped></testcase><testcase classname="test_x" name="test_d" time="0.000"><skipped type="pytest.xfail" message="" /></testcase><testcase classname="test_x" name="test_e" time="0.000" /><testcase classname="test_x" name="test_f" time="0.000"><error message="failed on setup with &quot;RuntimeError: setup&quot;">@pytest.fixture
+&gt;   def boom(): raise RuntimeError("setup")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   RuntimeError: setup
+
+test_x.py:10: RuntimeError</error></testcase></testsuite></testsuites>

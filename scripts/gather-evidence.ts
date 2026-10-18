@@ -19,9 +19,15 @@
  * for one to parse, and passing one anyway would either find nothing or
  * quietly start asserting a number nobody asked this suite to measure.
  *
+ * The test step's output is summarised with `summariseVitest`, so the bundle
+ * ends that block with `[SUMMARY tests: passed=N ...]` and a claim about the
+ * suite can name its count as a predicate - the same adapter a project on
+ * pytest or JUnit swaps for its own.
+ *
  * Exit codes: 0 bundle written - 1 refs unresolvable or the guard failed - 2 bad usage.
  */
 import { EXIT, gatherEvidence, help, parseArgs, usage } from '../src/index'
+import { summariseVitest } from '../src/adapters/test-reports'
 
 const HELP = `
 pnpm evidence --base <ref> [--head <ref>] [--out <file>] [--skip <steps>] [--repo <path>] [--audit]
@@ -59,7 +65,16 @@ async function main(): Promise<void> {
   if (!base) usage(HELP)
 
   try {
-    await gatherEvidence({ repo, base, head, out, skip, audit, plan: { lintCommand: typecheckInsteadOfLint } })
+    await gatherEvidence({
+      repo,
+      base,
+      head,
+      out,
+      skip,
+      audit,
+      plan: { lintCommand: typecheckInsteadOfLint },
+      summaries: { test: summariseVitest() },
+    })
   } catch (err) {
     console.error((err as Error).message)
     process.exit(EXIT.failed)

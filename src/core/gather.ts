@@ -41,10 +41,18 @@
  *   - a dependency audit, opt-in only: unlike everything else gathered here,
  *     its result can change with no code change at all, which is a different
  *     claim than "this command passed against this diff."
+ *
+ * And one thing the gatherer writes rather than runs: the work-summary line
+ * (`[SUMMARY tests: passed=71 ...]`) at the end of a lint or test step's
+ * output, from a `Summariser` the caller passes - see
+ * `adapters/test-reports` for JUnit XML, pytest and vitest. Appended after
+ * the tool has finished, by the gatherer and not by the tool, which is what
+ * `parseWorkSummary` relies on when it reads only the last line.
  */
 import { existsSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { artifactId, classifyCommand, formatArtifact } from './artifact'
+import { WORK_SUMMARY_KEYS, artifactId, classifyCommand, formatArtifact, formatWorkSummary } from './artifact'
+import type { WorkKind, WorkSummary } from './artifact'
 import { generateClaimSkeleton, generateSampleSkeleton } from './skeleton'
 import type { SkeletonArtifact } from './skeleton'
 import { gitCapture, run, runAsync } from './proc'
@@ -63,6 +71,10 @@ export interface PlanOptions {
   testGate?: (changedFiles: string[]) => boolean
   /** Build a scoped lint command from the changed files. Default: `pnpm lint` over everything. */
   lintCommand?: (changedFiles: string[]) => string
+  /** The test command - `pytest --junitxml=reports/junit.xml`, `mvn -B test`. Default: `pnpm test`. */
+  testCommand?: (changedFiles: string[]) => string
+  /** The typecheck command - `mypy .`, `tsc --noEmit`. Default: `pnpm typecheck`. */
+  typecheckCommand?: (changedFiles: string[]) => string
   /**
    * Whether a pnpm lockfile exists to check. `gatherEvidence` always computes
    * this itself from the filesystem; exposed here so `planStepsDefault` stays
@@ -82,7 +94,7 @@ export function planStepsDefault(changedFiles: string[], skip: string[], opts: P
   })
   steps.push({
     name: 'typecheck',
-    command: 'pnpm typecheck',
+    command: opts.typecheckCommand ? opts.typecheckCommand(changedFiles) : 'pnpm typecheck',
     skipReason: skip.includes('typecheck') ? 'skipped by --skip' : undefined,
   })
   const hasLockfile = opts.hasLockfile ?? true
@@ -98,7 +110,7 @@ export function planStepsDefault(changedFiles: string[], skip: string[], opts: P
   const gate = opts.testGate ? opts.testGate(changedFiles) : true
   steps.push({
     name: 'test',
-    command: 'pnpm test',
+    command: opts.testCommand ? opts.testCommand(changedFiles) : 'pnpm test',
     skipReason: skip.includes('test')
       ? 'skipped by --skip'
       : gate
@@ -132,6 +144,51 @@ export function assertWorkingTreeAt(head: string, repo: string): string {
   return wanted
 }
 
+/** What a `Summariser` is handed: one finished lint or test step. */
+export interface StepRun {
+  step: string
+  command: string
+  output: string
+  exitCode: number
+  /** The repository the step ran in; report paths are relative to it. */
+  repo: string
+  /** `Date.now()` just before the step started - a report older than this was not written by it. */
+  startedAt: number
+}
+
+/**
+ * Reads how much a finished step checked - from its output, or from a report
+ * file it wrote. `unavailable` says why there is no summary, and the bundle
+ * prints the reason: a missing summary is said, not silently left out.
+ */
+export type Summariser = (run: StepRun) => WorkSummary | { unavailable: string }
+
+/** Which work kind each summarisable step must report. */
+const SUMMARY_KIND: Record<string, WorkKind> = { lint: 'lint', test: 'tests' }
+
+/**
+ * The summary line to append to a step's output, or why there is none. A
+ * summariser's answer is held to the grammar here, so a bad adapter cannot
+ * write a line `parseWorkSummary` would then misread: the kind must match the
+ * step, and every count must be present and a non-negative safe integer -
+ * `formatWorkSummary` would otherwise write a missing count as `0`, which is
+ * an observation nobody made.
+ */
+function summaryLine(step: string, summarise: Summariser, run: StepRun): { line: string } | { unavailable: string } {
+  const kind = SUMMARY_KIND[step]!
+  let result: WorkSummary | { unavailable: string }
+  try {
+    result = summarise(run)
+  } catch (err) {
+    return { unavailable: 'the summariser failed: ' + (err as Error).message }
+  }
+  if ('unavailable' in result) return result
+  if (result.kind !== kind) return { unavailable: 'the summariser reported a ' + result.kind + ' run for the ' + step + ' step' }
+  const bad = WORK_SUMMARY_KEYS[kind].filter((k) => !Number.isSafeInteger(result.counts[k]) || result.counts[k]! < 0)
+  if (bad.length > 0) return { unavailable: 'the summariser gave no usable count for ' + bad.join(', ') }
+  return { line: formatWorkSummary(kind, result.counts) }
+}
+
 export interface GatherOptions {
   repo: string
   base: string
@@ -150,6 +207,14 @@ export interface GatherOptions {
    * format this package recognises out of the box.
    */
   coverageParser?: (testOutput: string) => string | null | undefined
+  /**
+   * How much the lint and test steps checked, appended to each one's output as
+   * a work-summary line - what `VERIFIED[id: passed>=71]` and the skeleton's
+   * predicates read. No default: a count is read off a report format, and
+   * which one a project produces is that project's business. See
+   * `adapters/test-reports`.
+   */
+  summaries?: { lint?: Summariser; test?: Summariser }
   /**
    * Also run `pnpm audit` and include it as its own section. Off by default:
    * unlike lint, typecheck or the lockfile check, its result can change with
@@ -292,11 +357,24 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
       parts.push('_Not run: ' + step.skipReason + '._', '')
       continue
     }
+    const startedAt = Date.now()
     const res = await runAsync(step.command, { cwd: opts.repo, timeoutMs: 300_000 })
     observe(step.name)
+    const summarise = opts.summaries?.[step.name as 'lint' | 'test']
+    let noSummary: string | undefined
+    if (summarise && step.name in SUMMARY_KIND) {
+      // A stopped run never reported a result, so nothing it left behind is
+      // one - a half-written report least of all.
+      const summary = res.stopped
+        ? { unavailable: 'the run was stopped (' + res.stopped + ') before it reported a result' }
+        : summaryLine(step.name, summarise, { step: step.name, command: res.command, output: res.output, exitCode: res.exitCode, repo: opts.repo, startedAt })
+      if ('line' in summary) res.output = (res.output.trimEnd() === '' ? '' : res.output.trimEnd() + '\n') + summary.line
+      else noSummary = summary.unavailable
+    }
     const id = artifactId(res.command, headSha, res.output)
     runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
     parts.push(formatArtifact(res.command, res.output, res.exitCode, { id, commit: headSha, stopped: res.stopped }), '')
+    if (noSummary) parts.push('_No work summary: ' + noSummary + '._', '')
     if (classifyCommand(res.command) !== 'diff') {
       claimArtifacts.push({
         command: res.command,

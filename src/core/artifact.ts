@@ -159,14 +159,17 @@ export function findArtifactBlocks(lines: string[]): ArtifactBlock[] {
  * honestly to `cmd` rather than guessing.
  */
 export function classifyCommand(command: string): string {
-  if (/\btsc\b|typecheck/i.test(command)) return 'types'
-  if (/eslint|\blint\b/i.test(command)) return 'lint'
+  // The non-Node names are here because `\btest\b` does not match inside
+  // `pytest`, and a test run classified as `cmd` gets none of the test rules -
+  // its success claims are never held to its counts.
+  if (/\btsc\b|typecheck|\bmypy\b|\bpyright\b/i.test(command)) return 'types'
+  if (/eslint|\blint\b|\bpylint\b|\bflake8\b|\bruff\b/i.test(command)) return 'lint'
   if (/git diff/i.test(command)) return 'diff'
   if (/git status/i.test(command)) return 'tree'
   if (/frozen-lockfile/i.test(command)) return 'lockfile'
   if (/\baudit\b/i.test(command)) return 'audit'
   if (/fingerprint/i.test(command)) return 'engine'
-  if (/\btest\b|vitest|jest|mocha/i.test(command)) return 'tests'
+  if (/\btest\b|vitest|jest|mocha|\bpytest\b|\brspec\b|\bphpunit\b/i.test(command)) return 'tests'
   return 'cmd'
 }
 

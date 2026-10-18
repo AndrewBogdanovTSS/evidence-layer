@@ -1,0 +1,22 @@
+.Fsx.E                                                                   [100%]
+==================================== ERRORS ====================================
+___________________________ ERROR at setup of test_f ___________________________
+
+    @pytest.fixture
+>   def boom(): raise RuntimeError("setup")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   RuntimeError: setup
+
+test_x.py:10: RuntimeError
+=================================== FAILURES ===================================
+____________________________________ test_b ____________________________________
+
+>   def test_b(): assert False
+                  ^^^^^^^^^^^^
+E   assert False
+
+test_x.py:3: AssertionError
+=========================== short test summary info ============================
+FAILED test_x.py::test_b - assert False
+ERROR test_x.py::test_f - RuntimeError: setup
+1 failed, 2 passed, 1 skipped, 1 xfailed, 1 error in 0.02s

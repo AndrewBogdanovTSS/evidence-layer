@@ -17,6 +17,7 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     'adapters/node-default': 'src/adapters/node-default.ts',
+    'adapters/test-reports': 'src/adapters/test-reports.ts',
     'bin/evidence-layer': 'bin/evidence-layer.ts',
   },
   format: ['esm'],

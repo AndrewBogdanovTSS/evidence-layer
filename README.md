@@ -226,6 +226,37 @@ a property of the code.
 Two different blocks under one id are an error too: an id is an address, and an
 address names one thing.
 
+The counts come from the project's own test report, read after the step has
+finished and appended by the gatherer - never by the tool, which is why only
+the last line counts. `evidence-layer/adapters/test-reports` reads the three
+shapes a run leaves: JUnit XML, which pytest, Maven and Gradle, `dotnet test`,
+`go-junit-report` and `jest-junit` all write; pytest's closing line; and
+vitest's `Tests` line. A Python project, say:
+
+```js
+import { gatherEvidence } from 'evidence-layer'
+import { summariseJUnit } from 'evidence-layer/adapters/test-reports'
+
+await gatherEvidence({
+  repo: '.',
+  base: 'origin/main',
+  skip: ['lint', 'lockfile'],
+  plan: {
+    typecheckCommand: () => 'mypy .',
+    testCommand: () => 'pytest -q --junitxml=reports/junit.xml',
+  },
+  summaries: { test: summariseJUnit('reports/junit.xml') },
+})
+```
+
+JUnit cases are counted from the `<testcase>` elements, not from a suite's own
+`tests=` attribute. A report older than the step - left behind by an earlier
+run - is refused rather than read, and a step with no usable summary says why
+in the bundle instead of going without one silently. Write the report where
+git does not look (`reports/` in `.gitignore`), or the gather will say,
+correctly, that the tree changed while it ran. A directory of reports, as
+Surefire writes, is summed.
+
 `runAsync` is the runner for those steps. A timeout kills the whole process
 tree - a process group on POSIX, `taskkill /T` on Windows - rather than only
 the direct child, and it reports within a grace period even when some process
@@ -412,9 +443,11 @@ import { parseTestCount } from 'evidence-layer/adapters/node-default'
 ```
 
 Everything the CLI does is exported. `src/core/` has no knowledge of any
-project's stack; `src/adapters/node-default.ts` is the one file allowed to know
-it is running on Node and how a handful of common test reporters format their
-output.
+project's stack. The adapters are the files allowed to know one:
+`src/adapters/node-default.ts` knows it is running on Node and how a handful of
+common test reporters print their totals, and `src/adapters/test-reports.ts`
+knows the JUnit XML, pytest and vitest formats a test step's work summary is
+read from.
 
 ## The portability test
 
@@ -444,7 +477,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **377 tests** across **29 files**, and that sentence is checked
+The suite is **389 tests** across **30 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
