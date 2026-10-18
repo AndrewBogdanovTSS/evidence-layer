@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,10 +18,7 @@ import {
   toRootRelative,
 } from '../src/core/seal'
 import type { SourceFingerprint } from '../src/core/seal'
-
-function sh(dir: string, ...args: string[]): string {
-  return execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim()
-}
+import { sh } from './helpers/git'
 
 function repo(files: Record<string, string> = { 'src/a.js': 'a\n' }, commit = true): string {
   const dir = mkdtempSync(join(tmpdir(), 'el-seal-'))

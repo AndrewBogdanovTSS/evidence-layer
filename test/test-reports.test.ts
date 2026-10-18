@@ -3,7 +3,6 @@
  * run did not write is refused, and the gatherer appends the line itself -
  * after the tool, where `parseWorkSummary` looks.
  */
-import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +12,7 @@ import { parseJUnitXml, parsePytestSummary, parseVitestSummary, summariseJUnit, 
 import { classifyCommand, parseWorkSummary } from '../src/core/artifact'
 import { gatherEvidence } from '../src/core/gather'
 import type { StepRun } from '../src/core/gather'
+import { tempRepo } from './helpers/git'
 
 const FIXTURES = join(fileURLToPath(new URL('.', import.meta.url)), 'fixtures', 'reports')
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), 'utf8')
@@ -114,18 +114,7 @@ describe('summariseJUnit', () => {
 })
 
 describe('gatherEvidence with a summariser', () => {
-  function repo(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'el-gather-sum-'))
-    const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' })
-    g('init', '-q')
-    g('config', 'user.email', 't@t')
-    g('config', 'user.name', 't')
-    writeFileSync(join(dir, '.gitignore'), 'reports/\n')
-    writeFileSync(join(dir, 'a.py'), 'x = 1\n')
-    g('add', '-A')
-    g('commit', '-qm', 'init')
-    return dir
-  }
+  const repo = () => tempRepo('el-gather-sum-', { '.gitignore': 'reports/\n', 'a.py': 'x = 1\n' })
 
   it('appends the report\'s counts to the test step\'s output, and the skeleton names them', async () => {
     const dir = repo()

@@ -8,10 +8,7 @@ import { decide, isProtected, journalOutcome, levelOf } from '../src/core/gate'
 import type { GateDecision, GateOptions } from '../src/core/gate'
 import { readJournal } from '../src/core/journal'
 import { publishRun, sourceFingerprint, stateDir } from '../src/core/seal'
-
-function sh(dir: string, ...args: string[]): string {
-  return execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim()
-}
+import { sh } from './helpers/git'
 
 function repo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'el-gate-'))
