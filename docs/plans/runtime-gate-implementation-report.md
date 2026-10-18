@@ -161,9 +161,15 @@ project with the package linked into `node_modules`:
 One run, one project, one model: the loop closes as designed; how often it
 catches something real is what the gate journal is for.
 
-## 7. Open after this release
+## 7. Decided at release
 
-- Whether to ship the shell-injection fix as 0.4.1 for anyone pinned to 0.4.x.
+- **No 0.4.1.** The shell-injection fix ships only in 0.5.0; anyone on 0.4.x
+  upgrades to the newest version rather than to a patch of the old one. The
+  owner's call, made when the release was cut: one supported line is cheaper
+  to keep honest than two.
+
+## 8. Open after this release
+
 - Phase 5, and the strategy items in section 3.
 - The first real counts from `journal report --include-gate`, once the gate has
   run in projects other than this one.
