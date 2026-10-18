@@ -11,6 +11,9 @@ hostname and timestamps replaced.
 - `vitest-output.txt`, `vitest-junit.xml` - vitest 4.1.11, `vitest run
   --reporter=default --reporter=junit`, over five tests: one passes, one fails,
   one is skipped, one is `todo`, one is `it.fails`.
+- `node-test-tap.txt`, `node-test-spec.txt` - Node 22.22.0, `node --test` with
+  its output captured (TAP) and with `--test-reporter=spec`, over four tests:
+  one passes, one fails, one is skipped, one is `todo`.
 
 They pin what `src/adapters/test-reports.ts` reads against the formats those
 versions produce; a later release that changes its output is caught when the

@@ -6,7 +6,7 @@ supersedes: null
 invariants:
   - A work-summary line is written by the gatherer after a step has finished, from the summariser the caller passed, and only when every count is present for the step's own kind; a step whose summary is unavailable says why in the bundle; enforced by `pnpm test`.
   - A JUnit report older than the step that should have written it is never read, and JUnit counts come from the `<testcase>` elements, not from a suite's attributes or from text inside CDATA or comments; enforced by `pnpm test`.
-  - The report readers are pinned by output recorded from real runs of pytest and vitest, not written by hand; enforced by `pnpm test`.
+  - The report readers are pinned by output recorded from real runs of pytest, vitest and Node's test runner, not written by hand; enforced by `pnpm test`.
 review_by: 2027-10-18
 enforce_owner: Andrii Bohdanov
 ---
@@ -41,7 +41,7 @@ the test rules.
    run gets no summary, and any step whose summary is unavailable says why in
    the bundle.
 2. **Readers live in an adapter.** `adapters/test-reports` reads JUnit XML,
-   pytest's closing line and vitest's `Tests` line. JUnit is the one format
+   pytest's closing line, vitest's `Tests` line and `node --test`'s totals. JUnit is the one format
    nearly every runner can write, so it is how a Python, JVM or .NET project
    gets counts. The core only knows the `Summariser` type.
 3. **Counted, not trusted.** JUnit counts come from `<testcase>` elements -

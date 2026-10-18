@@ -4,7 +4,7 @@
  * solution, not only for a project whose test runner prints vitest's line.
  *
  * The claim it makes falsifiable: **"the counts in the summary are the counts
- * in the report this run wrote."** Three readers, one per shape of evidence a
+ * in the report this run wrote."** Four readers, one per shape of evidence a
  * test run leaves:
  *
  *   - JUnit XML - the one format nearly every runner can write (`pytest
@@ -16,6 +16,8 @@
  *   - pytest's own closing line (`3 failed, 10 passed, 2 skipped in 0.52s`),
  *     for a suite run without a report file.
  *   - vitest's `Tests` line, for this repository and projects like it.
+ *   - Node's built-in runner's totals (`# pass 3` under TAP, which it uses
+ *     when its output is captured, or `ℹ pass 3` from the spec reporter).
  *
  * A report file is evidence only about the run that wrote it. One left behind
  * by an earlier run - the test command failed before it got to writing, or
@@ -124,6 +126,26 @@ export function parseVitestSummary(output: string): TestCounts | null {
 }
 
 /**
+ * The counts in `node --test`'s closing totals, or `null` when there are none
+ * or they do not add up to the `tests` total they state. Node prints them as
+ * TAP comments (`# pass 3`) when its output is not a terminal - which is how a
+ * gatherer captures it - and with `ℹ` from the spec reporter. A cancelled test
+ * did not pass, so it counts as failed.
+ */
+export function parseNodeTestSummary(output: string): TestCounts | null {
+  const totals = new Map<string, number>()
+  for (const [, key, n] of output.matchAll(/^[ℹ#]\s*(tests|pass|fail|cancelled|skipped|todo)\s+(\d+)\s*$/gm)) totals.set(key!, Number(n))
+  if (!['tests', 'pass', 'fail', 'skipped', 'todo'].every((k) => totals.has(k))) return null
+  const counts: TestCounts = {
+    passed: totals.get('pass')!,
+    failed: totals.get('fail')! + (totals.get('cancelled') ?? 0),
+    skipped: totals.get('skipped')!,
+    todo: totals.get('todo')!,
+  }
+  return counts.passed + counts.failed + counts.skipped + counts.todo === totals.get('tests') ? counts : null
+}
+
+/**
  * Reads the JUnit report(s) a test step wrote. Each path is a file, or a
  * directory whose `*.xml` files are summed (Surefire writes one per class).
  * Relative paths are relative to the repository.
@@ -160,6 +182,14 @@ export function summarisePytest(): Summariser {
   return (run: StepRun) => {
     const counts = parsePytestSummary(run.output)
     return counts ? tests(counts) : { unavailable: 'the output has no pytest summary line' }
+  }
+}
+
+/** Reads `node --test`'s totals from the test step's output. */
+export function summariseNodeTest(): Summariser {
+  return (run: StepRun) => {
+    const counts = parseNodeTestSummary(run.output)
+    return counts ? tests(counts) : { unavailable: 'the output has no `node --test` totals that add up' }
   }
 }
 

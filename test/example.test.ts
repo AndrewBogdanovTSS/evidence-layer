@@ -1,0 +1,89 @@
+/**
+ * The example project's reference loop, run end to end on a standalone copy:
+ * its evidence script gathers and seals, a review made of the suggested
+ * claims passes `claims --seal`, and editing the code afterwards makes the
+ * same review fail - by name, with the file that changed.
+ *
+ * This is what `examples/plain-node-project/README.md` tells a reader to do,
+ * so a step the README describes that stopped working fails here first.
+ */
+import { spawnSync } from 'node:child_process'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+import { sh } from './helpers/git'
+
+const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
+const BIN = join(root, 'dist', 'bin', 'evidence-layer.mjs')
+
+/** The example as someone would have it: its own repository, evidence-layer installed. */
+function standaloneCopy(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'el-example-'))
+  cpSync(join(root, 'examples', 'plain-node-project'), dir, { recursive: true })
+  rmSync(join(dir, 'node_modules'), { recursive: true, force: true })
+  sh(dir, 'init', '-q')
+  sh(dir, 'config', 'user.email', 't@t')
+  sh(dir, 'config', 'user.name', 't')
+  sh(dir, 'add', '-A')
+  sh(dir, 'commit', '-qm', 'init')
+  mkdirSync(join(dir, 'node_modules'))
+  symlinkSync(root, join(dir, 'node_modules', 'evidence-layer'))
+  return dir
+}
+
+const claims = (dir: string) => {
+  const res = spawnSync(process.execPath, [BIN, 'claims', 'review.md', '--seal', '--format', 'json'], { cwd: dir, encoding: 'utf8' })
+  return { status: res.status, findings: (JSON.parse(res.stdout) as { findings: { level: string; code: string; detail: string }[] }).findings }
+}
+
+describe('examples/plain-node-project, end to end', () => {
+  it('gathers with counts, passes a review of the suggested claims, and fails it once the code changes', () => {
+    const dir = standaloneCopy()
+    const gathered = spawnSync(process.execPath, ['scripts/evidence.mjs', '--base', 'HEAD'], { cwd: dir, encoding: 'utf8' })
+    expect(gathered.status, gathered.stderr).toBe(0)
+    expect(gathered.stdout).toContain('sealed as run')
+
+    const bundle = readFileSync(join(dir, 'evidence.local.md'), 'utf8')
+    expect(bundle).toContain('[SUMMARY tests: passed=3 failed=0 skipped=0 todo=0]')
+    expect(bundle).toMatch(/## lint\n\n_Not run: /)
+
+    // The review is the skeleton the bundle suggests, left as it is.
+    const suggested = /## Suggested claims\n([\s\S]*?)(?:\n## |$)/.exec(bundle)![1]!
+    expect(suggested).toMatch(/VERIFIED\[tests-[0-9a-f]{6}: exit=0, passed>=3, failed=0\]/)
+    writeFileSync(join(dir, 'review.md'), suggested)
+
+    const clean = claims(dir)
+    expect(clean.status).toBe(0)
+    expect(clean.findings.every((f) => f.level === 'pass')).toBe(true)
+    expect(clean.findings.map((f) => f.code)).toEqual(expect.arrayContaining(['claims/verified', 'seal/provenance', 'seal/fresh']))
+
+    writeFileSync(join(dir, 'index.js'), readFileSync(join(dir, 'index.js'), 'utf8').replace('n + 1', 'n + 2'))
+    const stale = claims(dir)
+    expect(stale.status).toBe(1)
+    expect(stale.findings.find((f) => f.code === 'seal/stale')?.detail).toContain('index.js')
+  })
+
+  it('runs the hook commands its .claude and .codex files hold, the way each host runs them', () => {
+    const dir = standaloneCopy()
+    const command = (file: string) =>
+      (JSON.parse(readFileSync(join(dir, file), 'utf8')) as { hooks: Record<string, { hooks: { command: string }[] }[]> }).hooks
+        .SessionStart!.at(-1)!.hooks[0]!.command
+    const input = JSON.stringify({ session_id: 's', cwd: join(dir, 'test'), hook_event_name: 'SessionStart', source: 'startup' })
+
+    // Claude Code: its own shell, with $CLAUDE_PROJECT_DIR.
+    const claude = spawnSync('sh', ['-c', command('.claude/settings.json')], {
+      cwd: join(dir, 'test'),
+      input,
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_PROJECT_DIR: dir },
+    })
+    // Codex: `$SHELL -lc` in the session's directory, with no project variable.
+    const codex = spawnSync('sh', ['-lc', command('.codex/hooks.json')], { cwd: join(dir, 'test'), input, encoding: 'utf8' })
+    for (const res of [claude, codex]) {
+      expect(res.status, res.stderr).toBe(0)
+      expect(JSON.parse(res.stdout).hookSpecificOutput.additionalContext).toContain('**Claim**')
+    }
+  })
+})

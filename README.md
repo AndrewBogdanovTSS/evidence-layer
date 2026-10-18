@@ -14,8 +14,10 @@ change it is reviewing - can assert anything at all about what it read and what
 it ran, in prose that reads identically whether or not any of it happened. A
 README asserts a test count, a build size, a set of pinned versions; all true
 when written, none of them with a clock. This package closes that gap for an
-ordinary Node project: one executable whose commands each take one kind of claim
-and make it falsifiable, plus a journal that gives the whole layer a clock.
+ordinary project: one executable whose commands each take one kind of claim
+and make it falsifiable, plus a journal that gives the whole layer a clock. It
+runs on Node; the project it checks need not - test counts are read from JUnit
+XML, pytest, vitest and Node's own runner.
 
 **Falsifiable** does not mean fragile or fakeable. It means testable: you can
 name, in advance, what would prove the claim wrong. A claim that survives every
@@ -88,9 +90,11 @@ What this layer changes, concretely:
   review catching anything real?" becomes a count over time - a floor, never a
   rate ([`src/core/misses.ts`](src/core/misses.ts) says why).
 - **The output is machine-readable, so the loop can close.** Exit codes are a
-  contract, every check reports the same five levels, and `governance` prints a
-  delimited JSON block on every run, clean ones included. An agent can run the
-  check, read its own grade, and fix the finding before a human opens the PR.
+  contract, every check reports the same five levels, every finding carries a
+  stable reason code, and `--format json` prints the whole report as one
+  document. An agent can run the check, read its own grade, and fix the finding
+  before a human opens the PR - and with the runtime gate, it has to, because
+  the check runs when it tries to stop.
 - **Artifact ids do not depend on your terminal.** Captured output is
   ANSI-stripped before it is hashed, because `FORCE_COLOR` is set in most CI
   environments and inherited by every child process. An id that changes with the
@@ -136,6 +140,12 @@ npx evidence-layer journal tag <id> real     # mark a finding real or false
 | `governance` | "this is enforced" - every invariant a decision record declares must be reachable from a git hook or a CI workflow, and no governance exception may be past its expiry; on the way, it records every `Missed-By:` commit trailer into the journal (`--no-journal` to skip) |
 | `journal report` | "these checks are useful" - real findings, false findings and misses, counted over time rather than assumed |
 | `journal tag` | as above, at the moment of fixing, by whoever fixed it |
+| `hook` | the runtime gate, as Claude Code or Codex runs it - see [below](#in-an-agents-session-the-runtime-gate) |
+| `init claude`, `init codex` | nothing; it writes the gate's hooks into the project's agent configuration |
+
+`claims`, `receipt` and `governance` print text by default, `--format json`
+for a program and `--format github` for a GitHub Actions step - see [Exit codes
+are a contract](#exit-codes-are-a-contract).
 
 A receipt quotes each cited file in a table - one row per file, the first
 non-blank line in a code span, `|` escaped as `\|`:
@@ -164,13 +174,22 @@ call in a script you own rather than a CLI flag pretending to know them.
 ```js
 // scripts/evidence.mjs - run before the review is written, not after
 import { gatherEvidence } from 'evidence-layer'
+import { summariseNodeTest } from 'evidence-layer/adapters/test-reports'
 
-await gatherEvidence({ repo: process.cwd(), base: 'origin/main' })
+await gatherEvidence({
+  repo: process.cwd(),
+  base: 'origin/main',
+  summaries: { test: summariseNodeTest() }, // how much the test step checked
+})
 ```
+
+[`examples/plain-node-project/scripts/evidence.mjs`](examples/plain-node-project/scripts/evidence.mjs)
+is the full version for a project on `npm` and `node --test`, and
+[`test/example.test.ts`](test/example.test.ts) runs the whole loop below on it.
 
 ```bash
 node scripts/evidence.mjs               # artifacts + a pre-filled claim skeleton
-npx evidence-layer claims review.md     # does every VERIFIED[id] resolve, at this commit?
+npx evidence-layer claims review.md --seal  # does every VERIFIED[id] resolve, to this run, about this code?
 npx evidence-layer receipt review.md    # was this written against this checkout?
 npx evidence-layer governance           # and is anything actually running the above?
 ```
@@ -179,10 +198,13 @@ Step one carries the weight, and it is the step an agent will skip on its own,
 because it is off the path. Put it in the script the agent is told to run, not
 in the instructions it is told to follow.
 
-The last step belongs in CI rather than on the machine that wrote the change.
-Every check here can be run by whoever wrote the diff, which makes a passing
-local run a self-report - and anyone who skipped the gathering step skips the
-verifying step just as easily. Same commands, different party.
+The last step belongs in CI rather than on the machine that wrote the change -
+[the GitHub Action](#in-ci-the-github-action) is one step. Every check here can
+be run by whoever wrote the diff, which makes a passing local run a
+self-report - and anyone who skipped the gathering step skips the verifying
+step just as easily. Same commands, different party. Between the two, the
+[runtime gate](#in-an-agents-session-the-runtime-gate) runs them when the agent
+says it is done.
 
 ## Exit 0 is not the same as "it passed"
 
@@ -196,10 +218,11 @@ rules are mechanical enough to check without reading the output for sense:
   SIGKILL)`), so "Typecheck reports errors" over a run the time limit killed is
   an error too: that run reported nothing at all.
 - **A run that checked nothing backs no success claim.** A linter whose every
-  file was ignored and a test run whose every test was skipped both exit 0. A
-  gatherer can end lint and test output with one work-summary line, e.g.
-  `[SUMMARY lint: files=7 ignored=0 errors=0 warnings=0]`; a success claim over
-  a summary showing zero work, or any errors, warnings or failures, is an error.
+  file was ignored and a test run whose every test was skipped both exit 0. The
+  gatherer ends lint and test output with one work-summary line, e.g.
+  `[SUMMARY tests: passed=71 failed=0 skipped=0 todo=0]`, when it is given a
+  summariser for that step (below); a success claim over a summary showing zero
+  work, or any errors, warnings or failures, is an error.
   `lintClaims(md, file, { requireWorkSummary: true })` also rejects a success
   claim over a lint or test artifact that carries no summary.
 
@@ -228,10 +251,13 @@ address names one thing.
 
 The counts come from the project's own test report, read after the step has
 finished and appended by the gatherer - never by the tool, which is why only
-the last line counts. `evidence-layer/adapters/test-reports` reads the three
-shapes a run leaves: JUnit XML, which pytest, Maven and Gradle, `dotnet test`,
-`go-junit-report` and `jest-junit` all write; pytest's closing line; and
-vitest's `Tests` line. A Python project, say:
+the last line counts. `evidence-layer/adapters/test-reports` reads the shapes a
+run leaves: JUnit XML, which pytest, Maven and Gradle, `dotnet test`,
+`go-junit-report` and `jest-junit` all write; pytest's closing line; vitest's
+`Tests` line; and `node --test`'s totals. Every reader is pinned by output
+recorded from a real run. The gather's commands are the project's too
+(`testCommand`, `typecheckCommand`, `lintCommand`), so a project that is not on
+pnpm gathers the same way. A Python project, say:
 
 ```js
 import { gatherEvidence } from 'evidence-layer'
@@ -426,7 +452,8 @@ render ANSI perfectly well.
 
 For a program rather than a person, `claims`, `receipt` and `governance` take
 `--format json`: stdout is one JSON report and nothing else, and the exit code
-is the same. Each finding carries a `code` - `claims/predicate-unmet`,
+is the same. `--format github` is the text plus one annotation per finding and
+a job summary, for a GitHub Actions step. Each finding carries a `code` - `claims/predicate-unmet`,
 `receipt/wrong-base`, `seal/stale` - naming the rule that produced it. The
 sentences will be reworded; a released code keeps its meaning. Every code is
 listed in [`docs/evidence-layer.md`](docs/evidence-layer.md#machine-readable-output).
@@ -439,7 +466,9 @@ need **no configuration at all** - they operate on markdown text, git output and
 base })` with nothing else and it plans `pnpm lint`, `pnpm typecheck`, a
 lockfile check and `pnpm test` - the three scripts an ordinary Node project
 already has names for, plus one fact `pnpm-lock.yaml` can answer about itself -
-and reports the working tree's own status alongside them.
+and reports the working tree's own status alongside them. Any of those
+commands can be the project's own instead, and the work-summary counts need a
+summariser, because which report a project writes is that project's business.
 
 What was **never** claimed to be zero-config, because it cannot be: any check
 that asserts a fact specific to one project - a route existing, a dependency
@@ -454,16 +483,17 @@ those exact claims.
 ## Using it as a library
 
 ```js
-import { lintClaims, checkReceipt, parseReceipt, gatherEvidence } from 'evidence-layer'
+import { lintClaims, checkReceipt, parseReceipt, gatherEvidence, CODES } from 'evidence-layer'
 import { parseTestCount } from 'evidence-layer/adapters/node-default'
+import { summariseJUnit } from 'evidence-layer/adapters/test-reports'
 ```
 
 Everything the CLI does is exported. `src/core/` has no knowledge of any
 project's stack. The adapters are the files allowed to know one:
 `src/adapters/node-default.ts` knows it is running on Node and how a handful of
 common test reporters print their totals, and `src/adapters/test-reports.ts`
-knows the JUnit XML, pytest and vitest formats a test step's work summary is
-read from.
+knows the JUnit XML, pytest, vitest and `node --test` formats a test step's
+work summary is read from.
 
 ## The portability test
 
@@ -474,16 +504,21 @@ unrelated fixture - plain JavaScript, no TypeScript, no framework, no monorepo,
 its own unconnected `package.json` - that
 [`test/portability.test.ts`](test/portability.test.ts) exercises
 `readInvariants`, `reachableCommands`, `lintClaims`, `checkReceipt` and
-`renderSummary` against. Clone it, run the layer against it, and see the checks
-fail on purpose: [`examples/plain-node-project/README.md`](examples/plain-node-project/README.md)
-is the guided version.
+`renderSummary` against, and [`test/example.test.ts`](test/example.test.ts)
+runs its whole loop on a standalone copy - gather with counts, a review of the
+suggested claims passing `claims --seal`, and the same review failing once the
+code changes. Clone it, run the layer against it, and see the checks fail on
+purpose: [`examples/plain-node-project/README.md`](examples/plain-node-project/README.md)
+is the guided version, and the project is set up the way one using this
+package should be - evidence script, CI action, runtime-gate hooks.
 
 ## The boundary is a test, not an intention
 
 Nothing under `src/core/` may import anything but Node builtins and its own
-siblings. That is checked by [`test/boundary.test.ts`](test/boundary.test.ts) on
-every run, because a layer separation enforced by good intentions is worth
-nothing. Node builtins are fine there: this is CLI tooling, expected to shell
+siblings, and `src/hosts/` - one file per agent host - only builtins, the core
+and its own contract. That is checked by
+[`test/boundary.test.ts`](test/boundary.test.ts) on every run, because a layer
+separation enforced by good intentions is worth nothing. Node builtins are fine there: this is CLI tooling, expected to shell
 out and touch the filesystem, not a sandboxed engine.
 
 ## What this repository checks about itself
@@ -493,7 +528,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **401 tests** across **31 files**, and that sentence is checked
+The suite is **406 tests** across **32 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
@@ -502,15 +537,16 @@ cannot fail.
 pnpm evidence --base origin/master # gather this repository's own evidence bundle
 pnpm check:docs     # do the claims on this page still hold?
 pnpm check:deps     # is every dependency this package declares actually used?
-pnpm check:ladder   # did this commit climb the decision ladder it says it did?
+pnpm check:ladder   # did this commit climb the decision ladder it says it did? (CI: every new commit)
 pnpm check:all      # every check, plus: does anything run them?
 pnpm journal:report # what the checks have found here, over time
 ```
 
-CI runs the suite on every supported Node version and, in a separate job with no
-package manager and no install, unpacks the built `dist/` and runs it on bare
-`node`. If that job passes, "zero runtime dependencies" is a checked fact rather
-than a sentence on this page.
+CI runs the suite on Node 22 and 24 and, in a separate job with no package
+manager and no install, takes the `dist/` the build job produced and runs it on
+bare `node` - 22.0.0, the oldest `engines` allows, as well as 22 and 24. If that
+job passes, "zero runtime dependencies" is a checked fact for everything the
+smoke script loads, rather than a sentence on this page.
 
 ## What this does not do
 
@@ -541,7 +577,10 @@ pnpm release --dry-run    # run every check, print the plan, change nothing
 One command: it checks, bumps, commits, tags and pushes. The tag is what
 triggers publication - nothing is published from a laptop, because npm only
 generates a provenance attestation inside CI, and a local publish would quietly
-ship a version weaker than every other version.
+ship a version weaker than every other version. The workflow publishes through
+npm's Trusted Publisher: its own OIDC token is the only credential, so there is
+no long-lived npm token to leak, and a broken trust setup fails the publish
+instead of falling back to one.
 
 Before it touches anything it checks that the release is cut from the default
 branch, that the tree is clean, that the commit is the one the remote has, that
@@ -557,8 +596,11 @@ wrong during the first release of this package.
   invariants each record claims are enforced
 - [`docs/governance-exceptions.md`](docs/governance-exceptions.md) - how an
   exception gets an expiry date instead of becoming permanent
-- [`demo/`](demo) - the four demos the talk runs, in slide order, with the
+- [`demo/`](demo) - the five demos the talk runs, in slide order, with the
   receipt fixtures and the stale-baseline refs they need
+- [`examples/plain-node-project/`](examples/plain-node-project) - a project set
+  up to use this package, and the guided tour of every check
+- [`AGENTS.md`](AGENTS.md) - what anyone changing this repository needs to know
 
 ## Licence
 

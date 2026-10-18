@@ -1,0 +1,3 @@
+node_modules/
+# Written by scripts/evidence.mjs - one working copy's evidence, never history.
+evidence.local.md

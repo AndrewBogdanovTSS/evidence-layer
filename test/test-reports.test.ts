@@ -8,7 +8,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { parseJUnitXml, parsePytestSummary, parseVitestSummary, summariseJUnit, summarisePytest } from '../src/adapters/test-reports'
+import {
+  parseJUnitXml,
+  parseNodeTestSummary,
+  parsePytestSummary,
+  parseVitestSummary,
+  summariseJUnit,
+  summarisePytest,
+} from '../src/adapters/test-reports'
 import { classifyCommand, parseWorkSummary } from '../src/core/artifact'
 import { gatherEvidence } from '../src/core/gather'
 import type { StepRun } from '../src/core/gather'
@@ -41,6 +48,22 @@ describe('the recorded reports', () => {
     // vitest's JUnit writer records `it.fails` as a pass and `todo` as skipped:
     // the counts are the report's, not a second guess at the runner's intent.
     expect(parseJUnitXml(fixture('vitest-junit.xml'))).toEqual({ passed: 2, failed: 1, skipped: 2, todo: 0 })
+  })
+})
+
+describe('node --test, recorded', () => {
+  it('reads the TAP totals Node prints when captured, and the spec reporter\'s, to the same counts', () => {
+    const expected = { passed: 1, failed: 1, skipped: 1, todo: 1 }
+    expect(parseNodeTestSummary(fixture('node-test-tap.txt'))).toEqual(expected)
+    expect(parseNodeTestSummary(fixture('node-test-spec.txt'))).toEqual(expected)
+  })
+
+  it('counts a cancelled test as failed, and refuses totals that do not add up', () => {
+    const totals = (pass: number, cancelled: number, tests: number) =>
+      ['# tests ' + tests, '# pass ' + pass, '# fail 0', '# cancelled ' + cancelled, '# skipped 0', '# todo 0'].join('\n')
+    expect(parseNodeTestSummary(totals(2, 1, 3))).toEqual({ passed: 2, failed: 1, skipped: 0, todo: 0 })
+    expect(parseNodeTestSummary(totals(2, 0, 3))).toBeNull()
+    expect(parseNodeTestSummary('ok 1 - a test')).toBeNull()
   })
 })
 

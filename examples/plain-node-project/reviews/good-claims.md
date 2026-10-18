@@ -14,24 +14,43 @@
 ## Findings
 
 **Claim**: the suite passes at three tests, all of them green.
-**Grounding**: VERIFIED[tests-9aefa5]
+**Grounding**: VERIFIED[tests-3a6036: exit=0, passed>=3, failed=0]
 
-```artifact:tests-9aefa5
+```artifact:tests-3a6036@efcaa0f
 $ npm test
 > widget-counter@1.0.0 test
 > node --test test/run.test.js
 
-✔ increment adds one (0.8655ms)
-✔ increment handles zero (0.1577ms)
-✔ increment handles negatives (0.1308ms)
-ℹ tests 3
-ℹ suites 0
-ℹ pass 3
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0
-ℹ todo 0
-ℹ duration_ms 155.1733
+TAP version 13
+# Hello
+# Subtest: increment adds one
+ok 1 - increment adds one
+  ---
+  duration_ms: 0.809342
+  type: 'test'
+  ...
+# Subtest: increment handles zero
+ok 2 - increment handles zero
+  ---
+  duration_ms: 0.140216
+  type: 'test'
+  ...
+# Subtest: increment handles negatives
+ok 3 - increment handles negatives
+  ---
+  duration_ms: 0.101643
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 79.654444
+[SUMMARY tests: passed=3 failed=0 skipped=0 todo=0]
 exit: 0
 ```
 
