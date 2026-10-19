@@ -132,17 +132,24 @@ the review does.
 What it calls the change is everything those steps read: the commits since the
 branches diverged, plus every uncommitted edit and untracked file on top of
 them - never the review or the bundle. A scoped lint or test gate is handed all
-of it, and with anything uncommitted the diff block compares the merge-base to
-the tree the steps ran against (`git diff --stat <merge-base> <tree>`), so a new
-file shows up there too. Sample quotes are still read at the reviewed commit,
-where `receipt` checks them, so only committed files get one.
+of it (`changedFiles`; the commits' part alone is `committedFiles`). The diff
+block keeps describing the commits, so its id does not move with the working
+tree; edits to tracked files get a `## uncommitted` block of their own (`git
+diff --stat HEAD`), and new files are in the working-tree block. Sample quotes
+are read at the reviewed commit, where `receipt` checks them, so only committed
+files get one.
 
-The bundle header names the command that gathers it, and the runtime gate
-names the same one whenever it tells an agent to gather: `evidenceLayer.gather`
-in the project's package.json when set, otherwise `<package manager> run
-evidence` when there is an `evidence` script. A block that backs a suggested
-claim is printed once, under *Suggested claims* with that claim; its step's
-section points there.
+Each step runs under a timeout, 300 seconds unless `timeoutMs` says otherwise -
+one number for every step, or one per step (`{ test: 900_000 }`). A step past
+it is recorded as stopped, never as a result.
+
+The bundle header names the command that gathers it and the base it gathered
+against, and the seal records both. The runtime gate names them whenever it
+tells an agent to gather: `evidenceLayer.gather` in the project's package.json
+when set, otherwise the command the current run recorded, otherwise `<package
+manager> run evidence` when there is an `evidence` script. A block that backs a
+suggested claim is printed once, under *Suggested claims* with that claim; its
+step's section points there.
 
 ### 4. `pnpm check:claims <review.md>` - is every claim backed?
 

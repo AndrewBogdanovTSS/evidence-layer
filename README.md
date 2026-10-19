@@ -357,14 +357,15 @@ stricter trades. Every decision - including each allow that checked nothing,
 which is never recorded as a pass - goes into a journal in the checkout's git
 directory, not the committed one; `npx evidence-layer journal report
 --include-gate` counts blocks, clean stops and stops let through without a
-clean check, and lists the blocks nobody has tagged yet; each block's reason
-names its entry, so `journal tag <id> real|false --gate` marks it without
-reading the journal.
+clean check, and lists the blocks nobody has tagged yet, by id, so `journal
+tag <id> real|false --gate` marks one without reading the journal. The id is
+never in the reason the agent reads: the blocked party does not grade its own
+blocks.
 
 Where the gate tells the agent to gather, it names the command: the project's
-`evidenceLayer.gather` in package.json when set, otherwise `<package manager>
-run evidence` when there is an `evidence` script. The bundle header names the
-same command.
+`evidenceLayer.gather` in package.json when set, otherwise the one the current
+run recorded, otherwise `<package manager> run evidence` when there is an
+`evidence` script - with the base the current run was gathered against.
 
 With the package installed in the project:
 
@@ -550,7 +551,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **468 tests** across **38 files**, and that sentence is checked
+The suite is **473 tests** across **38 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
