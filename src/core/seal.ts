@@ -54,7 +54,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { classifyCommand, fencedLineNumbers, findArtifactBlocks } from './artifact'
 import type { FencedBlock, StopReason } from './artifact'
 import { findClaims } from './claims'
@@ -143,9 +143,11 @@ export type FingerprintResult = { fingerprint: SourceFingerprint } | { unverifia
  * A repository mode the throwaway index would not describe faithfully - a
  * sparse checkout, a split index, unresolved conflicts - is `unverifiable`
  * rather than a guess.
+ *
+ * `root` is the repository's top level, for a caller that has resolved it
+ * already - one git process fewer on a path that runs at every stop.
  */
-export function sourceFingerprint(repo: string, excluded: string[] = []): FingerprintResult {
-  const root = repoRoot(repo)
+export function sourceFingerprint(repo: string, excluded: string[] = [], root = repoRoot(repo)): FingerprintResult {
   if (!root) return { unverifiable: 'not inside a git repository' }
 
   for (const key of ['core.sparseCheckout', 'core.splitIndex']) {
@@ -419,10 +421,10 @@ export type CurrentRun = { run: Run } | { none: string } | { broken: string }
  * The run `current.json` names, read once and checked whole: the pointer, the
  * seal's shape, and the bundle against the seal's hash of it. `none` when
  * nothing was ever published; `broken` when something is there but does not
- * hold together - never a run anyone should trust.
+ * hold together - never a run anyone should trust. `state` is the checkout's
+ * state directory, for a caller that has resolved it already.
  */
-export function readCurrentRun(repo: string): CurrentRun {
-  const state = stateDir(repo)
+export function readCurrentRun(repo: string, state = stateDir(repo)): CurrentRun {
   if (!state) return { none: 'not inside a git repository' }
   const pointerPath = join(state, 'current.json')
   if (!existsSync(pointerPath)) return { none: 'no evidence has been gathered in this checkout' }
@@ -482,9 +484,7 @@ export function checkProvenance(markdown: string, file: string, run: Run): Coded
         level: 'error',
         code: 'seal/not-gathered',
         claim: 'artifact ' + id + ' came from the gatherer',
-        detail:
-          'run ' + run.seal.runId + ' produced no artifact ' + id +
-          ' - the block was written by hand, or copied from another run. Cite a block from the current bundle',
+        detail: notGatheredDetail(run, id, cited[0]!.command),
         ...where,
       })
       continue
@@ -522,15 +522,17 @@ export function checkProvenance(markdown: string, file: string, run: Run): Coded
  * it did not but part of the surface was only compared by metadata, or the
  * comparison could not be made; `pass` otherwise - and the pass says exactly
  * what it covers.
+ *
+ * `now` is today's fingerprint, taken with the run's own exclusions, for a
+ * caller that checks several texts against one run: the tree is the same for
+ * all of them, and fingerprinting it is the expensive part.
  */
-export function checkFreshness(repo: string, run: Run): CodedFinding {
+export function checkFreshness(repo: string, run: Run, now = sourceFingerprint(repo, run.seal.excluded)): CodedFinding {
   const claim = 'the code is what run ' + run.seal.runId + ' was gathered from'
-  const now = sourceFingerprint(repo, run.seal.excluded)
   if ('unverifiable' in now) return { level: 'unverifiable', code: 'seal/unhashable', claim, detail: now.unverifiable }
   const current = now.fingerprint
   if (!sameSource(run.seal.source, current)) {
-    const root = repoRoot(repo) ?? repo
-    const paths = changedPaths(root, run.seal.source, current)
+    const paths = changedPaths(repo, run.seal.source, current)
     return {
       level: 'error',
       code: 'seal/stale',
@@ -557,6 +559,46 @@ export function checkFreshness(repo: string, run: Run): CodedFinding {
     claim,
     detail: 'every tracked and non-ignored file has the content it had when the run was gathered (not ignored files, dependencies or the environment)',
   }
+}
+
+/**
+ * Why a cited id is not in the current run, as specifically as the kept runs
+ * allow: the earlier gather that produced it, when one is still kept, and the
+ * id the current run gave the same command - the citation an author is about
+ * to go looking for.
+ */
+function notGatheredDetail(run: Run, id: string, command: string): string {
+  const keptIn = keptRunWith(run, id)
+  const sameCommand = Object.entries(run.seal.artifacts).find(([, a]) => a.command === command)?.[0]
+  return (
+    'run ' + run.seal.runId + ' produced no artifact ' + id + ' - ' +
+    (keptIn
+      ? 'it came from run ' + keptIn + ', an earlier gather'
+      : 'the block was written by hand, or copied from a run that is no longer kept') +
+    (sameCommand
+      ? '. The current run\'s `' + command + '` block is ' + sameCommand + ' - cite that one, copied from the current bundle'
+      : '. Cite a block from the current bundle')
+  )
+}
+
+/** The newest kept run, other than `run`, whose seal lists `id` - or `undefined`. A seal that does not read is skipped. */
+function keptRunWith(run: Run, id: string): string | undefined {
+  const runs = dirname(run.dir)
+  let names: string[]
+  try {
+    names = readdirSync(runs).filter((d) => RUN_ID_RE.test(d) && d !== run.seal.runId).sort().reverse()
+  } catch {
+    return undefined
+  }
+  for (const name of names) {
+    try {
+      const seal = validateSeal(JSON.parse(readFileSync(join(runs, name, 'seal.json'), 'utf8')))
+      if (typeof seal !== 'string' && seal.artifacts[id]) return name
+    } catch {
+      // A kept run that cannot be read names nothing; the finding stays an error either way.
+    }
+  }
+  return undefined
 }
 
 function summarisePaths(paths: string[]): string {

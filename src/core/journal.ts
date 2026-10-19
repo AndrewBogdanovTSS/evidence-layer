@@ -64,13 +64,22 @@ export interface JournalEntry {
   }
 }
 
-function newId(): string {
+/**
+ * A fresh entry id. Exported so a caller can name the entry in what it tells a
+ * person before writing it - the gate puts it in a block's reason, which is
+ * the moment someone can still say whether the block was right.
+ */
+export function newEntryId(): string {
   return randomBytes(4).toString('hex')
 }
 
 /** Appends one entry. Never rewrites the file - a journal you can edit in place is a journal that gets edited. */
-export function appendEntry(journalPath: string, entry: Omit<JournalEntry, 'id' | 'ts'> & { ts?: string }): JournalEntry {
-  const full: JournalEntry = { id: newId(), ts: entry.ts ?? new Date().toISOString(), ...entry }
+export function appendEntry(
+  journalPath: string,
+  entry: Omit<JournalEntry, 'id' | 'ts'> & { id?: string; ts?: string },
+): JournalEntry {
+  const { id, ts, ...rest } = entry
+  const full: JournalEntry = { id: id ?? newEntryId(), ts: ts ?? new Date().toISOString(), ...rest }
   appendFileSync(journalPath, JSON.stringify(full) + '\n', 'utf8')
   return full
 }
@@ -264,3 +273,20 @@ export function summariseGate(entries: JournalEntry[]): GateSummary {
   }
 }
 
+export interface UntaggedBlock {
+  id: string
+  ts: string
+  /** The block's first finding, as journalled - enough to recognise which stop it was. */
+  finding: string
+}
+
+/**
+ * The gate's blocks nobody has tagged real or false yet, oldest first: what
+ * `journal tag <id> real|false --gate` is waiting for. Listed by id so tagging
+ * one never means reading the JSONL by hand.
+ */
+export function untaggedBlocks(entries: JournalEntry[]): UntaggedBlock[] {
+  return entries
+    .filter((e) => e.gate?.action === 'block' && (e.verified === undefined || e.verified === null))
+    .map((e) => ({ id: e.id, ts: e.ts, finding: e.findings?.[0] ?? '(no finding recorded)' }))
+}

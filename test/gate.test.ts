@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -300,5 +300,111 @@ describe('the gate journal, summarised', () => {
     writeFileSync(join(dir, 'review.md'), HONEST)
     stop(dir)
     expect(summariseGate(gateJournal(dir))).toMatchObject({ blocks: 2, cleanAllows: 1, degradedAllows: 1, denies: 0 })
+  })
+})
+
+describe('stop - what the agent is told', () => {
+  it('gives a warnings-only allow its warnings, under an intro that says what they are', () => {
+    const dir = repo()
+    start(dir)
+    const sealed = sealTests(dir)
+    const claim = (n: number) => '**Claim**: the suite ran 3 passing tests (' + n + ').\n**Grounding**: VERIFIED[' + sealed.id + ': passed>=3]\n'
+    const decision = stop(dir, {}, { message: [1, 2, 3].map(claim).join('\n') })
+    expect(decision).toMatchObject({
+      action: 'allow',
+      outcome: 'checked',
+      level: 'warning',
+      message: expect.stringContaining('- [warning] artifact ' + sealed.id + ' backs 3 claims'),
+    })
+    expect(decision.action === 'allow' && decision.message).not.toContain('could not be checked')
+  })
+
+  it('names the journal entry of a block, so it can be tagged without reading the journal', () => {
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    const decision = stop(dir)
+    const id = gateJournal(dir).at(-1)!.id
+    expect(decision).toMatchObject({ action: 'block', reason: expect.stringContaining('evidence-layer journal tag ' + id + ' real|false --gate') })
+  })
+
+  it('names the project\'s gather command at session start and in a block', () => {
+    const dir = repo()
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { evidence: 'node gather.js' } }))
+    expect(start(dir)).toMatchObject({ action: 'context', text: expect.stringContaining('`npm run evidence`') })
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    expect(stop(dir)).toMatchObject({ action: 'block', reason: expect.stringContaining('`npm run evidence`') })
+
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ evidenceLayer: { gather: 'make evidence BASE=origin/main' } }))
+    expect(start(dir, 's2')).toMatchObject({ text: expect.stringContaining('`make evidence BASE=origin/main`') })
+  })
+})
+
+describe('stop - after the retries run out', () => {
+  it('says nothing and journals nothing while the review, the run and the tree are what they were', () => {
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    stop(dir)
+    stop(dir)
+    expect(stop(dir)).toMatchObject({ action: 'allow', outcome: 'retry-exhausted', message: expect.any(String) })
+    const repeat = stop(dir)
+    expect(repeat).toMatchObject({ action: 'allow', outcome: 'retry-exhausted', level: 'error' })
+    expect(repeat.action === 'allow' && repeat.message).toBeFalsy()
+    expect(gateJournal(dir)).toHaveLength(3)
+
+    writeFileSync(join(dir, 'review.md'), UNBACKED + '\nmore words\n')
+    expect(stop(dir)).toMatchObject({ outcome: 'retry-exhausted', message: expect.any(String) })
+    expect(gateJournal(dir)).toHaveLength(4)
+  }, 30_000)
+
+  it('speaks again once the code a cited run describes changes', () => {
+    const dir = repo()
+    start(dir)
+    const sealed = sealTests(dir)
+    writeFileSync(join(dir, 'review.md'), backedReview(sealed).replace('passed>=3', 'passed>=5'))
+    stop(dir)
+    stop(dir)
+    stop(dir)
+    const repeat = stop(dir)
+    expect(repeat).toMatchObject({ outcome: 'retry-exhausted' })
+    expect(repeat.action === 'allow' && repeat.message).toBeFalsy()
+    expect(gateJournal(dir)).toHaveLength(3)
+    writeFileSync(join(dir, 'src/a.js'), 'edited\n')
+    const changed = stop(dir)
+    expect(changed).toMatchObject({ outcome: 'retry-exhausted', message: expect.stringContaining('src/a.js') })
+  }, 30_000)
+})
+
+describe('stop - nothing to check while an episode is open', () => {
+  it('closes the episode and journals that it closed without a clean check', () => {
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    stop(dir)
+    stop(dir)
+    rmSync(join(dir, 'review.md'))
+    const closed = stop(dir)
+    expect(closed).toMatchObject({ action: 'allow', outcome: 'closed-unchecked' })
+    expect(gateJournal(dir).at(-1)).toMatchObject({ outcome: 'unverifiable', gate: { outcome: 'closed-unchecked' } })
+    // Closed, so the next failure starts a fresh episode with fresh blocks.
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    expect(stop(dir).action).toBe('block')
+    // With no episode open, a stop with nothing to check stays silent.
+    const quiet = repo()
+    start(quiet)
+    stop(quiet)
+    expect(gateJournal(quiet)).toHaveLength(0)
+  }, 30_000)
+})
+
+describe('stop - final-message lookups', () => {
+  it('says an unknown id is missing from the current sealed run, not from "this document"', () => {
+    const dir = repo()
+    start(dir)
+    sealTests(dir)
+    const decision = stop(dir, {}, { message: '**Claim**: tests pass.\n**Grounding**: VERIFIED[tests-000000]' })
+    expect(decision).toMatchObject({ action: 'block', reason: expect.stringContaining('the current sealed run') })
+    expect(decision.action === 'block' && decision.reason).not.toContain('this document')
   })
 })

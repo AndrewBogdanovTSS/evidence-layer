@@ -132,3 +132,38 @@ describe('summariseByCheck', () => {
     expect(summariseByCheck(journalPath)).toHaveLength(0)
   })
 })
+
+describe('untaggedBlocks', () => {
+  it('lists the gate blocks nobody has tagged yet, oldest first, with their first finding', async () => {
+    const { untaggedBlocks } = await import('../src/core/journal')
+    const gate = (action: string) => ({ event: 'stop', outcome: 'checked', action, reviews: ['review.md'], elapsedMs: 1 })
+    const a = appendEntry(journalPath, { check: 'gate:stop', commit: 'c', outcome: 'error', findings: ['first: one', 'second'], gate: gate('block') })
+    const b = appendEntry(journalPath, { check: 'gate:stop', commit: 'c', outcome: 'error', findings: ['tagged'], gate: gate('block') })
+    appendEntry(journalPath, { check: 'gate:stop', commit: 'c', outcome: 'pass', gate: gate('allow') })
+    tagEntry(journalPath, b.id, { verified: 'real' })
+    expect(untaggedBlocks(readJournal(journalPath))).toEqual([{ id: a.id, ts: a.ts, finding: 'first: one' }])
+  })
+})
+
+describe('journal report --include-gate', () => {
+  it('lists the untagged blocks by id, so tagging one needs no reading of the JSONL', async () => {
+    const { vi } = await import('vitest')
+    const { mkdirSync } = await import('node:fs')
+    const { stateDir } = await import('../src/core/seal')
+    const { tempRepo } = await import('./helpers/git')
+    const { run } = await import('../src/commands/journal-report')
+    const repo = tempRepo('el-report-', { 'a.txt': 'a\n' })
+    const state = stateDir(repo)!
+    mkdirSync(state, { recursive: true })
+    const gate = { event: 'stop', outcome: 'checked', action: 'block', reviews: ['review.md'], elapsedMs: 1 }
+    const entry = appendEntry(join(state, 'journal.jsonl'), { check: 'gate:stop', commit: 'c', outcome: 'error', findings: ['the suite passes: untagged'], gate })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      run(['--repo', repo, '--include-gate'])
+      const printed = log.mock.calls.map((c) => String(c[0])).join('\n')
+      expect(printed).toContain(entry.id + '  ' + entry.ts + '  the suite passes: untagged')
+    } finally {
+      log.mockRestore()
+    }
+  })
+})

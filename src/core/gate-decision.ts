@@ -18,6 +18,8 @@ export type GateOutcome =
   | 'fail-open-error'
   | 'fail-closed-error'
   | 'no-snapshot'
+  /** A stop with nothing to check closed an open retry episode - an end to it, not a clean check. */
+  | 'closed-unchecked'
   | 'not-applicable'
 
 export interface GateAssessment {

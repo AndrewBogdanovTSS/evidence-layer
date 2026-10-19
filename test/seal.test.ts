@@ -354,3 +354,25 @@ describe('gatherEvidence publishes a sealed run', () => {
     rmSync(join(dir, 'src/generated.js'))
   })
 })
+
+describe('checkProvenance - a block from an earlier gather', () => {
+  it('names the kept run it came from and the current id for the same command', () => {
+    const dir = repo()
+    const old = block('Tests 3 passed (3)')
+    const kept = publish(dir, [old])
+    const now = block('Tests 4 passed (4)')
+    const run = publish(dir, [now])
+    const found = checkProvenance(review(old), 'review.md', run)
+    expect(found[0]).toMatchObject({ level: 'error', code: 'seal/not-gathered' })
+    expect(found[0]!.detail).toContain('run ' + kept.seal.runId)
+    expect(found[0]!.detail).toContain(now.id)
+  })
+
+  it('still says "by hand" when no kept run produced the block', () => {
+    const dir = repo()
+    const run = publish(dir, [block('ok')])
+    const found = checkProvenance(review(block('handwritten', 'f8ae76a', 'pnpm lint')), 'review.md', run)
+    expect(found[0]!.detail).toContain('written by hand')
+    expect(found[0]!.detail).not.toContain('current run\'s')
+  })
+})

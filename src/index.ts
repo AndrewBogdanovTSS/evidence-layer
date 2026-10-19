@@ -22,6 +22,7 @@
  *   - `annotations`        findings as GitHub Actions annotations, review text kept from the runner
  *   - `skeleton`           pre-filled claims and sample quotes, so honest stays cheap
  *   - `gather`             running the expensive checks before a review is written
+ *   - `gather-command`     what a project calls its gatherer, so "gather again" can say how
  *
  * `./adapters/node-default` is the one place allowed to know this is Node - see
  * that file for exactly what "zero-config" does and does not cover.
@@ -43,3 +44,4 @@ export * from './core/ci-summary'
 export * from './core/annotations'
 export * from './core/skeleton'
 export * from './core/gather'
+export * from './core/gather-command'

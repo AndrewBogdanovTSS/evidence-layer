@@ -448,7 +448,7 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `receipt/no-line-citations` | the review cites no specific lines |
 | `seal/no-run` | there is no sealed run in this checkout to check against |
 | `seal/broken` | the sealed run is unreadable or inconsistent |
-| `seal/not-gathered` | the current run produced no artifact with this id |
+| `seal/not-gathered` | the current run produced no artifact with this id - naming the kept run that did, and the current id for the same command, when there are ones |
 | `seal/edited` | the cited block differs from the one the run wrote |
 | `seal/provenance` | the cited block is the one the run wrote |
 | `seal/unhashable` | the working directory cannot be fingerprinted here |

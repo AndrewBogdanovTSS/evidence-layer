@@ -306,6 +306,13 @@ export interface LintOptions extends OutcomeOptions {
    */
   artifactSource?: string
   /**
+   * What `artifactSource` is, in the words a finding uses - `the current sealed
+   * run` for the gate's final-message check. Without one, an unknown id is
+   * reported as missing from "this document", which for a chat reply that
+   * carries no blocks names the wrong place to look.
+   */
+  artifactSourceName?: string
+  /**
    * Apply the prose rules (vague comparatives, success words with no stated
    * effect). Default `true`. Off for a conversational reply, where ordinary
    * prose is not graded and only `**Claim**:` lines are.
@@ -427,7 +434,9 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
           level: 'error',
           code: 'claims/unknown-artifact',
           claim: claim.text,
-          detail: 'VERIFIED[' + claim.gradeId + '] references an artifact that does not exist in this document',
+          detail:
+            'VERIFIED[' + claim.gradeId + '] references an artifact that does not exist in ' +
+            (opts.artifactSourceName ?? 'this document'),
           ...where,
         })
         return

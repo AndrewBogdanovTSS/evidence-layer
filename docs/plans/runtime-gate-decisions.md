@@ -107,6 +107,11 @@ checkout producing a wrong verdict.
   both and also blocks on `unverifiable`.
 - The host's reentry flag is used only when the session file cannot be read or
   written, as a one-block fallback, and only in fail-open mode.
+- Amended in 0.10.0, after an independent review: a Stop with nothing to check
+  while an episode is open closes it, journalled as `closed-unchecked` - never
+  as a clean check - so spent blocks do not carry over to a later, unrelated
+  failure. And once an episode is exhausted, a Stop whose checked texts, sealed
+  run and tree equal the previous verdict's says nothing and journals nothing.
 
 ## OQ-06 - what is protected, and what `init` owns
 

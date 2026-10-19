@@ -347,15 +347,24 @@ caught by the agent that wrote it:
 
 Two budgets keep it from becoming a trap. A **retry episode** opens at the first
 stop with errors and closes at the first clean one; inside it the gate blocks
-at most twice, then lets the agent through with the errors attached - editing
-text does not reset it, only a clean check does. And the gate **fails open**:
+at most twice, then lets the agent through with the errors attached, once -
+later stops over the same review, run and code say nothing. Editing text does
+not reset it; a clean check closes it, and so does a stop with nothing left to
+check, which is journalled as closed without one. And the gate **fails open**:
 if it cannot run, the session continues and is told why. `--keep-blocking`,
 `--fail-closed` and `--strict` (both, and `unverifiable` blocks too) are the
 stricter trades. Every decision - including each allow that checked nothing,
 which is never recorded as a pass - goes into a journal in the checkout's git
 directory, not the committed one; `npx evidence-layer journal report
 --include-gate` counts blocks, clean stops and stops let through without a
-clean check, and `journal tag <id> real|false --gate` marks a block.
+clean check, and lists the blocks nobody has tagged yet; each block's reason
+names its entry, so `journal tag <id> real|false --gate` marks it without
+reading the journal.
+
+Where the gate tells the agent to gather, it names the command: the project's
+`evidenceLayer.gather` in package.json when set, otherwise `<package manager>
+run evidence` when there is an `evidence` script. The bundle header names the
+same command.
 
 With the package installed in the project:
 
