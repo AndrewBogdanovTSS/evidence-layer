@@ -1,9 +1,9 @@
 /**
  * The README's "how it works" diagram, generated rather than drawn.
  *
- * Writes `docs/assets/how-it-works.svg`: one self-contained dark card that
- * reads the same on GitHub's light and dark themes and on npm. Hand-built
- * shapes and text only - no scripts, no styles, no external images - so the
+ * Writes `docs/assets/how-it-works.svg` (dark) and `how-it-works-light.svg`,
+ * which the README's `<picture>` picks between by colour scheme. Hand-built
+ * shapes and text only - no scripts, no styles, no external images - so each
  * file renders anywhere an `<img>` does.
  *
  * Every label is a statement about this package, so edit it here and
@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'assets')
 const W = 1040
-const H = 560
+const H = 610
 const SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace"
 // Every colour lives here. The dark theme is the one npm and GitHub's dark
@@ -58,7 +58,7 @@ function render(theme) {
   const PHASES = [
     { n: 1, title: 'GATHER', sub: 'before the review is written', color: C.blue },
     { n: 2, title: 'WRITE', sub: 'by an agent or a person', color: C.amber },
-    { n: 3, title: 'VERIFY', sub: 'in CI, by a different party', color: C.green },
+    { n: 3, title: 'VERIFY', sub: 'at the agent\'s stop, then in CI', color: C.green },
     { n: 4, title: 'OVER TIME', sub: 'the clock', color: C.violet },
   ].map((p, i) => ({ ...p, tint: theme.tints[i] }))
   const o = []
@@ -127,7 +127,7 @@ function render(theme) {
   const iconShield = (cx, cy, c) => o.push(`<path d="M${cx},${cy - 13} l11,4 v8 c0,8 -5,12 -11,14 c-6,-2 -11,-6 -11,-14 v-8 z" fill="${c}" fill-opacity="0.16" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"/><path d="M${cx - 5},${cy} l3.5,3.5 l6.5,-7" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`)
   const iconCommit = (cx, cy, c) => o.push(`<g fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"><circle cx="${cx}" cy="${cy}" r="5"/><path d="M${cx - 13},${cy} h8 M${cx + 5},${cy} h8"/></g>`)
 
-  o.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="How evidence-layer works, in four phases: gather evidence at the commit before the review is written, write the review by keeping the addressed artifact blocks, verify claims and the Access Receipt in CI, and count findings and misses over time in the journal.">`)
+  o.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="How evidence-layer works, in four phases: gather evidence at the commit before the review is written, write the review by keeping the addressed artifact blocks, verify claims, the sealed run and the Access Receipt when the agent stops and again in CI, and count findings, gate decisions and misses over time in the journal.">`)
   o.push('<defs>')
   for (const p of PHASES) {
     o.push(`<linearGradient id="g-${p.n}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${p.tint}" stop-opacity="${theme.tintTop}"/><stop offset="1" stop-color="${p.tint}" stop-opacity="${theme.tintBottom}"/></linearGradient>`)
@@ -156,29 +156,30 @@ function render(theme) {
   cross(130 + gateW / 2 + 14, 190)
   t(130 + gateW / 2 + 26, 194, 'refuses', { size: 11.5, fill: C.red })
   vArrow(130, 200, 214, C.muted)
-  card(16, 214, 228, 104, { stroke: C.blue, strokeOpacity: 0.55 })
+  card(16, 214, 228, 124, { stroke: C.blue, strokeOpacity: 0.55 })
   iconGear(40, 240, C.blue)
   t(62, 245, 'gatherEvidence()', { size: 13.5, font: MONO, weight: 700, fill: C.blue })
   t(62, 264, 'runs your own commands', { size: 12 })
   let cx = 28
   for (const chip of ['lint', 'typecheck', 'lockfile', 'test']) cx += pill(cx, 274, chip, C.blue, { size: 10, w: chip.length * 6 + 12 }) + 4
   t(28, 309, 'id = hash(command, commit, output)', { size: 10, font: MONO, fill: C.muted })
-  vArrow(130, 318, 345, C.muted)
-  t(140, 335, 'writes', { size: 11, fill: C.muted })
-  card(16, 346, 228, 124)
-  iconDoc(40, 374, C.blue)
-  t(62, 379, 'evidence.local.md', { size: 13.5, font: MONO, weight: 700 })
-  pill(28, 394, 'artifact:tests-a3f91c@f8ae76a', C.amber, { size: 10.5 })
-  tick(36, 434, C.blue)
-  t(50, 438, 'claim skeleton, ids filled in', { size: 12 })
-  tick(36, 456, C.blue)
-  t(50, 460, 'Sample integrity table', { size: 12 })
+  t(28, 327, '+ [SUMMARY tests: passed=3 …]', { size: 10, font: MONO, fill: C.muted })
+  vArrow(130, 338, 365, C.muted)
+  t(140, 355, 'writes, and seals', { size: 11, fill: C.muted })
+  card(16, 366, 228, 154)
+  iconDoc(40, 394, C.blue)
+  t(62, 399, 'evidence.local.md', { size: 13.5, font: MONO, weight: 700 })
+  pill(28, 414, 'artifact:tests-a3f91c@f8ae76a', C.amber, { size: 10.5 })
+  ;['claim skeleton, counts filled in', 'Sample integrity table', 'the run sealed in .git'].forEach((s, i) => {
+    tick(36, 454 + i * 22, C.blue)
+    t(50, 458 + i * 22, s, { size: 12 })
+  })
 
   // Phase 2 - write
   iconRobot(350, 140, C.amber)
   t(390, 148, '/', { size: 22, fill: C.muted, anchor: 'middle' })
   iconPerson(430, 140, C.amber)
-  card(276, 172, 228, 298, { stroke: C.amber, strokeOpacity: 0.45 })
+  card(276, 172, 228, 348, { stroke: C.amber, strokeOpacity: 0.45 })
   iconDoc(298, 198, C.amber)
   t(318, 203, 'review.md', { size: 13.5, font: MONO, weight: 700 })
   card(288, 216, 204, 62, { fill: C.inset, r: 8 })
@@ -187,7 +188,7 @@ function render(theme) {
   t(300, 270, 'first line of each cited file', { size: 11.5, fill: C.muted })
   tick(296, 302)
   t(310, 306, 'honest: keep the block', { size: 12, weight: 600, fill: C.green })
-  pill(296, 316, 'VERIFIED[tests-a3f91c]', C.amber, { size: 11 })
+  pill(288, 316, 'VERIFIED[tests-a3f91c: passed>=3]', C.amber, { size: 9.4, w: 204 })
   t(298, 354, '+ its artifact block, as-is', { size: 11.5, fill: C.muted })
   o.push(`<line x1="288" y1="372" x2="492" y2="372" stroke="${theme.edge}" stroke-opacity="${theme.dividerOpacity}"/>`)
   cross(296, 394)
@@ -195,28 +196,33 @@ function render(theme) {
   const bare = pill(296, 408, 'VERIFIED', C.red, { size: 11 })
   o.push('<line x1="300" y1="418" x2="' + (296 + bare - 4) + '" y2="418" stroke="' + C.red + '" stroke-width="1.4"/>')
   t(298, 448, 'costs a deletion; claims warns', { size: 11.5, fill: C.muted })
+  o.push(`<line x1="288" y1="464" x2="492" y2="464" stroke="${theme.edge}" stroke-opacity="${theme.dividerOpacity}"/>`)
+  cross(296, 486)
+  t(310, 490, 'edit the block: seal/edited', { size: 12, weight: 600, fill: C.red })
+  t(298, 510, 'and the gate denies writes to the run', { size: 11.5, fill: C.muted })
 
   // Phase 3 - verify
-  card(536, 112, 228, 128)
+  card(536, 112, 228, 170)
   t(552, 136, 'evidence-layer claims', { size: 13, font: MONO, weight: 700, fill: C.green })
-  ;['each id resolves to an artifact', 'collected at this commit', 'at most 2 claims per artifact', 'success words need an Effect'].forEach((s, i) => {
+  ;['each id resolves to an artifact', 'its predicates hold', 'collected at this commit', '--seal: the block the run wrote', '--seal: code unchanged since', 'at most 2 claims per artifact'].forEach((s, i) => {
     tick(558, 156 + i * 21)
     t(572, 160 + i * 21, s, { size: 12 })
   })
-  card(536, 252, 228, 108)
-  t(552, 276, 'evidence-layer receipt', { size: 13, font: MONO, weight: 700, fill: C.green })
+  card(536, 292, 228, 100)
+  t(552, 314, 'evidence-layer receipt', { size: 13, font: MONO, weight: 700, fill: C.green })
   ;['matches git’s own output', 'base = merge-base, not ancestry', 'quoted first lines match'].forEach((s, i) => {
-    tick(558, 296 + i * 21)
-    t(572, 300 + i * 21, s, { size: 12 })
+    tick(558, 333 + i * 21)
+    t(572, 337 + i * 21, s, { size: 12 })
   })
-  vArrow(650, 360, 375, C.muted)
-  card(536, 376, 228, 94, { stroke: C.green, strokeOpacity: 0.55 })
-  t(552, 398, 'exit code is the contract', { size: 12.5, weight: 600 })
+  vArrow(650, 392, 405, C.muted)
+  card(536, 406, 228, 114, { stroke: C.green, strokeOpacity: 0.55 })
+  t(552, 427, 'exit code is the contract', { size: 12.5, weight: 600 })
   cx = 552
-  for (const [label, color] of [['pass', C.green], ['warning', C.amber], ['error', C.red]]) cx += pill(cx, 408, label, color, { size: 10, font: SANS }) + 5
+  for (const [label, color] of [['pass', C.green], ['warning', C.amber], ['error', C.red]]) cx += pill(cx, 436, label, color, { size: 10, font: SANS }) + 5
   cx = 552
-  for (const [label, color] of [['flaky', C.violet], ['unverifiable', C.grey]]) cx += pill(cx, 434, label, color, { size: 10, font: SANS }) + 5
-  t(552, 466, 'an agent reads its grade and fixes', { size: 10.5, fill: C.muted })
+  for (const [label, color] of [['flaky', C.violet], ['unverifiable', C.grey]]) cx += pill(cx, 461, label, color, { size: 10, font: SANS }) + 5
+  t(552, 495, 'a code per finding · annotations in CI', { size: 10.5, fill: C.muted })
+  t(552, 511, 'an agent reads its grade and fixes', { size: 10.5, fill: C.muted })
 
   // Phase 4 - over time
   card(796, 112, 228, 140)
@@ -227,7 +233,7 @@ function render(theme) {
     tick(812, 174 + i * 21, C.violet)
     t(826, 178 + i * 21, s, { size: 12 })
   })
-  card(796, 264, 228, 136)
+  card(796, 264, 228, 152)
   t(810, 286, 'journal report', { size: 12.5, font: MONO, weight: 700, fill: C.violet })
   t(810, 302, 'per check · illustrative numbers', { size: 10, fill: C.muted })
   // Per-check stacked bars, the shape `journal report` prints: real, false, untagged.
@@ -248,23 +254,24 @@ function render(theme) {
     cx += label.length * 6.5 + 24
   }
   t(810, 390, '+ open misses, recorded by governance', { size: 10, fill: C.muted })
-  card(796, 418, 228, 52)
-  iconCommit(818, 436, C.red)
-  t(838, 440, 'a later fix commit', { size: 12.5, weight: 600 })
-  t(812, 460, 'Missed-By: <review or PR>', { size: 10.5, font: MONO, fill: C.red })
-  vArrow(1004, 418, 401, C.red)
-  t(994, 413, 'trailer', { size: 10, fill: C.red, anchor: 'end' })
+  t(810, 406, '+ gate blocks, real or false, and denies', { size: 10, fill: C.muted })
+  card(796, 468, 228, 52)
+  iconCommit(818, 486, C.red)
+  t(838, 490, 'a later fix commit', { size: 12.5, weight: 600 })
+  t(812, 510, 'Missed-By: <review or PR>', { size: 10.5, font: MONO, fill: C.red })
+  vArrow(1004, 468, 417, C.red)
+  t(994, 446, 'trailer', { size: 10, fill: C.red, anchor: 'end' })
 
   // Flows between phases.
-  elbow(244, 404, 260, 326, 295, C.amber)
-  t(260, 426, 'copy', { size: 11, fill: C.amber, anchor: 'middle' })
+  elbow(244, 424, 260, 326, 287, C.amber)
+  t(260, 446, 'copy', { size: 11, fill: C.amber, anchor: 'middle' })
   elbow(504, 236, 520, 176, 535, C.green)
-  elbow(504, 320, 520, 306, 535, C.green)
+  elbow(504, 326, 520, 340, 535, C.green)
   t(520, 166, 'checks', { size: 11, fill: C.green, anchor: 'middle' })
-  elbow(536, 452, 520, 440, 505, C.amber, { dash: true })
-  t(520, 484, 'fix, rerun', { size: 11, fill: C.amber, anchor: 'middle' })
-  elbow(764, 392, 780, 330, 795, C.violet)
-  t(770, 371, 'outcomes, if logged', { size: 10, fill: C.violet, anchor: 'end' })
+  elbow(536, 478, 520, 466, 505, C.amber, { dash: true })
+  t(520, 536, 'the stop gate hands it back: fix, rerun', { size: 11, fill: C.amber, anchor: 'middle' })
+  elbow(764, 440, 780, 340, 795, C.violet)
+  t(790, 446, 'the gate logs its decisions', { size: 10, fill: C.violet })
 
   t(W / 2, H - 18, 'The honest path must be cheaper than the convenient one.', { size: 13, fill: C.muted, anchor: 'middle', italic: true })
   o.push('</g>')
