@@ -210,6 +210,41 @@ export interface RunAsyncOptions {
   maxBufferBytes?: number
   /** How long to wait for a killed tree to close its output. Defaults to `KILL_GRACE_MS`. */
   killGraceMs?: number
+  /**
+   * Arguments for `command`, which is then the program alone. Use it whenever
+   * an argument is not a literal the project wrote - a changed file's path, a
+   * branch name - so nothing in it is read by a shell: on POSIX the program
+   * runs with no shell at all; on Windows, where `pnpm` is `pnpm.cmd` and a
+   * `.cmd` cannot start without one, each argument is quoted for cmd.exe, and
+   * one that cannot be quoted reliably (it contains `"` or `%`) is refused
+   * rather than run as something else.
+   *
+   * The result's `command` is the same line on every platform - the program
+   * and the arguments, POSIX-quoted where they need it - because `artifactId`
+   * hashes it, and an address must not depend on where the run happened.
+   */
+  args?: string[]
+}
+
+// Characters no shell reads, on either platform: left bare, so the command line
+// a review shows stays readable.
+const SAFE_ARG_RE = /^[\w./@+=:,-]+$/
+
+/** One argument as the displayed command line shows it, POSIX-quoted when it needs quoting. */
+function displayArg(arg: string): string {
+  return SAFE_ARG_RE.test(arg) ? arg : "'" + arg.replace(/'/g, "'\\''") + "'"
+}
+
+/**
+ * One argument quoted for cmd.exe and then for the program's own argument
+ * parser. Inside double quotes cmd.exe reads only `"` and `%`, so those are
+ * refused; the C runtime's parser reads backslashes before a quote as escapes,
+ * so a trailing run of them is doubled to stay literal.
+ */
+function windowsArg(arg: string): string {
+  if (SAFE_ARG_RE.test(arg)) return arg
+  if (/["%]/.test(arg)) throw new RangeError('cannot quote ' + JSON.stringify(arg) + ' for cmd.exe - it contains " or %')
+  return '"' + arg.replace(/(\\+)$/, '$1$1') + '"'
 }
 
 /**
@@ -227,23 +262,42 @@ export interface RunAsyncOptions {
  *
  * On POSIX the tree runs in its own process group, which no longer receives the
  * terminal's Ctrl+C, so an interrupt is forwarded to it and then re-raised here.
+ *
+ * With `opts.args`, `command` is the program and no shell reads the arguments
+ * on POSIX - see `RunAsyncOptions.args`. An argument that cannot be passed
+ * safely rejects the promise: a run that never happened is not evidence, not
+ * even of a failure.
  */
 export function runAsync(command: string, opts: RunAsyncOptions = {}): Promise<AsyncRunResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const maxBufferBytes = opts.maxBufferBytes ?? MAX_BUFFER_BYTES
   const killGraceMs = opts.killGraceMs ?? KILL_GRACE_MS
+  const args = opts.args
+  const shown = args ? [command, ...args].map(displayArg).join(' ') : command
+  let windowsLine: string | undefined
+  try {
+    if (args && IS_WINDOWS) windowsLine = [command, ...args].map(windowsArg).join(' ')
+  } catch (error) {
+    return Promise.reject(error)
+  }
   const started = performance.now()
 
   return new Promise((resolve) => {
-    // `shell: true` for the same reason, and with the same caveat, as `run`.
-    const child = spawn(command, {
+    const spawnOpts = {
       cwd: opts.cwd,
       env: opts.env ?? process.env,
-      shell: true,
       windowsHide: true,
       detached: !IS_WINDOWS,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+      stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'],
+    }
+    // Without `args`: `shell: true` for the same reason, and with the same
+    // caveat, as `run`. With them on POSIX: no shell, so an argument is only
+    // ever an argument. On Windows the shell stays, for `.cmd` shims, and the
+    // arguments arrive pre-quoted.
+    const child =
+      args && !IS_WINDOWS
+        ? spawn(command, args, { ...spawnOpts, shell: false })
+        : spawn(windowsLine ?? command, { ...spawnOpts, shell: true })
     const stdout: Buffer[] = []
     const stderr: Buffer[] = []
     let bytes = 0
@@ -267,7 +321,7 @@ export function runAsync(command: string, opts: RunAsyncOptions = {}): Promise<A
       clearTimeout(timer)
       clearTimeout(grace)
       process.off('SIGINT', onInterrupt)
-      const result = toRunResult(command, {
+      const result = toRunResult(shown, {
         stdout: Buffer.concat(stdout).toString('utf8'),
         stderr: Buffer.concat(stderr).toString('utf8'),
         status,

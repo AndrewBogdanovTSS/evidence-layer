@@ -286,7 +286,12 @@ Surefire writes, is summed.
 `runAsync` is the runner for those steps. A timeout kills the whole process
 tree - a process group on POSIX, `taskkill /T` on Windows - rather than only
 the direct child, and it reports within a grace period even when some process
-in the tree will not release the output.
+in the tree will not release the output. Give it the arguments as an array -
+`runAsync('pnpm', { args: ['vitest', 'run', changedFile] })` - whenever one of
+them is not a literal you wrote, such as a changed file's path: on POSIX no
+shell reads them, on Windows each is quoted for cmd.exe (one containing `"` or
+`%` is refused, not run as something else), and the recorded command line is
+the same on both, so the artifact id is too.
 
 ## The seal: was this block gathered, and is it still about this code?
 
