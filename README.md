@@ -246,6 +246,13 @@ fall back to bare `VERIFIED`. The skeleton writes the predicates for you, read
 off the run it gathered. There is no duration key: how long a run took is not
 a property of the code.
 
+For a review posted as a pull request comment, `generateClaimSkeleton` and
+`generateSampleSkeleton` take `{ fold: true }`: each artifact block, and the
+Sample integrity table, goes in a `<details>` fold, and the Claim and Grounding
+lines stay outside it. A fold's summary names the command without its paths -
+`summaryCommand` drops them - because a path outside a fence reads as a
+citation.
+
 Two different blocks under one id are an error too: an id is an address, and an
 address names one thing.
 
@@ -551,7 +558,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **473 tests** across **38 files**, and that sentence is checked
+The suite is **483 tests** across **38 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

@@ -18,7 +18,7 @@
  * cheaper than convenient, which is the only version of this feature allowed
  * to ship.
  */
-import { classifyCommand, formatArtifact, parseWorkSummary } from './artifact'
+import { classifyCommand, formatArtifact, formatExitLine, parseWorkSummary } from './artifact'
 import type { StopReason } from './artifact'
 import { suggestPredicates } from './predicates'
 import { formatCodeSpan } from './receipt'
@@ -39,6 +39,60 @@ export interface SkeletonArtifact {
   stopped?: StopReason
   /** @deprecated Since 0.4.0 - pass `stopped: 'timeout'`. Still honoured. */
   timedOut?: boolean
+}
+
+/** How a skeleton is laid out - the claims and quotes in it are the same either way. */
+export interface SkeletonOptions {
+  /**
+   * Put each artifact block, and the Sample integrity table, in a `<details>`
+   * fold, so a review posted as a pull request comment opens on its claims
+   * instead of on command logs. The Claim and Grounding lines stay outside the
+   * fold - they are what a reader grades. Off by default: a fold is HTML, and
+   * only a host that renders `<details>` (GitHub, Azure DevOps) is better for it.
+   */
+  fold?: boolean
+}
+
+/**
+ * One `<details>` fold. The 8px spacer keeps the opened content off the
+ * summary line, and the blank lines are load-bearing: CommonMark ends an HTML
+ * block only at a blank line, so without them the fence or table inside would
+ * be read as HTML, not Markdown. The summary keeps its native disclosure
+ * triangle - it is the control's only affordance for keyboard and screen
+ * reader users, so there is no option to hide it.
+ */
+export function foldDetails(summary: string, body: string): string {
+  return ['<details>', '<summary>' + summary + '</summary>', '<div style="height:8px"></div>', '', body, '', '</details>'].join('\n')
+}
+
+// A shell word: bare characters and quoted runs, so `NODE_OPTIONS='--a --b'` stays one token.
+const SHELL_WORD_RE = /(?:[^\s'"]+|'[^']*'|"[^"]*")+/g
+
+/**
+ * The command as a fold's summary names it: environment assignments kept,
+ * `NODE_OPTIONS`, `--flags` and anything path-like dropped. A summary sits
+ * outside every fence, so a verifier that reads prose for citations reads a
+ * path there as a file the review cites and asks for its quote - the file list
+ * of a lint run would fail the review. The full command is the block's first
+ * line, one click away.
+ */
+export function summaryCommand(command: string): string {
+  return (command.match(SHELL_WORD_RE) ?? [])
+    .filter((word) => !word.startsWith('NODE_OPTIONS=') && !word.startsWith('--') && !/[/\\]/.test(word))
+    .join(' ')
+}
+
+const escapeHtml = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/** `📄 Output - <command> - exit N, L lines`, where L counts the block's lines between its fences. */
+function artifactSummary(command: string, block: string, exitCode: number, stopped?: StopReason): string {
+  const lines = block.split('\n').length - 2
+  const name = summaryCommand(command)
+  return [
+    '📄 <b>Output</b>',
+    ...(name ? ['<code>' + escapeHtml(name) + '</code>'] : []),
+    formatExitLine(exitCode, stopped).replace('exit: ', 'exit ') + ', ' + lines + (lines === 1 ? ' line' : ' lines'),
+  ].join(' - ')
 }
 
 /** Who did not finish, per command kind - the subject of a timed-out claim. */
@@ -112,18 +166,22 @@ function claimSentence(command: string, exitCode: number, stopped?: StopReason, 
  * cost the author nothing: they arrive filled in, and keeping them is the same
  * edit as keeping the tag. What they buy is a sentence whose numbers a script
  * can hold the artifact to - "ran 71 passing tests" stops being prose.
+ *
+ * With `fold`, each artifact block sits in a `<details>` fold under its
+ * Grounding line, summarised by command, exit code and line count.
  */
-export function generateClaimSkeleton(artifacts: SkeletonArtifact[]): string {
+export function generateClaimSkeleton(artifacts: SkeletonArtifact[], options: SkeletonOptions = {}): string {
   const parts: string[] = []
   for (const a of artifacts) {
     const stopped = a.stopped ?? (a.timedOut ? 'timeout' : undefined)
     const sentence = claimSentence(a.command, a.exitCode, stopped, a.output)
     if (!sentence) continue
+    const block = formatArtifact(a.command, a.output, a.exitCode, { id: a.id, commit: a.commit, stopped })
     parts.push(
       '**Claim**: ' + sentence,
       '**Grounding**: VERIFIED[' + a.id + ': ' + suggestPredicates({ output: a.output, exitCode: a.exitCode, stopped }) + ']',
       '',
-      formatArtifact(a.command, a.output, a.exitCode, { id: a.id, commit: a.commit, stopped }),
+      options.fold ? foldDetails(artifactSummary(a.command, block, a.exitCode, stopped), block) : block,
       '',
     )
   }
@@ -138,20 +196,30 @@ export function generateClaimSkeleton(artifacts: SkeletonArtifact[]): string {
  * typing new ones from scratch, which is again the cost rule from the file
  * header. Capping which files get fetched at all is the caller's job, since
  * only the caller knows the cost of reading each one.
+ *
+ * With `fold`, the table sits in a `<details>` fold whose summary takes the
+ * label's place - `parseReceipt` finds a table by its header row, not by the
+ * label - and says how many files it quotes, never which.
  */
-export function generateSampleSkeleton(samples: { path: string; line: string }[], omittedCount = 0): string {
+export function generateSampleSkeleton(
+  samples: { path: string; line: string }[],
+  omittedCount = 0,
+  options: SkeletonOptions = {},
+): string {
   // A table since 0.2.0. The line form repeated its label once per file and ran
   // together into one paragraph in any Markdown preview; `parseReceipt` still
   // reads it, so reviews written against 0.1.x keep verifying.
-  const lines = [
-    '**Sample integrity**:',
-    '',
+  const table = [
     '| File | First non-blank line |',
     '|---|---|',
     ...samples.map((s) => '| ' + formatCodeSpan(s.path, true) + ' | ' + formatCodeSpan(s.line, true) + ' |'),
   ]
   if (omittedCount > 0) {
-    lines.push('', '<!-- ' + omittedCount + ' more changed files omitted - add their quotes if you cite them -->')
+    table.push('', '<!-- ' + omittedCount + ' more changed files omitted - add their quotes if you cite them -->')
   }
-  return lines.join('\n')
+  if (options.fold) {
+    const summary = '🔍 <b>Sample integrity</b> - ' + samples.length + (samples.length === 1 ? ' file' : ' files')
+    return foldDetails(summary, table.join('\n'))
+  }
+  return ['**Sample integrity**:', '', ...table].join('\n')
 }

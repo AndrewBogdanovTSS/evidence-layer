@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateClaimSkeleton, generateSampleSkeleton } from '../src/core/skeleton'
+import { generateClaimSkeleton, generateSampleSkeleton, summaryCommand } from '../src/core/skeleton'
 import { findArtifactBlocks } from '../src/core/artifact'
 import { findClaims, lintClaims } from '../src/core/claims'
 import { parseReceipt } from '../src/core/receipt'
@@ -143,5 +143,96 @@ describe('generateSampleSkeleton', () => {
 
   it('omits the note entirely when nothing was left out', () => {
     expect(generateSampleSkeleton([{ path: 'a.ts', line: 'x' }])).not.toContain('omitted')
+  })
+})
+
+describe('the fold option', () => {
+  it('folds each artifact block under its Grounding line, which stays outside the fold', () => {
+    const skeleton = generateClaimSkeleton(
+      [artifact('BRAND=canvas NODE_OPTIONS=--max-old-space-size=8192 pnpm typecheck', 0, 'types-aaaaaa')],
+      { fold: true },
+    )
+    expect(skeleton.split('\n')).toEqual([
+      '**Claim**: Typecheck reports no errors.',
+      '**Grounding**: VERIFIED[types-aaaaaa: exit=0]',
+      '',
+      '<details>',
+      '<summary>📄 <b>Output</b> - <code>BRAND=canvas pnpm typecheck</code> - exit 0, 3 lines</summary>',
+      '<div style="height:8px"></div>',
+      '',
+      '```artifact:types-aaaaaa@f8ae76a',
+      '$ BRAND=canvas NODE_OPTIONS=--max-old-space-size=8192 pnpm typecheck',
+      'ok',
+      'exit: 0',
+      '```',
+      '',
+      '</details>',
+      '',
+    ])
+  })
+
+  it('keeps a folded skeleton acceptable to the linter and readable by the artifact parser', () => {
+    const output = 'ok\n[SUMMARY tests: passed=3 failed=0 skipped=0 todo=0]'
+    const skeleton = generateClaimSkeleton([{ ...artifact('pnpm test src/a.test.ts', 0, 'tests-abcdef'), output }], { fold: true })
+    const lines = skeleton.split('\n')
+    expect(lintClaims(skeleton, 'skeleton.md').filter((f) => f.level === 'error')).toEqual([])
+    expect(findArtifactBlocks(lines)[0]?.id).toBe('tests-abcdef')
+    expect(findClaims(lines, new Set())[0]?.gradeId).toBe('tests-abcdef')
+  })
+
+  it('names no path in a summary - a verifier reading prose would take it for a citation', () => {
+    const skeleton = generateClaimSkeleton([artifact('pnpm eslint src/a.ts src/b.ts --max-warnings 0', 0, 'lint-abcdef')], { fold: true })
+    const summary = skeleton.split('\n').find((line) => line.startsWith('<summary>'))
+    expect(summary).toBe('<summary>📄 <b>Output</b> - <code>pnpm eslint 0</code> - exit 0, 3 lines</summary>')
+  })
+
+  it('states a stop reason in the summary, as the exit line does', () => {
+    const skeleton = generateClaimSkeleton([{ ...artifact('pnpm typecheck', 124, 'types-bbbbbb'), stopped: 'timeout' as const }], { fold: true })
+    expect(skeleton).toContain('<code>pnpm typecheck</code> - exit 124 (timeout), 3 lines</summary>')
+  })
+
+  it('folds the Sample integrity table under a summary that counts files without naming them', () => {
+    const samples = [{ path: 'src/a.ts', line: 'import x' }, { path: 'src/b.ts', line: 'import y' }]
+    const md = generateSampleSkeleton(samples, 0, { fold: true })
+    expect(md.split('\n')).toEqual([
+      '<details>',
+      '<summary>🔍 <b>Sample integrity</b> - 2 files</summary>',
+      '<div style="height:8px"></div>',
+      '',
+      '| File | First non-blank line |',
+      '|---|---|',
+      '| `src/a.ts` | `import x` |',
+      '| `src/b.ts` | `import y` |',
+      '',
+      '</details>',
+    ])
+    expect(parseReceipt(md).samples).toEqual(samples)
+  })
+
+  it('keeps the omitted-files note inside a folded table and counts one file in the singular', () => {
+    const md = generateSampleSkeleton([{ path: 'a.ts', line: 'import x' }], 4, { fold: true })
+    expect(md).toContain('<summary>🔍 <b>Sample integrity</b> - 1 file</summary>')
+    expect(md.indexOf('<!-- 4 more changed files omitted')).toBeLessThan(md.indexOf('</details>'))
+  })
+})
+
+describe('summaryCommand', () => {
+  it('keeps environment assignments and drops NODE_OPTIONS, even when quoted with spaces', () => {
+    expect(summaryCommand("BRAND=vans NODE_OPTIONS='--max-old-space-size=8192 --trace-warnings' pnpm typecheck")).toBe('BRAND=vans pnpm typecheck')
+  })
+
+  it('drops --flags and every path-like word, POSIX or Windows', () => {
+    expect(summaryCommand('pnpm test src/a.test.ts C:\\repo\\b.test.ts --no-watch')).toBe('pnpm test')
+  })
+
+  it('returns an empty name when every word is dropped, and the summary then leaves the command out', () => {
+    expect(summaryCommand('./scripts/check.sh --all')).toBe('')
+    const skeleton = generateClaimSkeleton([artifact('./scripts/check.sh', 0, 'cmd-aaaaaa')], { fold: true })
+    expect(skeleton).toContain('<summary>📄 <b>Output</b> - exit 0, 3 lines</summary>')
+  })
+
+  it('escapes HTML in the name, since the summary is HTML', () => {
+    const skeleton = generateClaimSkeleton([artifact('pnpm lint 2>&1', 0, 'lint-aaaaaa')], { fold: true })
+    expect(skeleton).toContain('<code>pnpm lint 2&gt;&amp;1</code>')
   })
 })
