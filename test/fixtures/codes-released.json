@@ -72,6 +72,10 @@
       "decisions/bad-review-date",
       "decisions/overdue",
       "decisions/current"
+    ],
+    "0.9.0": [
+      "claims/reasoned",
+      "claims/no-reason"
     ]
   }
 }

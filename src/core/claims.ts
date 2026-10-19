@@ -34,6 +34,14 @@
  * `predicates.ts`. A bracket that is neither a bare id nor an id with
  * predicates is an error, never a quiet fall back to bare `VERIFIED`.
  *
+ * Claims come in two shapes. A `**Claim**:` block is found here, its grade on
+ * the claim line or a few lines of prose below it. An inline claim - a table
+ * cell, a list item, any line in a format this module does not parse - is
+ * found by the caller and handed in (`LintOptions.inlineClaims`), so the
+ * caller keeps its grammar and this keeps what a grade means. An inline claim
+ * has no lines below it to borrow, so its citation or reasoning must be in its
+ * own text.
+ *
  * It does check the outcome, where the outcome is mechanical: a claim that
  * reads as success cannot rest on a run that exited non-zero, a run that was
  * stopped before it finished backs only "did not complete", and a lint or test
@@ -58,6 +66,17 @@ export const ARTIFACT_WINDOW = 15
 
 /** A single artifact id is allowed to back this many claims before it is a warning, not a pass. */
 export const SHOTGUN_THRESHOLD = 2
+
+/** How many lines of prose below a `**Claim**:` line its grade may sit, unless `LintOptions.gradeWindow` says otherwise. */
+export const GRADE_WINDOW = 2
+
+/**
+ * How many words an inline INFERRED claim must carry besides its tag. A table
+ * cell has no room for a numbered chain, and a one-clause reason ("fewer
+ * unique URLs -> more cache reuse") is what such a cell can honestly hold - so
+ * the bar is that the tag does not stand alone, not that it argues at length.
+ */
+export const INLINE_REASON_WORDS = 2
 
 export const GRADES = ['VERIFIED', 'DOCUMENTED', 'INFERRED', 'UNVERIFIED'] as const
 export type Grade = (typeof GRADES)[number]
@@ -212,38 +231,68 @@ interface Claim {
   gradeBracket?: string
   /** 0-based line the grade was found on. */
   gradeLine?: number
+  /** Found by the caller rather than here (`LintOptions.inlineClaims`): its citation and reasoning must be in `text`. */
+  inline?: boolean
 }
 
-export function findClaims(lines: string[], fenced: Set<number>): Claim[] {
+type GradeFields = Pick<Claim, 'grade' | 'gradeId' | 'gradePredicates' | 'gradeMalformed' | 'gradeBracket'>
+
+/** The first grade a piece of text carries, with a VERIFIED address parsed - `undefined` when it carries none. */
+function readGrade(text: string): GradeFields | undefined {
+  const found = GRADE_RE.exec(text)
+  if (!found) return undefined
+  const grade = found[1] as Grade
+  const bracket = found[2]
+  // Only VERIFIED is addressed; a bracket after any other grade is prose.
+  if (bracket === undefined || grade !== 'VERIFIED') return { grade }
+  const address = ADDRESS_RE.exec(bracket)
+  if (!address) return { grade, gradeBracket: bracket, gradeMalformed: bracket }
+  return {
+    grade,
+    gradeBracket: bracket,
+    gradeId: address[1],
+    ...(address[2] !== undefined && { gradePredicates: address[2] }),
+  }
+}
+
+export function findClaims(lines: string[], fenced: Set<number>, gradeWindow = GRADE_WINDOW): Claim[] {
   const claims: Claim[] = []
   for (let i = 0; i < lines.length; i++) {
     if (fenced.has(i) || !CLAIM_RE.test(lines[i]!)) continue
     const claim: Claim = { line: i, text: lines[i]!.replace(CLAIM_RE, '').trim() }
-    // The grade lives on the claim line or within the next two lines - close
-    // enough that a reader always sees them together.
-    for (let j = i; j <= Math.min(i + 2, lines.length - 1); j++) {
-      const found = GRADE_RE.exec(lines[j]!)
-      if (found) {
-        claim.grade = found[1] as Grade
-        claim.gradeLine = j
-        const bracket = found[2]
-        // Only VERIFIED is addressed; a bracket after any other grade is prose.
-        if (bracket !== undefined && claim.grade === 'VERIFIED') {
-          claim.gradeBracket = bracket
-          const address = ADDRESS_RE.exec(bracket)
-          if (address) {
-            claim.gradeId = address[1]
-            if (address[2] !== undefined) claim.gradePredicates = address[2]
-          } else {
-            claim.gradeMalformed = bracket
-          }
-        }
+    // The grade lives on the claim line or within `gradeWindow` lines of prose
+    // below it - close enough that a reader sees them together. A fenced block
+    // between the two is an example the claim is about, not distance, so its
+    // lines neither count against the window nor can carry the grade; the next
+    // claim ends the search, so a claim never borrows the grade below it.
+    let below = 0
+    for (let j = i; j < lines.length; j++) {
+      if (j > i) {
+        if (fenced.has(j)) continue
+        if (CLAIM_RE.test(lines[j]!)) break
+        if (++below > gradeWindow) break
+      }
+      const grade = readGrade(lines[j]!)
+      if (grade) {
+        Object.assign(claim, grade, { gradeLine: j })
         break
       }
     }
     claims.push(claim)
   }
   return claims
+}
+
+/**
+ * A claim the caller found itself - a table cell, a list item, a line in a
+ * format this module does not parse - to be graded by the same rules as a
+ * `**Claim**:` block.
+ */
+export interface InlineClaim {
+  /** 1-based line in the checked document: where findings point, and where a bare VERIFIED looks below for its block. */
+  line: number
+  /** The claim's whole text, grade tag included. A DOCUMENTED citation or an INFERRED reason must be in it. */
+  text: string
 }
 
 export interface LintOptions extends OutcomeOptions {
@@ -262,19 +311,42 @@ export interface LintOptions extends OutcomeOptions {
    * prose is not graded and only `**Claim**:` lines are.
    */
   prose?: boolean
+  /**
+   * How many lines of prose below a `**Claim**:` line its grade may sit.
+   * Default `GRADE_WINDOW`. Lines inside a fenced block do not count.
+   */
+  gradeWindow?: number
+  /**
+   * Claims the caller found in a shape this module does not parse, graded
+   * alongside the `**Claim**:` blocks: the same address, commit, predicate and
+   * outcome rules, and the same shotgun count. See `InlineClaim`.
+   */
+  inlineClaims?: InlineClaim[]
 }
 
 export function lintClaims(markdown: string, file: string, opts: LintOptions = {}): CodedFinding[] {
   const lines = markdown.split(/\r?\n/)
   const fenced = fencedLineNumbers(lines)
-  const claims = findClaims(lines, fenced)
+  const gradeWindow = opts.gradeWindow ?? GRADE_WINDOW
+  if (!Number.isSafeInteger(gradeWindow) || gradeWindow < 0) {
+    throw new RangeError('gradeWindow must be a whole number of lines, 0 or more - got ' + gradeWindow)
+  }
+  const claims = findClaims(lines, fenced, gradeWindow)
+  const inlineClaims = (opts.inlineClaims ?? []).map((c): Claim => {
+    if (!Number.isSafeInteger(c.line) || c.line < 1 || c.line > lines.length) {
+      throw new RangeError('inline claim line ' + c.line + ' is not a line of ' + file + ' (1 to ' + lines.length + ')')
+    }
+    const text = c.text.trim()
+    const grade = readGrade(text)
+    return { line: c.line - 1, text, inline: true, ...(grade && { ...grade, gradeLine: c.line - 1 }) }
+  })
   const artifacts = [
     ...findArtifactBlocks(lines),
     ...(opts.artifactSource !== undefined ? findArtifactBlocks(opts.artifactSource.split(/\r?\n/)) : []),
   ]
   const findings: CodedFinding[] = []
 
-  if (claims.length === 0 && opts.prose !== false) {
+  if (claims.length + inlineClaims.length === 0 && opts.prose !== false) {
     findings.push({
       level: 'warning',
       code: 'claims/none',
@@ -311,9 +383,10 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
   // Addressed mode: how many claims point at each id, for the shotgun check.
   const idUsage = new Map<string, { count: number; lastLine: number }>()
 
-  claims.forEach((claim, index) => {
+  // `nextClaimLine` bounds where an INFERRED block looks for its numbered
+  // chain; an inline claim carries its reasoning in its own text instead.
+  const grade = (claim: Claim, nextClaimLine: number): void => {
     const where = { file, line: claim.line + 1 }
-    const nextClaimLine = claims[index + 1]?.line ?? lines.length
 
     if (!claim.grade) {
       findings.push({
@@ -331,7 +404,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     // The bracket itself is not part of it: `passed>=71` inside a tag is a
     // predicate, not the word "passed", and must not make a failure claim read
     // as a success claim.
-    const sentence = gradeLine === claim.line ? claim.text : claim.text + ' ' + lines[gradeLine]
+    const sentence = claim.inline || gradeLine === claim.line ? claim.text : claim.text + ' ' + lines[gradeLine]
     const claimText = claim.gradeBracket ? sentence.replace(claim.gradeBracket, '') : sentence
 
     if (claim.grade === 'VERIFIED' && claim.gradeMalformed !== undefined) {
@@ -467,13 +540,29 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     }
 
     if (claim.grade === 'DOCUMENTED') {
-      const window = lines.slice(gradeLine, Math.min(gradeLine + 2, lines.length)).join(' ')
+      const window = claim.inline ? claim.text : lines.slice(gradeLine, Math.min(gradeLine + 2, lines.length)).join(' ')
       const ok = CITATION_RE.test(window)
       findings.push({
         level: ok ? 'pass' : 'error',
         code: ok ? 'claims/documented' : 'claims/uncited',
         claim: claim.text,
         detail: ok ? 'DOCUMENTED with a citation' : 'DOCUMENTED, but cites nothing (URL, § section, or issue id)',
+        ...where,
+      })
+      return
+    }
+
+    if (claim.grade === 'INFERRED' && claim.inline) {
+      const words = (claimText.replace(/\bINFERRED\b/, '').match(/[\p{L}\p{N}]+/gu) ?? []).length
+      const ok = words >= INLINE_REASON_WORDS
+      findings.push({
+        level: ok ? 'pass' : 'error',
+        code: ok ? 'claims/reasoned' : 'claims/no-reason',
+        claim: claim.text,
+        detail: ok
+          ? 'INFERRED inline, with its reason beside the tag'
+          : 'INFERRED inline, but nothing beside the tag says why - a bare tag is not a reason (' +
+            INLINE_REASON_WORDS + ' or more words are required)',
         ...where,
       })
       return
@@ -503,7 +592,12 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       detail: 'UNVERIFIED, and says so - which is the honest outcome, not a failure',
       ...where,
     })
-  })
+  }
+
+  claims.forEach((claim, index) => grade(claim, claims[index + 1]?.line ?? lines.length))
+  // After the blocks, so a bare VERIFIED block keeps first call on the artifact
+  // below it, as it had before inline claims existed.
+  for (const claim of inlineClaims) grade(claim, claim.line + 1)
 
   // Shotgun: one artifact backing suspiciously many claims is the addressed
   // form's equivalent of the wrong-block-copied-in problem - a warning by

@@ -158,6 +158,23 @@ unknown key, a fragment that does not parse, a count the artifact does not
 carry, a bracket that is not an address) is an error rather than a predicate
 quietly dropped, because a dropped predicate is a typo that passes.
 
+Where the grade sits: on the `**Claim**:` line or within two lines of prose
+below it (`lintClaims(md, file, { gradeWindow })` widens that for a review
+template that puts more between them). A fenced block between the claim and
+its grade is an example, not distance - its lines do not count and cannot carry
+the grade - and the next `**Claim**:` ends the search, so a claim never takes
+the grade of the one below it.
+
+Not every claim is a `**Claim**:` block. A review template with a risk table
+puts its claims in cells, and the table's grammar belongs to the project, not
+to this package. So the project finds those claims and hands them in -
+`lintClaims(md, file, { inlineClaims: [{ line, text }] })` - and they are graded
+by the same address, commit, predicate, outcome and shotgun rules as the
+blocks. An inline claim has no lines below it to borrow: a DOCUMENTED cell
+cites inside the cell, and an INFERRED cell carries its reason beside the tag
+(`[INFERRED: fewer unique URLs -> more cache reuse]`) - one clause is what a
+cell can honestly hold, so that is the bar, not a numbered chain.
+
 Try it on the fixtures:
 
 ```bash
@@ -396,6 +413,8 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `claims/uncited` | a `DOCUMENTED` claim cites nothing |
 | `claims/inferred` | an `INFERRED` claim shows a chain of two or more steps |
 | `claims/short-chain` | an `INFERRED` claim shows fewer than two numbered steps |
+| `claims/reasoned` | an inline `INFERRED` claim carries its reason beside the tag |
+| `claims/no-reason` | an inline `INFERRED` claim is a bare tag, with no reason beside it |
 | `claims/unverified` | a claim is tagged `UNVERIFIED`, which is honest, not a failure |
 | `claims/shotgun` | one artifact backs more claims than one artifact should |
 | `claims/vague-comparison` | a comparison that says neither to what nor measured how |

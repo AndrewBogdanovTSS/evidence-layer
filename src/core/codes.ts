@@ -43,6 +43,8 @@ export const CODES = {
   'claims/uncited': 'a `DOCUMENTED` claim cites nothing',
   'claims/inferred': 'an `INFERRED` claim shows a chain of two or more steps',
   'claims/short-chain': 'an `INFERRED` claim shows fewer than two numbered steps',
+  'claims/reasoned': 'an inline `INFERRED` claim carries its reason beside the tag',
+  'claims/no-reason': 'an inline `INFERRED` claim is a bare tag, with no reason beside it',
   'claims/unverified': 'a claim is tagged `UNVERIFIED`, which is honest, not a failure',
   'claims/shotgun': 'one artifact backs more claims than one artifact should',
   'claims/vague-comparison': 'a comparison that says neither to what nor measured how',
