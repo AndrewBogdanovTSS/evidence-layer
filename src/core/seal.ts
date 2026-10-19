@@ -90,10 +90,14 @@ export function stateDir(repo: string): string | null {
   return path === null ? null : resolve(repo, path)
 }
 
-/** A path as git names it relative to the top level - forward slashes, no `./`. */
-function rootRelative(root: string, cwd: string, path: string): string {
+/** A path as git names it relative to the top level - forward slashes, no `./` - or `null` when it lies outside. */
+function rootRelative(root: string, cwd: string, path: string): string | null {
   const absolute = isAbsolute(path) ? path : resolve(cwd, path)
-  return relative(root, absolute).split(sep).join('/')
+  const rel = relative(root, absolute)
+  // Outside the repository: `../` up and out, or - across Windows drives,
+  // where `relative` has no way up - the other path returned whole.
+  if (rel === '' || rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) return null
+  return rel.split(sep).join('/')
 }
 
 /**
@@ -106,7 +110,7 @@ export function toRootRelative(repo: string, paths: string[], cwd = repo): strin
   if (!root) return paths
   // A path outside the repository is not part of the source surface anyway,
   // and git refuses to be handed one.
-  const inside = paths.map((p) => rootRelative(root, cwd, p)).filter((p) => p !== '' && !p.startsWith('../') && p !== '..')
+  const inside = paths.map((p) => rootRelative(root, cwd, p)).filter((p) => p !== null)
   return [...new Set(inside)].sort()
 }
 
@@ -159,7 +163,7 @@ export function sourceFingerprint(repo: string, excluded: string[] = [], root = 
     return { unverifiable: 'the index has unresolved conflicts' }
   }
 
-  const skip = new Set(excluded.map((p) => rootRelative(root, repo, p)))
+  const skip = new Set(excluded.map((p) => rootRelative(root, repo, p)).filter((p) => p !== null))
   const untracked = git(['ls-files', '--others', '--exclude-standard', '-z'], root, 60_000)
   if (untracked.exitCode !== 0) return { unverifiable: 'could not list untracked files: ' + untracked.stderr.trim() }
   const largeUntracked: LargeUntracked[] = []

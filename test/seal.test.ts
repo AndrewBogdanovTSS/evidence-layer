@@ -54,6 +54,19 @@ function publish(dir: string, blocks: { id: string; text: string }[], excluded =
 
 const review = (b: { id: string; text: string }) => '**Claim**: the suite passes.\n**Grounding**: VERIFIED[' + b.id + ']\n\n' + b.text
 
+describe('paths outside the repository', () => {
+  it('are left out of the exclusions, including a path on another Windows drive', () => {
+    const dir = repo()
+    // On Windows, `relative` across drives returns the other path whole - no
+    // `../` to recognise - and git then refuses it as outside the repository.
+    const drive = /^([a-z]):/i.exec(dir)?.[1]?.toUpperCase()
+    const elsewhere = drive ? (drive === 'Q' ? 'R' : 'Q') + ':\\elsewhere\\bundle.md' : join(dir, '..', 'elsewhere', 'bundle.md')
+    expect(toRootRelative(dir, [elsewhere, join(dir, 'review.md')], dir)).toEqual(['review.md'])
+    const result = sourceFingerprint(dir, [elsewhere, 'review.md'])
+    expect(result).toHaveProperty('fingerprint')
+  })
+})
+
 describe('sourceFingerprint', () => {
   it('ignores the review being written, and a commit of unchanged content - but not an edit to code', () => {
     const dir = repo()
