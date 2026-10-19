@@ -19,6 +19,11 @@
  * An expired one is a finding on the next run, always, regardless of warn/enforce
  * mode: an exception nobody re-examined is not an active decision any more.
  *
+ * `Expires` is the first day the exception no longer holds: it expires at
+ * 00:00 UTC on that date, not at the end of it, and not in local time. An
+ * exception meant to cover the 20th, wherever its readers are, needs the 21st.
+ * UTC so that the same table gives the same verdict on every machine and in CI.
+ *
  * This is the one place in the layer where the honest path is not supposed to
  * be the cheap one. Filling in the row is fast; the cost is visibility - the
  * issuer's name and the expiry date are printed on every run, so silently
@@ -81,6 +86,7 @@ export function checkExceptions(repo: string, path = 'docs/governance-exceptions
       })
       continue
     }
+    // Expired from 00:00 UTC on the listed date - see the module header.
     const isExpired = new Date(ex.expires + 'T00:00:00Z').getTime() < today.getTime()
     if (isExpired) {
       expired += 1

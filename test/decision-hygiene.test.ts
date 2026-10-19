@@ -70,6 +70,14 @@ describe('checkDecisionHygiene', () => {
     expect(findings.find((f) => f.claim === 'decision record hygiene')?.detail).toBe('0 active, 1 stale')
   })
 
+  it('goes stale at 00:00 UTC on its review_by date, the same clock as an exception', () => {
+    writeRecord('0001-x.md', ['id: DEC-0001', 'status: accepted', 'review_by: 2026-09-16'])
+    const level = (iso: string) =>
+      checkDecisionHygiene(repo, undefined, new Date(iso)).find((f) => f.claim.includes('is still current'))?.level
+    expect(level('2026-09-15T23:59:59.999Z')).toBe('pass')
+    expect(level('2026-09-16T00:00:00.001Z')).toBe('error')
+  })
+
   it('scans only the given directory - a nested archive/ is never read automatically', () => {
     writeRecord('0001-x.md', ['id: DEC-0001', 'status: accepted', 'review_by: 2099-01-01'])
     mkdirSync(join(repo, 'docs', 'decisions', 'archive'), { recursive: true })

@@ -103,6 +103,8 @@ export function checkDecisionHygiene(repo: string, decisionsDir?: string, today:
       continue
     }
 
+    // Stale from 00:00 UTC on the listed date, the same instant an exception
+    // with that `Expires` date stops holding - one clock for both.
     const isStale = new Date(reviewBy + 'T00:00:00Z').getTime() < today.getTime()
     if (isStale) {
       stale += 1

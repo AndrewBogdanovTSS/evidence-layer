@@ -8,6 +8,11 @@ active/expired count on every run, printed even when it is zero, so a silent
 extension is never available as an option - see
 [`packages/evidence-layer/src/core/exceptions.ts`](../packages/evidence-layer/src/core/exceptions.ts).
 
+`Expires` is the first day the exception no longer holds: it expires at 00:00
+UTC on that date - not at the end of the day, and not in local time. To cover
+a whole day, write the day after it. A decision record's `review_by` runs on
+the same clock.
+
 Add a row below the header when you need one. Nothing here yet.
 
 | Date | Commit | Issued by | Check | Reason | Expires |

@@ -290,7 +290,9 @@ nobody can tell a considered exception from a forgotten one.
 
 [`docs/governance-exceptions.md`](governance-exceptions.md) is a markdown
 table: date, commit, issuer, check, reason, **mandatory expiry**. An exception
-with no expiry is not valid. An expired one is a finding on every run,
+with no expiry is not valid. It expires at 00:00 UTC *on* its `Expires` date -
+the listed day is the first one it no longer covers, in every time zone, so a
+row meant to cover a day lists the day after. An expired one is a finding on every run,
 regardless of warn/enforce mode - an exception nobody re-examined is not an
 active decision any more. This is the one place in the layer where the honest
 path is *not* supposed to be cheap: filling in a row is fast, but the issuer's
@@ -353,7 +355,8 @@ indistinguishable from one still current.
 `checkDecisionHygiene` runs as part of `evidence-layer governance` (so every
 consumer gets it, not just this repository) and reports an `error` for an
 `accepted` record with no valid `review_by`, or one whose date has passed -
-never merely a warning, matching how an expired exception is treated. A
+never merely a warning, matching how an expired exception is treated. "Passed"
+is the exceptions' clock too: from 00:00 UTC on the `review_by` date. A
 record archived under `docs/decisions/archive/` is never scanned, on purpose:
 an archived record's date is expected to be in the past, and flagging it would
 be true and useless.

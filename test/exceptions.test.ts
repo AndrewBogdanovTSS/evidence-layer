@@ -66,6 +66,15 @@ describe('checkExceptions', () => {
     expect(expired?.detail).toContain('expired')
   })
 
+  it('expires at 00:00 UTC on its Expires date - the listed day is the first one it no longer covers', () => {
+    mkdirSync(join(repo, 'docs'), { recursive: true })
+    writeFileSync(join(repo, 'docs', 'governance-exceptions.md'), TABLE)
+    const expiredAt = (iso: string) =>
+      checkExceptions(repo, 'docs/governance-exceptions.md', new Date(iso)).some((f) => f.code === 'exceptions/expired' && f.claim.includes('fingerprint'))
+    expect(expiredAt('2020-01-31T23:59:59.999Z')).toBe(false)
+    expect(expiredAt('2020-02-01T00:00:00.001Z')).toBe(true)
+  })
+
   it('rejects an exception with no valid expiry date - an exception without one is not valid', () => {
     const noExpiry = TABLE.replace('2099-01-01', 'someday')
     mkdirSync(join(repo, 'docs'), { recursive: true })
