@@ -43,7 +43,7 @@ import type { CodedFinding } from './codes'
 import { gateFailure, journalOutcome, levelOf } from './gate-decision'
 import type { GateDecision, GateEvent, GateOptions, GateOutcome } from './gate-decision'
 import { gatherCommandFor } from './gather-command'
-import { appendEntry, newEntryId } from './journal'
+import { appendEntry } from './journal'
 import { gitCapture } from './proc'
 import { decidePreWrite } from './protect'
 import { checkReceipt, parseReceipt } from './receipt'
@@ -147,12 +147,31 @@ function expireSessions(state: string, keep: string): void {
 // ---------------------------------------------------------------------------
 // session-start
 
-/** How to gather, in a sentence's words: the project's command when it has one, a description when not. */
-function gatherWith(command: string | null): string {
-  return command ? '`' + command + '`' : 'the project\'s evidence script'
+/** How the project gathers: its command, and the base the current run was gathered against when a run says. */
+interface GatherHow {
+  command: string | null
+  base?: string
 }
 
-function grammar(gather: string | null): string[] {
+function gatherHow(root: string, current: CurrentRun): GatherHow {
+  const seal = 'run' in current ? current.run.seal : undefined
+  return {
+    command: gatherCommandFor(root, seal?.gatherCommand),
+    ...(typeof seal?.base === 'string' && { base: seal.base }),
+  }
+}
+
+/**
+ * How to gather, in a sentence's words: the command, and the base the current
+ * run used - a gather script that needs `--base` fails without it, so naming
+ * the command alone sends the agent into a usage error first.
+ */
+function gatherWith(how: GatherHow): string {
+  if (!how.command) return 'the project\'s evidence script'
+  return '`' + how.command + '`' + (how.base ? ' (base ' + how.base + ', as the current run was gathered)' : '')
+}
+
+function grammar(gather: GatherHow): string[] {
   return [
     'evidence-layer checks this session. When you report a checkable result - in a review file or in your final answer - state it as a claim, one per line pair:',
     '',
@@ -168,7 +187,6 @@ function sessionStart(event: Extract<GateEvent, { kind: 'session-start' }>, opts
   const root = repoRoot(event.cwd)
   const state = root ? stateDir(root) : null
   if (!root || !state) return { action: 'allow', outcome: 'not-applicable', level: null, findings: [] }
-  const gather = gatherCommandFor(root)
 
   const reviews = opts.reviewPaths ?? DEFAULT_REVIEWS
   const path = sessionPath(state, event.sessionId)
@@ -192,6 +210,7 @@ function sessionStart(event: Extract<GateEvent, { kind: 'session-start' }>, opts
 
   const head = gitCapture(['rev-parse', 'HEAD'], root)
   const current = readCurrentRun(root, state)
+  const gather = gatherHow(root, current)
   const runHint =
     'run' in current
       ? current.run.seal.headSha === head
@@ -215,7 +234,7 @@ function sessionStart(event: Extract<GateEvent, { kind: 'session-start' }>, opts
  */
 interface StopContext {
   root: string
-  gather: string | null
+  gather: GatherHow
   current: CurrentRun
   /** The run's freshness, computed on first use and then reused. */
   freshness: () => CodedFinding
@@ -229,7 +248,7 @@ function stopContext(root: string, state: string): StopContext {
   let freshness: CodedFinding | undefined
   return {
     root,
-    gather: gatherCommandFor(root),
+    gather: gatherHow(root, current),
     current,
     freshness: () => {
       if (freshness) return freshness
@@ -325,28 +344,24 @@ function formatReason(findings: Finding[], intro: string, footer: string[] = [])
   return [intro, ...lines, ...footer].join('\n')
 }
 
-/** The lines that let a person tag a block without reading the journal: its entry id, in the command that takes it. */
-function tagLines(entryId: string | null): string[] {
-  if (!entryId) return []
-  return [
-    '',
-    'Journal entry ' + entryId + ' - whoever settles it can record whether this block was right: `evidence-layer journal tag ' +
-      entryId + ' real|false --gate`.',
-  ]
-}
-
 /**
- * A hash of everything a stop's verdict rests on: each changed review's bytes,
- * the final message, which run is current, and - when freshness was read - the
- * tree it was read against. Equal inputs give an equal verdict, which is what
- * lets an exhausted episode stop repeating itself. When no text cites a run,
- * the tree is left out on purpose: nothing checked then depends on it.
+ * A hash of what a stop's verdict rests on and of the verdict itself: each
+ * changed review's bytes, the final message, which run is current, the tree
+ * when freshness was read - and the findings, since some checks read git state
+ * none of those covers (a receipt's base check reads a remote-tracking ref, so
+ * a fetch can change a verdict on unchanged text). Equal hashes are what let
+ * an exhausted episode stop repeating itself.
  */
-function verdictInputs(ctx: StopContext, changed: string[], message: string | undefined): string {
+function verdictInputs(ctx: StopContext, changed: string[], message: string | undefined, findings: Finding[]): string {
   const current = ctx.current
   const fingerprint = ctx.fingerprint()
   return sha256(
     JSON.stringify({
+      findings: findings
+        .filter((f) => f.level !== 'pass')
+        .map((f) => [f.level, 'code' in f ? f.code : null, f.file ?? null, f.line ?? null, f.detail])
+        .map((f) => JSON.stringify(f))
+        .sort(),
       reviews: changed.map((r) => [r, hashReview(ctx.root, r)]),
       message: message ?? null,
       run: 'run' in current ? current.run.seal.runId : 'broken' in current ? 'broken: ' + current.broken : null,
@@ -423,13 +438,13 @@ function stop(event: Extract<GateEvent, { kind: 'stop' }>, opts: GateOptions): G
   const failing = level === 'error' || (opts.strict === true && (level === 'unverifiable' || level === 'flaky'))
   const scope = [...changed, ...(message !== undefined ? ['final message'] : [])]
   const runId = 'run' in ctx.current ? ctx.current.run.seal.runId : undefined
-  const inputs = verdictInputs(ctx, changed, message)
+  const inputs = verdictInputs(ctx, changed, message, findings)
 
-  // Drawn before the reason is written, so the reason can name the entry the
-  // journal is about to hold. `null` when nothing will be journalled.
-  const entryId = opts.journal === false ? null : newEntryId()
+  // The journal entry's id stays out of every reason: the agent reads the
+  // reason, and an agent handed `journal tag <id> false` can grade the block
+  // that stopped it. Tagging is the person's, from `journal report`.
   const decided = (decision: GateDecision): GateDecision => {
-    journal(where, 'gate:stop', decision.outcome, decision.action, decision.level, findings, scope, runId, entryId ?? undefined)
+    journal(where, 'gate:stop', decision.outcome, decision.action, decision.level, findings, scope, runId)
     return decision
   }
   const remember = (outcome: GateOutcome, episode: SessionState['episode']): void => {
@@ -439,9 +454,9 @@ function stop(event: Extract<GateEvent, { kind: 'stop' }>, opts: GateOptions): G
   if (!failing) {
     remember('checked', null)
     const intro =
-      level === 'warning'
-        ? 'evidence-layer: no errors, but there are warnings:'
-        : 'evidence-layer: no errors, but not everything could be checked:'
+      level === 'unverifiable'
+        ? 'evidence-layer: no errors, but not everything could be checked:'
+        : 'evidence-layer: no errors, but these need a look:'
     const notClean = level === 'unverifiable' || level === 'warning' || level === 'flaky'
     return decided({
       action: 'allow',
@@ -457,7 +472,6 @@ function stop(event: Extract<GateEvent, { kind: 'stop' }>, opts: GateOptions): G
     'evidence-layer found problems in what you reported (' + scope.join(', ') +
       '). Fix the claims - back them with the cited artifact, gather again with ' + gatherWith(ctx.gather) +
       ', or mark them UNVERIFIED - then finish:',
-    tagLines(entryId),
   )
 
   if (typeof session !== 'object') {
@@ -521,7 +535,6 @@ function journal(
   findings: Finding[],
   reviews: string[],
   runId?: string,
-  id?: string,
 ): void {
   if (where.opts.journal === false) return
   const entryOutcome = journalOutcome(outcome, level)
@@ -529,7 +542,6 @@ function journal(
   try {
     mkdirSync(where.state, { recursive: true })
     appendEntry(join(where.state, 'journal.jsonl'), {
-      ...(id !== undefined && { id }),
       check,
       commit: gitCapture(['rev-parse', 'HEAD'], where.root) ?? 'unborn',
       outcome: entryOutcome,

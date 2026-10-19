@@ -72,7 +72,7 @@ export function run(argv: string[]): void {
     const g = summariseGate(entries)
     console.log('Runtime gate (this checkout only)')
     console.log('---------------------------------')
-    if (g.blocks + g.cleanAllows + g.degradedAllows + g.denies === 0) {
+    if (g.blocks + g.cleanAllows + g.degradedAllows + g.closedUnchecked + g.denies === 0) {
       console.log('(nothing recorded - the gate has not run in this checkout)')
     } else {
       console.log(
@@ -80,10 +80,16 @@ export function run(argv: string[]): void {
           g.cleanAllows + ' clean, ' + g.degradedAllows + ' let through without a clean check, ' +
           g.denies + ' refused writes' + (g.medianMs !== null ? ', median ' + g.medianMs + ' ms' : ''),
       )
+      if (g.closedUnchecked > 0) {
+        console.log(
+          g.closedUnchecked + ' blocked episode(s) ended without a clean check (claims removed or review dropped) - ' +
+            'an upper bound on escapes, since a change of subject after a block counts too',
+        )
+      }
       const untagged = untaggedBlocks(entries)
       if (untagged.length > 0) {
-        console.log('\nNot yet tagged (id, time, first finding):')
-        for (const b of untagged) console.log(b.id + '  ' + b.ts + '  ' + b.finding)
+        console.log('\nNot yet tagged, newest first (id, time, scope, first finding):')
+        for (const b of untagged) console.log(b.id + '  ' + b.ts + '  ' + b.scope + '  ' + b.finding)
       }
       console.log('\nTag a block with: evidence-layer journal tag <id> real|false --gate')
     }

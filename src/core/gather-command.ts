@@ -12,17 +12,32 @@
  *
  *     package.json  { "evidenceLayer": { "gather": "pnpm evidence --base origin/main" } }
  *
- * With nothing set, a project that has an `evidence` script is taken to gather
- * with it, through the package manager its `packageManager` field names (npm
- * when it names none). Anything else answers `null`, and the caller says so in
- * words rather than inventing a command that may not exist.
+ * Next, the command a sealed run recorded - what actually gathered the
+ * evidence being cited. Then, a project that has an `evidence` script is
+ * taken to gather with it, through the package manager its `packageManager`
+ * field names (npm when it names none). Anything else answers `null`, and the
+ * caller says so in words rather than inventing a command that may not exist.
+ *
+ * Not read: the environment a package manager sets for a script
+ * (`npm_lifecycle_event`). A gather called from inside another script - a
+ * test suite, a release script - would name that script instead.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isRecord } from './json'
 
-/** The command that gathers evidence in the project at `root`, or `null` when it cannot tell. */
-export function gatherCommandFor(root: string): string | null {
+/** The command that gathers evidence in the project at `root`, or `null` when it cannot tell. `recorded` is a sealed run's. */
+export function gatherCommandFor(root: string, recorded?: string): string | null {
+  const read = readManifest(root)
+  const configured = read && isRecord(read.evidenceLayer) ? read.evidenceLayer.gather : undefined
+  if (typeof configured === 'string' && configured.trim() !== '') return configured.trim()
+  if (typeof recorded === 'string' && recorded.trim() !== '') return recorded.trim()
+  if (!read || !isRecord(read.scripts) || typeof read.scripts.evidence !== 'string') return null
+  const manager = typeof read.packageManager === 'string' ? /^(npm|pnpm|yarn|bun)@/.exec(read.packageManager)?.[1] : undefined
+  return (manager ?? 'npm') + ' run evidence'
+}
+
+function readManifest(root: string): Record<string, unknown> | null {
   const path = join(root, 'package.json')
   if (!existsSync(path)) return null
   let manifest: unknown
@@ -31,10 +46,5 @@ export function gatherCommandFor(root: string): string | null {
   } catch {
     return null
   }
-  if (!isRecord(manifest)) return null
-  const configured = isRecord(manifest.evidenceLayer) ? manifest.evidenceLayer.gather : undefined
-  if (typeof configured === 'string' && configured.trim() !== '') return configured.trim()
-  if (!isRecord(manifest.scripts) || typeof manifest.scripts.evidence !== 'string') return null
-  const manager = typeof manifest.packageManager === 'string' ? /^(npm|pnpm|yarn|bun)@/.exec(manifest.packageManager)?.[1] : undefined
-  return (manager ?? 'npm') + ' run evidence'
+  return isRecord(manifest) ? manifest : null
 }

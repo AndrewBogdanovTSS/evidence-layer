@@ -297,6 +297,10 @@ export interface Seal {
   bundleSha256: string
   artifacts: Record<string, SealedArtifact>
   writtenAt: string
+  /** The command that gathered this run, when the gatherer knew it - how the gate says "gather again". Since 0.10.0. */
+  gatherCommand?: string
+  /** The base ref it gathered against, as given. Since 0.10.0. */
+  base?: string
 }
 
 export interface RunArtifact {
@@ -314,6 +318,8 @@ export interface PublishInput {
   excluded: string[]
   bundle: string
   artifacts: RunArtifact[]
+  gatherCommand?: string
+  base?: string
 }
 
 export interface Run {
@@ -374,6 +380,8 @@ export function buildSeal(input: PublishInput, runId: string): Seal {
     bundleSha256: sha256(input.bundle),
     artifacts,
     writtenAt: new Date().toISOString(),
+    ...(input.gatherCommand !== undefined && { gatherCommand: input.gatherCommand }),
+    ...(input.base !== undefined && { base: input.base }),
   }
 }
 
@@ -413,6 +421,8 @@ export function validateSeal(value: unknown): Seal | string {
   if (!isRecord(src) || typeof src.treeId !== 'string' || !Array.isArray(src.largeUntracked)) return 'bad source'
   if (src.coverage !== 'complete' && src.coverage !== 'partial') return 'bad source.coverage'
   if (!isRecord(value.artifacts)) return 'bad artifacts'
+  if (value.gatherCommand !== undefined && typeof value.gatherCommand !== 'string') return 'bad gatherCommand'
+  if (value.base !== undefined && typeof value.base !== 'string') return 'bad base'
   for (const [id, a] of Object.entries(value.artifacts)) {
     if (!isRecord(a) || typeof a.blockSha256 !== 'string' || typeof a.command !== 'string') return 'bad artifact ' + id
   }

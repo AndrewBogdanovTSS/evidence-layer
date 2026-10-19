@@ -134,14 +134,24 @@ describe('summariseByCheck', () => {
 })
 
 describe('untaggedBlocks', () => {
-  it('lists the gate blocks nobody has tagged yet, oldest first, with their first finding', async () => {
+  it('lists the gate blocks nobody has tagged yet, newest first, with their scope and first finding', async () => {
     const { untaggedBlocks } = await import('../src/core/journal')
-    const gate = (action: string) => ({ event: 'stop', outcome: 'checked', action, reviews: ['review.md'], elapsedMs: 1 })
+    const gate = (action: string, reviews = ['review.md']) => ({ event: 'stop', outcome: 'checked', action, reviews, elapsedMs: 1 })
     const a = appendEntry(journalPath, { check: 'gate:stop', commit: 'c', outcome: 'error', findings: ['first: one', 'second'], gate: gate('block') })
     const b = appendEntry(journalPath, { check: 'gate:stop', commit: 'c', outcome: 'error', findings: ['tagged'], gate: gate('block') })
     appendEntry(journalPath, { check: 'gate:stop', commit: 'c', outcome: 'pass', gate: gate('allow') })
+    const c = appendEntry(journalPath, {
+      check: 'gate:stop',
+      commit: 'c',
+      outcome: 'error',
+      findings: ['x'.repeat(200)],
+      gate: gate('block', ['review.md', 'final message']),
+    })
     tagEntry(journalPath, b.id, { verified: 'real' })
-    expect(untaggedBlocks(readJournal(journalPath))).toEqual([{ id: a.id, ts: a.ts, finding: 'first: one' }])
+    expect(untaggedBlocks(readJournal(journalPath))).toEqual([
+      { id: c.id, ts: c.ts, scope: 'review.md, final message', finding: 'x'.repeat(117) + '...' },
+      { id: a.id, ts: a.ts, scope: 'review.md', finding: 'first: one' },
+    ])
   })
 })
 
@@ -161,7 +171,7 @@ describe('journal report --include-gate', () => {
     try {
       run(['--repo', repo, '--include-gate'])
       const printed = log.mock.calls.map((c) => String(c[0])).join('\n')
-      expect(printed).toContain(entry.id + '  ' + entry.ts + '  the suite passes: untagged')
+      expect(printed).toContain(entry.id + '  ' + entry.ts + '  review.md  the suite passes: untagged')
     } finally {
       log.mockRestore()
     }

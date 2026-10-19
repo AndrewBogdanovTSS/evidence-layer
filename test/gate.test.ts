@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { artifactId, formatArtifact } from '../src/core/artifact'
 import { decide, isProtected, journalOutcome, levelOf } from '../src/core/gate'
 import type { GateDecision, GateOptions } from '../src/core/gate'
-import { readJournal } from '../src/core/journal'
+import { readJournal, summariseGate } from '../src/core/journal'
 import { publishRun, sourceFingerprint, stateDir } from '../src/core/seal'
 import { sh } from './helpers/git'
 
@@ -319,14 +319,25 @@ describe('stop - what the agent is told', () => {
     expect(decision.action === 'allow' && decision.message).not.toContain('could not be checked')
   })
 
-  it('names the journal entry of a block, so it can be tagged without reading the journal', () => {
+  it('keeps the journal entry id out of the reason the agent reads, so it cannot tag its own block', () => {
     const dir = repo()
     start(dir)
     writeFileSync(join(dir, 'review.md'), UNBACKED)
     const decision = stop(dir)
     const id = gateJournal(dir).at(-1)!.id
-    expect(decision).toMatchObject({ action: 'block', reason: expect.stringContaining('evidence-layer journal tag ' + id + ' real|false --gate') })
+    expect(decision.action).toBe('block')
+    expect(decision.action === 'block' && decision.reason).not.toContain(id)
+    expect(decision.action === 'block' && decision.reason).not.toContain('journal tag')
   })
+
+  it('names the command and the base the current run was gathered with', async () => {
+    const { gatherEvidence } = await import('../src/core/gather')
+    const dir = repo()
+    start(dir)
+    await gatherEvidence({ repo: dir, base: 'HEAD', out: join(dir, 'evidence.local.md'), skip: ['lint', 'typecheck', 'lockfile', 'test'], gatherCommand: 'make evidence' })
+    writeFileSync(join(dir, 'review.md'), UNBACKED)
+    expect(stop(dir)).toMatchObject({ action: 'block', reason: expect.stringContaining('`make evidence` (base HEAD') })
+  }, 30_000)
 
   it('names the project\'s gather command at session start and in a block', () => {
     const dir = repo()
@@ -358,6 +369,22 @@ describe('stop - after the retries run out', () => {
     expect(gateJournal(dir)).toHaveLength(4)
   }, 30_000)
 
+  it('speaks again when the findings change, though the review, the run and the tree did not', () => {
+    const dir = repo()
+    start(dir)
+    const head = sh(dir, 'rev-parse', 'HEAD')
+    // The base check reads a remote-tracking ref - git state no text, run or
+    // tree hash covers. Fetching one changes the findings, and so the verdict.
+    const receipt = '**HEAD SHA**: ' + head + '\n**Target branch**: main\n**Base SHA**: ' + head + '\n\n'
+    writeFileSync(join(dir, 'review.md'), receipt + UNBACKED)
+    stop(dir)
+    stop(dir)
+    stop(dir)
+    expect(stop(dir)).not.toHaveProperty('message')
+    sh(dir, 'update-ref', 'refs/remotes/origin/main', head)
+    expect(stop(dir)).toMatchObject({ outcome: 'retry-exhausted', message: expect.any(String) })
+  }, 30_000)
+
   it('speaks again once the code a cited run describes changes', () => {
     const dir = repo()
     start(dir)
@@ -387,6 +414,8 @@ describe('stop - nothing to check while an episode is open', () => {
     const closed = stop(dir)
     expect(closed).toMatchObject({ action: 'allow', outcome: 'closed-unchecked' })
     expect(gateJournal(dir).at(-1)).toMatchObject({ outcome: 'unverifiable', gate: { outcome: 'closed-unchecked' } })
+    // Counted on its own, not among the allows that let errors through.
+    expect(summariseGate(gateJournal(dir))).toMatchObject({ blocks: 2, closedUnchecked: 1, degradedAllows: 0 })
     // Closed, so the next failure starts a fresh episode with fresh blocks.
     writeFileSync(join(dir, 'review.md'), UNBACKED)
     expect(stop(dir).action).toBe('block')
