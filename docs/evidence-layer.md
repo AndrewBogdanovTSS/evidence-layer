@@ -129,6 +129,21 @@ It refuses to run if the working tree is not at the commit you asked about,
 because evidence gathered at the wrong commit describes a different codebase than
 the review does.
 
+What it calls the change is everything those steps read: the commits since the
+branches diverged, plus every uncommitted edit and untracked file on top of
+them - never the review or the bundle. A scoped lint or test gate is handed all
+of it, and with anything uncommitted the diff block compares the merge-base to
+the tree the steps ran against (`git diff --stat <merge-base> <tree>`), so a new
+file shows up there too. Sample quotes are still read at the reviewed commit,
+where `receipt` checks them, so only committed files get one.
+
+The bundle header names the command that gathers it, and the runtime gate
+names the same one whenever it tells an agent to gather: `evidenceLayer.gather`
+in the project's package.json when set, otherwise `<package manager> run
+evidence` when there is an `evidence` script. A block that backs a suggested
+claim is printed once, under *Suggested claims* with that claim; its step's
+section points there.
+
 ### 4. `pnpm check:claims <review.md>` - is every claim backed?
 
 A review can label each claim VERIFIED, DOCUMENTED, INFERRED or UNVERIFIED. That

@@ -55,8 +55,9 @@ import { WORK_SUMMARY_KEYS, artifactId, classifyCommand, formatArtifact, formatW
 import type { WorkKind, WorkSummary } from './artifact'
 import { generateClaimSkeleton, generateSampleSkeleton } from './skeleton'
 import type { SkeletonArtifact } from './skeleton'
+import { gatherCommandFor } from './gather-command'
 import { gitCapture, run, runAsync } from './proc'
-import { changedPaths, publishRun, sameSource, sourceFingerprint, toRootRelative } from './seal'
+import { changedPaths, publishRun, repoRoot, sameSource, sourceFingerprint, toRootRelative } from './seal'
 import type { RunArtifact, SourceFingerprint } from './seal'
 
 export interface Step {
@@ -236,11 +237,23 @@ export interface GatherOptions {
    * Default `['review.md']`.
    */
   reviewPaths?: string[]
+  /**
+   * The command that runs this gather, as the bundle header names it - so a
+   * reader knows what to run again. Default: what `gatherCommandFor` reads
+   * from the project's package.json, the same place the runtime gate reads it.
+   */
+  gatherCommand?: string
 }
 
 export interface GatherResult {
   headSha: string
   baseSha: string
+  /**
+   * What the plan and the diff block were given: the commits since the
+   * branches diverged, plus every tracked change and untracked file on top of
+   * them - lint, typecheck and tests read those too. Never the review or the
+   * bundle.
+   */
   changedFiles: string[]
   outPath: string
   /** Whether `git status` reported nothing beyond the reviewed commit itself. */
@@ -254,6 +267,40 @@ export interface GatherResult {
   treeChanged: string[]
   /** `partial` when part of the source was compared by metadata only. Present once a fingerprint was taken. */
   coverage?: 'complete' | 'partial'
+}
+
+/**
+ * The diff block's command. With nothing on top of the reviewed commit it is
+ * the plain three-dot stat it always was. With uncommitted changes it compares
+ * the merge-base to the tree the steps are about to read - the fingerprint's
+ * tree id, which holds untracked files too and leaves out the review and the
+ * bundle - and, where no fingerprint could be taken, to the working tree,
+ * which `git diff` can show for tracked files only.
+ */
+function diffStatCommand(
+  range: string,
+  dirty: boolean,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+  checkpoint: SourceFingerprint | undefined,
+  excluded: string[],
+): string {
+  if (!dirty) return 'git diff --stat ' + range
+  const mergeBase = gitCapture(['merge-base', baseSha, headSha], repo) ?? baseSha
+  const taken = checkpoint ? undefined : sourceFingerprint(repo, excluded)
+  const tree = checkpoint ?? (taken && 'fingerprint' in taken ? taken.fingerprint : undefined)
+  return 'git diff --stat ' + mergeBase + (tree ? ' ' + tree.treeId : '')
+}
+
+/**
+ * A step's block, or - when the block backs a suggested claim - a pointer to
+ * it there. Printed in both places, every block appeared twice, and a bundle
+ * twice as long is one an agent reads less of.
+ */
+function blockOrPointer(artifact: SkeletonArtifact): string {
+  if (generateClaimSkeleton([artifact]) !== '') return '_The `' + artifact.id + '` block is under Suggested claims, with the claim it backs._'
+  return formatArtifact(artifact.command, artifact.output, artifact.exitCode, { id: artifact.id, commit: artifact.commit, stopped: artifact.stopped })
 }
 
 export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult> {
@@ -301,24 +348,41 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   const range = baseSha + '...' + headSha
   // NUL-separated, so a path with a space, a newline or non-ASCII characters
   // comes back as itself rather than quoted by `core.quotePath`.
-  const names = gitCapture(['diff', '--name-only', '-z', range], opts.repo) ?? ''
-  const changedFiles = names.split('\0').filter(Boolean)
+  const nul = (text: string | null) => (text ?? '').split('\0').filter(Boolean)
+  const committed = nul(gitCapture(['diff', '--name-only', '-z', range], opts.repo))
+  // What sits on top of the reviewed commit is part of the change too: the
+  // steps below read the tree as it is, so a plan scoped to the commits alone
+  // would leave an edited file unlinted and a new test unrun. Listed from the
+  // top level, where `ls-files` sees the whole repository and names paths the
+  // way `diff` does; the review and the bundle are not the change.
+  const root = repoRoot(opts.repo) ?? opts.repo
+  const notChange = new Set(excluded)
+  const uncommitted = [
+    ...nul(gitCapture(['diff', '--name-only', '-z', 'HEAD'], root)),
+    ...nul(gitCapture(['ls-files', '--others', '--exclude-standard', '-z'], root)),
+  ].filter((p) => !notChange.has(p))
+  const changedFiles = [...new Set([...committed, ...uncommitted])].sort()
+  const gatherCommand = opts.gatherCommand ?? gatherCommandFor(root)
 
   const parts: string[] = [
     '# Evidence bundle',
     '',
     '- Base: `' + baseSha + '` (' + opts.base + ')',
     '- Head: `' + headSha + '`',
-    '- Files in diff: ' + changedFiles.length,
+    '- Files in diff: ' + changedFiles.length + (uncommitted.length > 0 ? ' (' + uncommitted.length + ' not committed)' : ''),
     '',
-    'Generated by `pnpm evidence`. Every block below is a command anyone can re-run.',
+    'Generated by ' + (gatherCommand ? '`' + gatherCommand + '`' : 'evidence-layer\'s gatherer') +
+      '. Every block below is a command anyone can re-run. A block that backs a suggested claim is printed once, with that claim.',
     '',
   ]
 
   const claimArtifacts: SkeletonArtifact[] = []
 
   if (!skip.includes('diff')) {
-    const stat = run('git diff --stat ' + range, { cwd: opts.repo, timeoutMs: 60_000 })
+    const stat = run(diffStatCommand(range, uncommitted.length > 0, opts.repo, baseSha, headSha, firstCheckpoint, excluded), {
+      cwd: opts.repo,
+      timeoutMs: 60_000,
+    })
     const id = artifactId(stat.command, headSha, stat.output)
     runArtifacts.push({ id, command: stat.command, commit: headSha.slice(0, 7), exitCode: stat.exitCode, output: stat.output })
     parts.push('## diff', '', formatArtifact(stat.command, stat.output, stat.exitCode, { id, commit: headSha }), '')
@@ -373,18 +437,12 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     }
     const id = artifactId(res.command, headSha, res.output)
     runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
-    parts.push(formatArtifact(res.command, res.output, res.exitCode, { id, commit: headSha, stopped: res.stopped }), '')
+    const artifact: SkeletonArtifact = { command: res.command, output: res.output, exitCode: res.exitCode, id, commit: headSha, stopped: res.stopped }
+    parts.push(blockOrPointer(artifact), '')
     if (noSummary) parts.push('_No work summary: ' + noSummary + '._', '')
-    if (classifyCommand(res.command) !== 'diff') {
-      claimArtifacts.push({
-        command: res.command,
-        output: res.output,
-        exitCode: res.exitCode,
-        id,
-        commit: headSha,
-        stopped: res.stopped,
-      })
-    }
+    // Two steps running one command (a project whose lint is its typecheck)
+    // give one artifact, and one claim for it.
+    if (classifyCommand(res.command) !== 'diff' && !claimArtifacts.some((a) => a.id === id)) claimArtifacts.push(artifact)
     if (step.name === 'test') testOutput = res.output
     console.log('  ' + step.name + ': exit ' + res.exitCode + (res.stopped ? ' (' + res.stopped + ')' : ''))
   }
@@ -402,22 +460,16 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     observe('dependency audit')
     const id = artifactId(res.command, headSha, res.output)
     runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
+    const artifact: SkeletonArtifact = { command: res.command, output: res.output, exitCode: res.exitCode, id, commit: headSha, stopped: res.stopped }
     parts.push(
       '## dependency audit',
       '',
       '_Point-in-time: reflects the vulnerability database at the moment this ran, not a property of the commit alone._',
       '',
-      formatArtifact(res.command, res.output, res.exitCode, { id, commit: headSha, stopped: res.stopped }),
+      blockOrPointer(artifact),
       '',
     )
-    claimArtifacts.push({
-      command: res.command,
-      output: res.output,
-      exitCode: res.exitCode,
-      id,
-      commit: headSha,
-      stopped: res.stopped,
-    })
+    claimArtifacts.push(artifact)
     console.log('  dependency audit: exit ' + res.exitCode + (res.stopped ? ' (' + res.stopped + ')' : ''))
   }
 
@@ -426,8 +478,10 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     parts.push('## Suggested claims', '', claimSkeleton, '')
   }
 
+  // Quotes are read at the reviewed commit, which is where `receipt` checks
+  // them - so only committed files can be quoted.
   const cap = opts.sampleCap ?? 20
-  const samples = changedFiles.slice(0, cap).map((path) => {
+  const samples = committed.slice(0, cap).map((path) => {
     const content = gitCapture(['show', headSha + ':' + path], opts.repo)
     const line = content?.split('\n').find((l) => l.trim() !== '')?.trim() ?? '(could not read this file)'
     return { path, line }
@@ -436,7 +490,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     parts.push(
       '## Suggested sample integrity',
       '',
-      generateSampleSkeleton(samples, Math.max(0, changedFiles.length - cap)),
+      generateSampleSkeleton(samples, Math.max(0, committed.length - cap)),
       '',
     )
   }
