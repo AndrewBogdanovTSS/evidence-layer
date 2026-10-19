@@ -26,9 +26,12 @@ describe('runAsync with an argument array', { timeout: 20_000 }, () => {
     expect(await argsSeen('node', [print, 'dir with space\\'])).toEqual(['dir with space\\'])
   })
 
+  // No temporary path in the line: whether one needs quoting is itself
+  // platform-dependent (`C:\...` does, `/tmp/...` does not).
   it('shows one command line on every platform, so the artifact id does not depend on it', async () => {
-    const res = await runAsync('node', { args: [print, 'a b', "it's", 'plain'] })
-    expect(res.command).toBe("node '" + print + "' 'a b' 'it'\\''s' plain")
+    const res = await runAsync('node', { args: ['-e', 'console.log(1)', 'a b', "it's", 'plain'] })
+    expect(res.output).toBe('1')
+    expect(res.command).toBe("node -e 'console.log(1)' 'a b' 'it'\\''s' plain")
   })
 
   it('runs a .cmd shim on Windows, the way pnpm is installed there', { skip: !IS_WINDOWS }, async () => {
