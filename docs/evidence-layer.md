@@ -350,6 +350,12 @@ questions - "did this check ever find something real?" and "what got past a
 clean review?" - because the layer's usefulness was otherwise a claim with no
 clock, exactly like the README's test count before `check:docs` existed.
 
+A recorded miss is derived entirely from its commit - id from the SHA's first
+eight digits, `ts` from the committer date - so every checkout of the same
+history writes the same line. A project can record from each pull request
+branch: two branches that record the same miss add identical lines, which git
+merges as one, where random ids used to make it count twice.
+
 ```bash
 pnpm journal:report                    # per-check real/false/untagged counts, open misses
 pnpm journal:tag <id> real|false       # tag a finding at fix time, not later

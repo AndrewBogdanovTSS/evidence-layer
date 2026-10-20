@@ -69,8 +69,14 @@ function newId(): string {
 }
 
 /** Appends one entry. Never rewrites the file - a journal you can edit in place is a journal that gets edited. */
-export function appendEntry(journalPath: string, entry: Omit<JournalEntry, 'id' | 'ts'> & { ts?: string }): JournalEntry {
-  const full: JournalEntry = { id: newId(), ts: entry.ts ?? new Date().toISOString(), ...entry }
+export function appendEntry(
+  journalPath: string,
+  entry: Omit<JournalEntry, 'id' | 'ts'> & { id?: string; ts?: string },
+): JournalEntry {
+  // A caller-supplied id is for entries that must be identical wherever they are written (a miss,
+  // keyed by its commit); everything else gets a random one.
+  const { id, ts, ...rest } = entry
+  const full: JournalEntry = { id: id ?? newId(), ts: ts ?? new Date().toISOString(), ...rest }
   appendFileSync(journalPath, JSON.stringify(full) + '\n', 'utf8')
   return full
 }

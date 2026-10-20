@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { parseMissesFromLog, recordNewMisses } from '../src/core/misses'
+import { missEntryId, parseMissesFromLog, recordNewMisses } from '../src/core/misses'
 import { appendEntry, readJournal } from '../src/core/journal'
+import { sh, tempRepo } from './helpers/git'
 
 const FS = '\x01'
 const RS = '\x02'
@@ -50,5 +51,58 @@ describe('recordNewMisses', () => {
     const added = recordNewMisses(dir, journalPath)
     expect(added).toHaveLength(0)
     expect(readJournal(journalPath)).toHaveLength(1)
+  })
+})
+
+describe('recordNewMisses - the same history writes the same journal', () => {
+  /** A repository whose history holds two fixes with Missed-By trailers and one plain commit. */
+  function historyWithMisses(): string {
+    const repo = tempRepo('misses-history-', { 'a.txt': '1' })
+    const commit = (message: string): void => {
+      sh(repo, 'commit', '-q', '--allow-empty', '-m', message)
+    }
+    commit('fix: first bug\n\nMissed-By: pr-10')
+    commit('chore: unrelated')
+    commit('fix: second bug\n\nMissed-By: pr-20')
+    return repo
+  }
+
+  it('keys each miss by its commit and dates it by the commit, oldest first', () => {
+    const repo = historyWithMisses()
+    try {
+      const journalPath = join(dir, 'journal.jsonl')
+      const added = recordNewMisses(repo, journalPath)
+      const shas = sh(repo, 'log', '--format=%H', '--grep=Missed-By').split('\n').reverse()
+      expect(added.map((e) => e.check)).toEqual(['pr-10', 'pr-20'])
+      expect(added.map((e) => e.id)).toEqual(shas.map(missEntryId))
+      expect(added[0]!.ts).toBe(sh(repo, 'log', '-1', '--format=%cI', shas[0]!))
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('writes byte-identical journals from two separate recordings, so branches that both record merge cleanly', () => {
+    const repo = historyWithMisses()
+    try {
+      const first = join(dir, 'first.jsonl')
+      const second = join(dir, 'second.jsonl')
+      recordNewMisses(repo, first)
+      recordNewMisses(repo, second)
+      expect(readFileSync(first, 'utf8')).toBe(readFileSync(second, 'utf8'))
+      expect(recordNewMisses(repo, first)).toEqual([])
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('appendEntry', () => {
+  it('keeps a caller-supplied id and ts, and generates both otherwise', () => {
+    const journalPath = join(dir, 'journal.jsonl')
+    const kept = appendEntry(journalPath, { id: 'abcd1234', ts: '2026-01-01T00:00:00Z', check: 'c', commit: 'x', outcome: 'miss' })
+    const generated = appendEntry(journalPath, { check: 'c', commit: 'y', outcome: 'pass' })
+    expect(kept).toMatchObject({ id: 'abcd1234', ts: '2026-01-01T00:00:00Z' })
+    expect(generated.id).toMatch(/^[0-9a-f]{8}$/)
+    expect(readJournal(journalPath).map((e) => e.id)).toEqual(['abcd1234', generated.id])
   })
 })
