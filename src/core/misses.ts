@@ -22,7 +22,7 @@
  */
 import { appendEntry, readJournal } from './journal'
 import type { JournalEntry } from './journal'
-import { run } from './proc'
+import { git } from './proc'
 
 const RECORD_SEP = '\x02'
 const FIELD_SEP = '\x01'
@@ -61,14 +61,34 @@ export function parseMissesFromLog(rawLog: string): ExtractedMiss[] {
   return misses
 }
 
+/** Where to read history from. */
+export interface MissesOptions {
+  /**
+   * Read the history of this ref instead of `HEAD` - typically the branch a
+   * pull request targets. A branch merged by squash loses its own commits, so
+   * a miss recorded from a pull request branch's own commit would name a SHA
+   * the main branch never contains, and the squash commit would be recorded
+   * again later as a second miss. Recording from the target's history counts
+   * each miss once, by the commit that landed. A ref git cannot resolve throws:
+   * "no misses" and "could not read the history" are different answers.
+   */
+  ref?: string
+}
+
 /** Reads every `Missed-By:` trailer out of the repository's history. Read-only. */
-export function findMisses(repo: string): ExtractedMiss[] {
-  const res = run(
-    'git log --pretty=format:%H' + FIELD_SEP + '%cI' + FIELD_SEP + '%B' + RECORD_SEP,
-    { cwd: repo, timeoutMs: 60_000 },
-  )
-  if (res.exitCode !== 0) return []
-  return parseMissesFromLog(res.output)
+export function findMisses(repo: string, options: MissesOptions = {}): ExtractedMiss[] {
+  // Through git() with an argument array: the ref is caller text and must never reach a shell, and
+  // `--end-of-options` keeps a ref that starts with `-` from being read as a flag.
+  const args = ['log', '--pretty=format:%H' + FIELD_SEP + '%cI' + FIELD_SEP + '%B' + RECORD_SEP]
+  if (options.ref !== undefined) args.push('--end-of-options', options.ref)
+  const res = git(args, repo, 60_000)
+  if (res.exitCode !== 0) {
+    if (options.ref !== undefined) {
+      throw new Error('could not read the history of ' + options.ref + ': ' + res.stderr.trim())
+    }
+    return []
+  }
+  return parseMissesFromLog(res.stdout)
 }
 
 /**
@@ -92,7 +112,7 @@ export function missEntryId(commit: string): string {
  * same history writes the same lines in the same order, and a project can
  * record from every pull request instead of from one machine.
  */
-export function recordNewMisses(repo: string, journalPath: string): JournalEntry[] {
+export function recordNewMisses(repo: string, journalPath: string, options: MissesOptions = {}): JournalEntry[] {
   const known = new Set(
     readJournal(journalPath)
       .filter((e) => e.outcome === 'miss')
@@ -100,7 +120,7 @@ export function recordNewMisses(repo: string, journalPath: string): JournalEntry
   )
   const added: JournalEntry[] = []
   // git log is newest first; the journal reads in time order.
-  for (const miss of findMisses(repo).reverse()) {
+  for (const miss of findMisses(repo, options).reverse()) {
     if (known.has(miss.commit)) continue
     known.add(miss.commit)
     added.push(

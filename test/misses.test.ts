@@ -106,3 +106,30 @@ describe('appendEntry', () => {
     expect(readJournal(journalPath).map((e) => e.id)).toEqual(['abcd1234', generated.id])
   })
 })
+
+describe('recordNewMisses with a ref', () => {
+  it('records only the misses on the given ref, not those on the checked-out branch', () => {
+    const repo = tempRepo('misses-ref-', { 'a.txt': '1' })
+    try {
+      const main = sh(repo, 'rev-parse', '--abbrev-ref', 'HEAD')
+      sh(repo, 'commit', '-q', '--allow-empty', '-m', 'fix: landed\n\nMissed-By: pr-1')
+      sh(repo, 'switch', '-q', '-c', 'feature')
+      sh(repo, 'commit', '-q', '--allow-empty', '-m', 'fix: still on a branch\n\nMissed-By: pr-2')
+      const journalPath = join(dir, 'journal.jsonl')
+      expect(recordNewMisses(repo, journalPath, { ref: main }).map((e) => e.check)).toEqual(['pr-1'])
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('throws for a ref git cannot resolve, and never reads a ref as a flag', () => {
+    const repo = tempRepo('misses-badref-', { 'a.txt': '1' })
+    try {
+      const journalPath = join(dir, 'journal.jsonl')
+      expect(() => recordNewMisses(repo, journalPath, { ref: 'no-such-branch' })).toThrow(/could not read the history of no-such-branch/)
+      expect(() => recordNewMisses(repo, journalPath, { ref: '--all' })).toThrow(/could not read the history of --all/)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+})

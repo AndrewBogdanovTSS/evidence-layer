@@ -354,7 +354,10 @@ A recorded miss is derived entirely from its commit - id from the SHA's first
 eight digits, `ts` from the committer date - so every checkout of the same
 history writes the same line. A project can record from each pull request
 branch: two branches that record the same miss add identical lines, which git
-merges as one, where random ids used to make it count twice.
+merges as one, where random ids used to make it count twice. Pass the target
+branch as `recordNewMisses(repo, journal, { ref })`: a branch merged by squash
+loses its own commits, so a miss read from the branch's own history would name
+a commit the target never contains.
 
 ```bash
 pnpm journal:report                    # per-check real/false/untagged counts, open misses
