@@ -159,18 +159,71 @@ export function findArtifactBlocks(lines: string[]): ArtifactBlock[] {
  * honestly to `cmd` rather than guessing.
  */
 export function classifyCommand(command: string): string {
+  const invocation = invocationText(command)
   // The non-Node names are here because `\btest\b` does not match inside
   // `pytest`, and a test run classified as `cmd` gets none of the test rules -
   // its success claims are never held to its counts.
-  if (/\btsc\b|typecheck|\bmypy\b|\bpyright\b/i.test(command)) return 'types'
-  if (/eslint|\blint\b|\bpylint\b|\bflake8\b|\bruff\b/i.test(command)) return 'lint'
-  if (/git diff/i.test(command)) return 'diff'
-  if (/git status/i.test(command)) return 'tree'
-  if (/frozen-lockfile/i.test(command)) return 'lockfile'
-  if (/\baudit\b/i.test(command)) return 'audit'
-  if (/fingerprint/i.test(command)) return 'engine'
-  if (/\btest\b|vitest|jest|mocha|\bpytest\b|\brspec\b|\bphpunit\b/i.test(command)) return 'tests'
+  if (/\btsc\b|typecheck|\bmypy\b|\bpyright\b/i.test(invocation)) return 'types'
+  if (/eslint|\blint\b|\bpylint\b|\bflake8\b|\bruff\b/i.test(invocation)) return 'lint'
+  if (/git diff/i.test(invocation)) return 'diff'
+  if (/git status/i.test(invocation)) return 'tree'
+  if (/frozen-lockfile/i.test(invocation)) return 'lockfile'
+  if (/\baudit\b/i.test(invocation)) return 'audit'
+  if (/fingerprint/i.test(invocation)) return 'engine'
+  if (/\btest\b|vitest|jest|mocha|\bpytest\b|\brspec\b|\bphpunit\b/i.test(invocation)) return 'tests'
   return 'cmd'
+}
+
+const QUOTED_TOKEN_RE = /^['"]/
+const ENV_ASSIGNMENT_RE = /^[A-Za-z_]\w*=/
+// A separator, or a file extension at the end: `src/lint/a.test.ts`, `tsconfig.json`.
+const PATH_LIKE_RE = /[/\\]|\.[A-Za-z0-9]+$/
+const SEGMENT_SEPARATORS = new Set(['&&', '||', ';', '|'])
+// Programs whose first argument is the script that actually runs.
+const INTERPRETERS = new Set(['node', 'python', 'python3', 'ruby', 'php', 'bun', 'deno'])
+
+/** `vendor/bin/phpunit` -> `phpunit`, `node_modules/nuxt/bin/nuxt.mjs` -> `nuxt`. */
+function programName(token: string): string {
+  return (token.split(/[/\\]/).pop() ?? token).replace(/\.[A-Za-z0-9]+$/, '')
+}
+
+/**
+ * The part of a command line that says what runs - programs, subcommands and
+ * flags - without the arguments it was given: paths, quoted strings, and
+ * `NAME=value` environment assignments. A lint run over `src/typecheck.ts` is a
+ * lint run; matched against the whole line it was classified `types`, and a
+ * test run over `src/lint/` was classified `lint` - which also exempted its
+ * success claims from the test rules.
+ *
+ * A program named by its path (`vendor/bin/phpunit`), and the script an
+ * interpreter runs (`node node_modules/eslint/bin/eslint.js`), are what runs,
+ * so they keep their base name.
+ */
+function invocationText(command: string): string {
+  const words: string[] = []
+  let programNext = true
+  let scriptNext = false
+  for (const token of command.match(/'[^']*'|"(?:[^"\\]|\\.)*"|\S+/g) ?? []) {
+    if (SEGMENT_SEPARATORS.has(token)) {
+      words.push(token)
+      programNext = true
+      scriptNext = false
+    }
+    else if (QUOTED_TOKEN_RE.test(token) || ENV_ASSIGNMENT_RE.test(token)) {
+      scriptNext = false
+    }
+    else if (programNext || (scriptNext && PATH_LIKE_RE.test(token))) {
+      const name = programName(token)
+      words.push(name)
+      scriptNext = programNext && INTERPRETERS.has(name)
+      programNext = false
+    }
+    else {
+      scriptNext = false
+      if (!PATH_LIKE_RE.test(token)) words.push(token)
+    }
+  }
+  return words.join(' ')
 }
 
 export type WorkKind = 'lint' | 'tests'

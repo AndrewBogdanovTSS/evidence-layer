@@ -132,6 +132,14 @@ describe('outcome rules in lintClaims', () => {
     expect(errorsOf(review('Lint reports no violations.', 'pnpm eslint .', output, 0))[0]?.detail).toContain('reports problems')
   })
 
+  it('holds a test run to its counts when a path it was given names another kind', () => {
+    // Classified from the whole line, `typecheck.test.ts` made this a `types`
+    // run, and the test rules - this one included - never applied.
+    const output = formatWorkSummary('tests', { passed: 0, skipped: 4 })
+    const command = 'pnpm test src/typecheck.test.ts --no-watch'
+    expect(errorsOf(review('The test suite reports no failures.', command, output, 0))[0]?.detail).toContain('checked nothing')
+  })
+
   it('rejects a summary of the wrong kind', () => {
     const output = formatWorkSummary('tests', { passed: 5 })
     expect(errorsOf(review('Lint reports no violations.', 'pnpm eslint .', output, 0))[0]?.detail).toContain('describes a tests run')

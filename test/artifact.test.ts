@@ -43,6 +43,31 @@ describe('classifyCommand', () => {
   ])('classifies %s as %s', (command, kind) => {
     expect(classifyCommand(command)).toBe(kind)
   })
+
+  // What runs decides the kind, not the arguments it was handed: a lint run over
+  // a file named typecheck.ts read as `types`, which also changes which claim
+  // rules apply to it.
+  it.each([
+    ['pnpm eslint scripts/review-evidence/typecheck.ts', 'lint'],
+    ['pnpm test scripts/review-evidence/tests/typecheck.test.ts --no-watch', 'tests'],
+    ['vitest run src/lint/rules.test.ts', 'tests'],
+    ["pnpm test -t 'typecheck flow'", 'tests'],
+    ['pnpm eslint src/a.ts "src/git diff.ts"', 'lint'],
+    ['git diff --stat 60fa7c7...bb0db95', 'diff'],
+    ['pnpm install --frozen-lockfile', 'lockfile'],
+    ['tsc -p tsconfig.json', 'types'],
+    [
+      'BRAND=vans STORYBOOK=true NODE_OPTIONS=--max-old-space-size=8192 node node_modules/tsx/dist/cli.mjs scripts/generate-design-system/index.ts && node node_modules/nuxt/bin/nuxt.mjs typecheck',
+      'types',
+    ],
+    ['TEST_DIR=lint node scripts/run.mjs', 'cmd'],
+    // A program named by its path, or run by an interpreter, is what runs.
+    ['vendor/bin/phpunit tests/LintTest.php', 'tests'],
+    ['node node_modules/eslint/bin/eslint.js src/typecheck.ts', 'lint'],
+    ['python -m pytest tests/test_lint.py', 'tests'],
+  ])('ignores paths, quoted strings and env assignments: %s -> %s', (command, kind) => {
+    expect(classifyCommand(command)).toBe(kind)
+  })
 })
 
 describe('artifactId', () => {
