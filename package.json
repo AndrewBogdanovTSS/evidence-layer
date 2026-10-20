@@ -1,6 +1,6 @@
 {
   "name": "evidence-layer",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "type": "module",
   "description": "Checks that turn a review's assertions into claims that could be proved wrong.",
   "keywords": [
