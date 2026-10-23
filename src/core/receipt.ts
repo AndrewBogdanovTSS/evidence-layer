@@ -285,8 +285,21 @@ export function checkBase(receipt: Receipt, repo: string): CodedFinding[] {
       receipt.targetBranch +
       '. Every one of those commits is being attributed to the branch under review.'
   }
-  return [{ level: 'error', code: 'receipt/wrong-base', claim, detail }]
+  return [
+    { level: 'error', code: 'receipt/wrong-base', claim, detail, fix: 'set the base SHA to the merge-base:\n**Base SHA**: `' + mergeBase + '`' },
+  ]
 }
+
+/**
+ * The Sample integrity row for a file as it is at `headSha` - the line a fix
+ * offers, read from git rather than from the writer's memory of the file, which
+ * is the thing the receipt exists to check.
+ */
+function sampleRow(path: string, firstLine: string): string {
+  return '| ' + formatCodeSpan(path, true) + ' | ' + formatCodeSpan(firstLine, true) + ' |'
+}
+
+const firstNonBlank = (content: string): string => content.split('\n').find((l) => l.trim() !== '')?.trim() ?? ''
 
 /**
  * v2: one verbatim quote per file the review actually cites, not one quote
@@ -304,14 +317,21 @@ export function checkSamples(receipt: Receipt, markdown: string, repo: string): 
   return targets.map((path): CodedFinding => {
     const claim = 'the cited file `' + path + '` was really read'
     const sample = receipt.samples.find((s) => s.path === path)
-    if (!sample) {
-      return { level: 'error', code: 'receipt/unsampled', claim, detail: 'this review cites it, but no Sample integrity line quotes it', file: path }
-    }
     const content = gitCapture(['show', receipt.headSha + ':' + path], repo)
+    if (!sample) {
+      return {
+        level: 'error',
+        code: 'receipt/unsampled',
+        claim,
+        detail: 'this review cites it, but no Sample integrity line quotes it',
+        ...(content !== null && { fix: 'add this row to the Sample integrity table:\n' + sampleRow(path, firstNonBlank(content)) }),
+        file: path,
+      }
+    }
     if (content === null) {
       return { level: 'error', code: 'receipt/sample-missing-file', claim, detail: path + ' does not exist at that commit', file: path }
     }
-    const firstLine = content.split('\n').find((l) => l.trim() !== '')?.trim() ?? ''
+    const firstLine = firstNonBlank(content)
     const quoted = sample.line.trim()
     return {
       level: firstLine === quoted ? 'pass' : 'error',
@@ -321,6 +341,7 @@ export function checkSamples(receipt: Receipt, markdown: string, repo: string): 
         firstLine === quoted
           ? path + ' line 1 matches verbatim'
           : 'quoted "' + quoted + '"\n        actual "' + firstLine + '"',
+      ...(firstLine !== quoted && { fix: 'replace its Sample integrity row with:\n' + sampleRow(path, firstLine) }),
       file: path,
     }
   })

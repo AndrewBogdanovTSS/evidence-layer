@@ -46,20 +46,33 @@
  * reads as success cannot rest on a run that exited non-zero, a run that was
  * stopped before it finished backs only "did not complete", and a lint or test
  * run whose work summary shows it checked nothing backs no success claim - see
- * `outcomeProblem`.
+ * `outcomeProblem`. Two more rules read the claim's words against the run it
+ * cites, just as mechanically: a claim that names a kind of run (tests, lint,
+ * typecheck, lockfile, audit) cannot cite a run of another kind, and a count
+ * the sentence states about the run ("71 passing tests") must be the count
+ * its work summary carries - see `kindProblem` and `countProblem`. Those
+ * catch the citation a writer gets wrong most often, the wrong block, without
+ * reading any output for sense.
+ *
+ * A failing finding carries a `fix` wherever one is mechanical: the claim the
+ * cited run does back, as the skeleton would write it, or the grounding line
+ * with the run's own predicates. `downgradeClaims` applies the one fix that is
+ * always honest - marking a failing claim UNVERIFIED - so that the cheapest
+ * way past a finding says less, never more.
  *
  * What this does not do: it does not verify that an artifact's output actually
  * supports the meaning of the claim next to it - that requires reading the
  * output for sense, which is a probabilistic judgement, and putting one inside
  * a deterministic checker reintroduces exactly the circular validation this
- * layer exists to avoid. Beyond the outcome rules above, it guarantees only
- * that the artifact exists, was collected here, and was pointed at on purpose
- * rather than left nearby.
+ * layer exists to avoid. Beyond the outcome, kind and count rules above, it
+ * guarantees only that the artifact exists, was collected here, and was
+ * pointed at on purpose rather than left nearby.
  */
 import { ARTIFACT_ID_RE, classifyCommand, fencedLineNumbers, findArtifactBlocks, parseWorkSummary, workDone } from './artifact'
 import type { ArtifactBlock, StopReason } from './artifact'
 import type { CodedFinding } from './codes'
-import { evaluatePredicates, parsePredicates } from './predicates'
+import { evaluatePredicates, parsePredicates, suggestPredicates } from './predicates'
+import { suggestedClaim } from './skeleton'
 
 /** How far below a legacy (unaddressed) VERIFIED tag its artifact block is allowed to sit. */
 export const ARTIFACT_WINDOW = 15
@@ -216,6 +229,133 @@ export function outcomeProblem(artifact: OutcomeArtifact, claimText: string, opt
   return null
 }
 
+// What a claim says it is about, by the words it uses for a kind of run. Each
+// kind is one `classifyCommand` returns. Narrow and English, like the outcome
+// rules: a word that fires on ordinary prose would fail a claim citing the
+// right run. So "types" and "suite" are not here ("this type of change", "the
+// lint suite"), and neither is a bare "audit" or "vulnerability" - "the XSS
+// vulnerability is fixed" is a claim a test run backs.
+const KIND_WORDS: readonly (readonly [kind: string, name: string, words: RegExp])[] = [
+  ['tests', 'test', /\btests?\b/i],
+  ['lint', 'lint', /\blint(?:s|ed|ing|er)?\b|\beslint\b|\bruff\b|\bpylint\b|\bflake8\b/i],
+  ['types', 'typecheck', /\btype[- ]?check(?:s|ed|ing|er)?\b|\btype errors?\b|\btsc\b|\bmypy\b|\bpyright\b/i],
+  ['lockfile', 'lockfile', /\block ?file\b/i],
+  ['audit', 'audit', /\b(?:dependency|npm|pnpm|yarn|bun|pip|cargo|security) audit\b|\baudit reports?\b/i],
+]
+
+/** The kinds of run a claim sentence names, by `classifyCommand`'s names. */
+export function kindsNamed(text: string): string[] {
+  return KIND_WORDS.filter(([, , words]) => words.test(text)).map(([kind]) => kind)
+}
+
+const kindName = (kind: string): string => KIND_WORDS.find(([k]) => k === kind)?.[1] ?? kind
+
+type Counts = Record<string, number>
+/** How a stated number is read off a work summary - one key, or a sum of them. */
+interface Reading {
+  label: string
+  of: (c: Counts) => number
+}
+
+const key = (k: string): Reading => ({ label: k, of: (c) => c[k]! })
+const TOTAL: Reading = { label: 'passed+failed+skipped+todo', of: (c) => c.passed! + c.failed! + c.skipped! + c.todo! }
+// The skeleton says "checked 7 files" for the files that were not ignored.
+const CHECKED_FILES: Reading = { label: 'files-ignored', of: (c) => c.files! - c.ignored! }
+const QUALIFIER_KEY: Record<string, string> = {
+  passing: 'passed', passed: 'passed', pass: 'passed',
+  failing: 'failed', failed: 'failed', fail: 'failed',
+  skipped: 'skipped', todo: 'todo',
+}
+const qualified = (m: RegExpMatchArray): Reading[] => [key(QUALIFIER_KEY[m[2]!.toLowerCase()]!)]
+
+/**
+ * The shapes of a count this reads, each anchored to a word that says the
+ * number is about the run - a qualifier ("71 passing tests"), a verb ("ran
+ * 71 tests", "7 files were linted") or a summary key ("3 skipped"). A bare
+ * number and noun is not one: "adds 3 tests" and "touches 12 files" are
+ * about the change, not the run, and a rule that failed them would teach
+ * writers to stop reading its output.
+ */
+const COUNT_RULES: readonly { re: RegExp; kind: 'tests' | 'lint'; readings: (m: RegExpMatchArray) => Reading[] }[] = [
+  { re: /\b(\d+)\s+(passing|passed|failing|failed|skipped)\s+tests?\b/gi, kind: 'tests', readings: qualified },
+  { re: /\b(\d+)\s+tests?\s+(?:were\s+|have\s+)?(passed|pass|failed|fail|skipped)\b/gi, kind: 'tests', readings: qualified },
+  // "Ran 71 tests" is how many passed or how many there were - both are honest readings.
+  { re: /\b(?:ran|runs|run|executed|executes)\s+(\d+)\s+tests?\b/gi, kind: 'tests', readings: () => [key('passed'), TOTAL] },
+  { re: /\b(\d+)\s+tests?\s+(?:ran|run)\b/gi, kind: 'tests', readings: () => [key('passed'), TOTAL] },
+  { re: /\b(\d+)\s+(passed|failed|skipped|todo)\b(?!\s+tests?\b)/gi, kind: 'tests', readings: qualified },
+  { re: /\b(\d+)\s+failures?\b/gi, kind: 'tests', readings: () => [key('failed')] },
+  { re: /\b(?:checked|linted|scanned)\s+(\d+)\s+files?\b/gi, kind: 'lint', readings: () => [CHECKED_FILES, key('files')] },
+  { re: /\b(\d+)\s+files?\s+(?:were\s+)?(?:checked|linted|scanned)\b/gi, kind: 'lint', readings: () => [CHECKED_FILES, key('files')] },
+  { re: /\b(\d+)\s+(?:files?\s+(?:were\s+)?ignored|ignored\s+files?)\b/gi, kind: 'lint', readings: () => [key('ignored')] },
+  { re: /\b(\d+)\s+(?:lint\s+)?(errors?|warnings?)\b/gi, kind: 'lint', readings: (m) => [key(/^e/i.test(m[2]!) ? 'errors' : 'warnings')] },
+]
+
+// A sentence about what used to be true - "fixes the 2 failing tests" - states
+// counts the run never saw. Its counts are not read at all: a missed check is
+// a smaller cost than an error over an honest sentence.
+const HISTORY_RE = /\b(?:fix(?:es|ed|ing)?|previously|before|used to|no longer|earlier)\b/i
+
+/** One count a sentence states: the words, the number, the run kind it counts, and the readings it may equal. */
+interface StatedCount {
+  text: string
+  value: number
+  kind: 'tests' | 'lint'
+  readings: Reading[]
+}
+
+function statedCounts(text: string): StatedCount[] {
+  if (HISTORY_RE.test(text)) return []
+  return COUNT_RULES.flatMap((rule) =>
+    [...text.matchAll(rule.re)].map((m) => ({ text: m[0], value: Number(m[1]), kind: rule.kind, readings: rule.readings(m) })),
+  )
+}
+
+/**
+ * Why the claim cites a run of a kind its own words do not name, or `null`.
+ * "Lint reports no violations" over a typecheck block is the wrong block, and
+ * the outcome rules would otherwise grade it as the typecheck it is. Checked
+ * before the outcome, because a verdict on the wrong run says nothing about
+ * the claim. A claim that names several kinds passes if one is the run's; a
+ * claim that names none, or a run whose kind no word names (a diff, a
+ * fingerprint, a project's own command), is held to nothing - there is
+ * nothing in the sentence to compare.
+ */
+export function kindProblem(artifact: OutcomeArtifact, claimText: string): { detail: string; named: string[] } | null {
+  const kind = classifyCommand(artifact.command)
+  const named = kindsNamed(claimText)
+  if (!KIND_WORDS.some(([k]) => k === kind) || named.length === 0 || named.includes(kind)) return null
+  return {
+    named,
+    detail: 'is about ' + named.map(kindName).join(' and ') + ', but cites `' + artifact.command + '`, a ' + kindName(kind) + ' run',
+  }
+}
+
+/**
+ * Why a count the claim states is not the count its run's work summary
+ * carries, or `null`. "72 passing tests" over `passed=71` is not a rounding of
+ * the truth, and a predicate would have caught it only had the writer written
+ * one. A count of the kind the run does not summarise is left alone -
+ * `kindProblem` is the rule that speaks to the wrong kind - and so is every
+ * count on a run with no summary: there is nothing to hold it to.
+ */
+export function countProblem(artifact: OutcomeArtifact, claimText: string): { detail: string; expected: number; observed: number } | null {
+  const summary = parseWorkSummary(artifact.output)
+  if (!summary) return null
+  for (const stated of statedCounts(claimText)) {
+    if (stated.kind !== summary.kind) continue
+    const actual = stated.readings.map((r) => ({ label: r.label, value: r.of(summary.counts) }))
+    if (actual.some((a) => a.value === stated.value)) continue
+    return {
+      detail:
+        'says "' + stated.text + '", but the work summary in `' + artifact.command + '` says ' +
+        actual.map((a) => a.label + '=' + a.value).join(' and '),
+      expected: stated.value,
+      observed: actual[0]!.value,
+    }
+  }
+  return null
+}
+
 interface Claim {
   /** 0-based line of the `**Claim**:` line. */
   line: number
@@ -313,6 +453,13 @@ export interface LintOptions extends OutcomeOptions {
    */
   artifactSourceName?: string
   /**
+   * A document whose artifact blocks a finding's `fix` may suggest, though
+   * none of them resolves a claim - the sealed bundle, for a review file that
+   * has to carry its own blocks. A fix naming a block from here, rather than
+   * from the checked text, says to copy the block in.
+   */
+  suggestFrom?: string
+  /**
    * Apply the prose rules (vague comparatives, success words with no stated
    * effect). Default `true`. Off for a conversational reply, where ordinary
    * prose is not graded and only `**Claim**:` lines are.
@@ -351,6 +498,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     ...findArtifactBlocks(lines),
     ...(opts.artifactSource !== undefined ? findArtifactBlocks(opts.artifactSource.split(/\r?\n/)) : []),
   ]
+  const fixes = fixer(artifacts, opts.suggestFrom !== undefined ? findArtifactBlocks(opts.suggestFrom.split(/\r?\n/)) : [])
   const findings: CodedFinding[] = []
 
   if (claims.length + inlineClaims.length === 0 && opts.prose !== false) {
@@ -359,6 +507,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
       code: 'claims/none',
       claim: 'the review states claims',
       detail: 'no `**Claim**:` lines found - nothing here can be checked',
+      fix: 'state each checkable result as a `**Claim**:` line, with a `**Grounding**:` line below it',
       file,
     })
   }
@@ -378,10 +527,43 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
         detail:
           id + ' labels ' + bodies.size + ' different blocks (lines ' + blocks.map((b) => b.start + 1).join(', ') +
           ') - an id is an address, and an address names one thing. Regenerate the evidence rather than editing a block',
+        fix: 'keep one block for ' + id + ', copied from the evidence bundle unedited, and delete the others',
         file,
         line: blocks[1]!.start + 1,
       })
     }
+  }
+
+  // The rules that read a claim's words against the run it cites, in the
+  // order a writer should hear them: the wrong kind of run first, since a
+  // verdict on the wrong run says nothing about the claim; then the outcome;
+  // then the counts the sentence states.
+  const citedProblem = (
+    artifact: ArtifactBlock,
+    claimText: string,
+    inline: boolean | undefined,
+    commit: string | undefined,
+  ): Omit<CodedFinding, 'claim'> | null => {
+    const ownFix = fixes.ready(artifact, inline) ?? 'mark the claim UNVERIFIED'
+    const kind = kindProblem(artifact, claimText)
+    if (kind) {
+      const others = fixes.ofKind(kind.named, commit)
+      return {
+        level: 'error',
+        code: 'claims/kind-mismatch',
+        detail: kind.detail,
+        fix:
+          (others.length === 1 ? fixes.ready(others[0]!, inline) : undefined) ??
+          (others.length === 0
+            ? 'no ' + kind.named.map(kindName).join(' or ') + ' run was gathered - gather one and cite it, or mark the claim UNVERIFIED'
+            : fixes.orCite(others)),
+      }
+    }
+    const outcome = outcomeProblem(artifact, claimText, opts)
+    if (outcome) return { level: 'error', code: 'claims/outcome-mismatch', detail: outcome, fix: ownFix }
+    const count = countProblem(artifact, claimText)
+    if (count) return { level: 'error', code: 'claims/count-mismatch', detail: count.detail, expected: count.expected, observed: count.observed, fix: ownFix }
+    return null
   }
 
   // Legacy proximity mode may still consume an artifact positionally, so two
@@ -401,6 +583,9 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
         code: 'claims/untagged',
         claim: claim.text,
         detail: 'carries no grounding tag (VERIFIED / DOCUMENTED / INFERRED / UNVERIFIED)',
+        fix: claim.inline
+          ? 'add a grade to the claim: UNVERIFIED, or a VERIFIED[...] tag from the evidence bundle'
+          : 'add the line below under it - or a VERIFIED[<id>] grounding citing a run from the evidence bundle:\n**Grounding**: UNVERIFIED',
         ...where,
       })
       return
@@ -422,6 +607,9 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
         detail:
           'VERIFIED' + claim.gradeMalformed + ' is not an address - write VERIFIED[<kind>-<6 hex>] or ' +
           'VERIFIED[<kind>-<6 hex>: <key><op><value>, ...]',
+        // The id the writer meant is usually inside the bracket - a missing
+        // colon, a placeholder left beside it - and its run says the rest.
+        fix: fixes.grounding(fixes.byId(MENTIONED_ID_RE.exec(claim.gradeMalformed)?.[0]), claim.inline) ?? fixes.orCite(),
         ...where,
       })
       return
@@ -429,6 +617,12 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
 
     if (claim.grade === 'VERIFIED' && claim.gradeId) {
       const artifact = artifacts.find((a) => a.id === claim.gradeId)
+      // A run of the kind the id names, at the commit under review, is what
+      // the writer was most likely reaching for - offered only when there is
+      // exactly one, since choosing between two is the judgement a fix must
+      // not make for anyone.
+      const sameKind = fixes.ofKind([claim.gradeId.split('-')[0]!], opts.expectedHeadSha)
+      const instead = sameKind.length === 1 ? fixes.ready(sameKind[0]!, claim.inline) : undefined
       if (!artifact) {
         findings.push({
           level: 'error',
@@ -437,6 +631,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
           detail:
             'VERIFIED[' + claim.gradeId + '] references an artifact that does not exist in ' +
             (opts.artifactSourceName ?? 'this document'),
+          fix: instead ?? fixes.orCite(),
           ...where,
         })
         return
@@ -453,6 +648,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
             artifact.commit +
             ', but this review is about ' +
             opts.expectedHeadSha.slice(0, 7),
+          fix: instead ?? 'gather the evidence again at ' + opts.expectedHeadSha.slice(0, 7) + ' and cite the new run - or mark the claim UNVERIFIED',
           ...where,
         })
         return
@@ -468,19 +664,14 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
           code: 'claims/bad-predicate',
           claim: claim.text,
           detail: 'VERIFIED[' + claim.gradeId + '] has predicates that cannot be checked: ' + parsed.problems.join('; '),
+          fix: fixes.grounding(artifact, claim.inline) ?? 'mark the claim UNVERIFIED',
           ...where,
         })
         return
       }
-      const problem = outcomeProblem(artifact, claimText, opts)
-      if (problem) {
-        findings.push({
-          level: 'error',
-          code: 'claims/outcome-mismatch',
-          claim: claim.text,
-          detail: 'VERIFIED[' + claim.gradeId + '] ' + problem,
-          ...where,
-        })
+      const mismatch = citedProblem(artifact, claimText, claim.inline, opts.expectedHeadSha)
+      if (mismatch) {
+        findings.push({ ...mismatch, detail: 'VERIFIED[' + claim.gradeId + '] ' + mismatch.detail, claim: claim.text, ...where })
         return
       }
       // In addition to the outcome rules, never instead of them: a weak
@@ -493,6 +684,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
           code: 'claims/predicate-unmet',
           claim: claim.text,
           detail: 'VERIFIED[' + claim.gradeId + '] ' + unmet.join('; '),
+          fix: fixes.ready(artifact, claim.inline) ?? 'mark the claim UNVERIFIED',
           ...where,
         })
         return
@@ -519,14 +711,15 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
           code: 'claims/no-nearby-artifact',
           claim: claim.text,
           detail: 'VERIFIED, but no valid artifact block within ' + ARTIFACT_WINDOW + ' lines',
+          fix: fixes.orCite(),
           ...where,
         })
         return
       }
       consumedByPosition.add(idx)
-      const problem = outcomeProblem(artifacts[idx]!, claimText, opts)
-      if (problem) {
-        findings.push({ level: 'error', code: 'claims/outcome-mismatch', claim: claim.text, detail: 'VERIFIED ' + problem, ...where })
+      const mismatch = citedProblem(artifacts[idx]!, claimText, claim.inline, opts.expectedHeadSha)
+      if (mismatch) {
+        findings.push({ ...mismatch, detail: 'VERIFIED ' + mismatch.detail, claim: claim.text, ...where })
         return
       }
       findings.push({
@@ -543,6 +736,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
         detail:
           'bare VERIFIED only confirms a block is nearby, not that it is the block this claim is about - ' +
           'use VERIFIED[id] instead (see docs/decisions/0002-evidence-layer-v2.md for the cutover date)',
+        ...(artifacts[idx]!.id !== undefined && { fix: fixes.grounding(artifacts[idx], claim.inline) }),
         ...where,
       })
       return
@@ -556,6 +750,11 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
         code: ok ? 'claims/documented' : 'claims/uncited',
         claim: claim.text,
         detail: ok ? 'DOCUMENTED with a citation' : 'DOCUMENTED, but cites nothing (URL, § section, or issue id)',
+        ...(!ok && {
+          fix:
+            'add a citation beside the tag - a URL, a § section, an issue id like #12, or a file in backticks like ' +
+            '`docs/notes.md` - or mark the claim UNVERIFIED',
+        }),
         ...where,
       })
       return
@@ -572,6 +771,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
           ? 'INFERRED inline, with its reason beside the tag'
           : 'INFERRED inline, but nothing beside the tag says why - a bare tag is not a reason (' +
             INLINE_REASON_WORDS + ' or more words are required)',
+        ...(!ok && { fix: 'write the reason beside the tag, in ' + INLINE_REASON_WORDS + ' or more words - or mark the claim UNVERIFIED' }),
         ...where,
       })
       return
@@ -589,6 +789,9 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
           steps >= 2
             ? 'INFERRED with a ' + steps + '-step chain'
             : 'INFERRED, but shows ' + steps + ' numbered step(s) - two or more are required',
+        ...(steps < 2 && {
+          fix: 'add two or more numbered steps below the grounding line, one per line (`1. ...`, `2. ...`) - or mark the claim UNVERIFIED',
+        }),
         ...where,
       })
       return
@@ -619,6 +822,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
         code: 'claims/shotgun',
         claim: 'artifact ' + id + ' backs ' + usage.count + ' claims',
         detail: 'each artifact should back at most ' + SHOTGUN_THRESHOLD + ' - consider gathering separate evidence',
+        fix: 'keep the claims ' + id + ' actually shows, and mark the others UNVERIFIED',
         file,
         line: usage.lastLine + 1,
       })
@@ -636,6 +840,148 @@ function groupById(artifacts: ArtifactBlock[]): Map<string, ArtifactBlock[]> {
     groups.set(a.id, [...(groups.get(a.id) ?? []), a])
   }
   return groups
+}
+
+// An artifact id anywhere in a malformed bracket - the one the writer meant.
+const MENTIONED_ID_RE = new RegExp(ARTIFACT_ID_RE.source.slice(1, -1))
+
+/** What a finding's fix may offer, over the runs a claim could cite. */
+interface Fixes {
+  byId(id: string | undefined): ArtifactBlock | undefined
+  /** Runs of one of these kinds, collected at this commit when one is given, that back a claim. */
+  ofKind(kinds: string[], commit: string | undefined): ArtifactBlock[]
+  /** The claim and grounding the run backs, as replacement lines - `undefined` for a run that backs none. */
+  ready(block: ArtifactBlock, inline: boolean | undefined): string | undefined
+  /** The grounding line citing the run with its own predicates - `undefined` for a block with no id. */
+  grounding(block: ArtifactBlock | undefined, inline: boolean | undefined): string | undefined
+  /** The fix when no one run fits: say less, or cite one of these runs (default: every run that backs a claim). */
+  orCite(blocks?: ArtifactBlock[]): string
+}
+
+/**
+ * The fixes a finding can offer. Every replacement is read off a run - the
+ * skeleton's sentence, the run's own predicates - never off the claim being
+ * fixed, so applying one cannot carry the original mistake forward. The lines
+ * to paste always come last, after a colon, so the instruction and the text
+ * cannot be mistaken for each other; the alternative of marking the claim
+ * UNVERIFIED is on the instruction line, because it is always there.
+ */
+function fixer(resolvable: ArtifactBlock[], suggestable: ArtifactBlock[]): Fixes {
+  const runs = new Map<string, { block: ArtifactBlock; copy: boolean }>()
+  for (const block of resolvable) if (block.id && !runs.has(block.id)) runs.set(block.id, { block, copy: false })
+  for (const block of suggestable) if (block.id && !runs.has(block.id)) runs.set(block.id, { block, copy: true })
+  const backsAClaim = (block: ArtifactBlock): boolean => block.id !== undefined && suggestedClaim({ ...block, id: block.id }) !== null
+  // A run from `suggestFrom` is not in the checked text, so citing it there
+  // means copying its block in as well.
+  const copy = (block: ArtifactBlock): string =>
+    runs.get(block.id!)?.copy ? ', and copy the ' + block.id + ' block from the evidence bundle into the review unedited' : ''
+  const replace = (what: string, block: ArtifactBlock, lines: string[]): string =>
+    'replace ' + what + ' with the line' + (lines.length > 1 ? 's' : '') + ' below' + copy(block) + ' - or mark the claim UNVERIFIED:\n' + lines.join('\n')
+  const tag = (block: ArtifactBlock): string => 'VERIFIED[' + block.id + ': ' + suggestPredicates(block) + ']'
+
+  return {
+    byId: (id) => (id === undefined ? undefined : runs.get(id)?.block),
+    ofKind: (kinds, commit) =>
+      [...runs.values()]
+        .map((r) => r.block)
+        .filter((b) => backsAClaim(b) && kinds.includes(classifyCommand(b.command)) && (!commit || !b.commit || commit.startsWith(b.commit))),
+    ready: (block, inline) => {
+      if (block.id === undefined) return undefined
+      const pair = suggestedClaim({ ...block, id: block.id })
+      if (!pair) return undefined
+      // A claim found inline has no Grounding line of its own: its sentence and tag are one cell.
+      return inline
+        ? replace('the claim', block, [pair.claim.replace('**Claim**: ', '') + ' ' + tag(block)])
+        : replace('the claim and its grounding', block, [pair.claim, pair.grounding])
+    },
+    grounding: (block, inline) => {
+      if (block?.id === undefined) return undefined
+      return inline ? replace('the tag', block, [tag(block)]) : replace('the grounding', block, ['**Grounding**: ' + tag(block)])
+    },
+    orCite: (blocks) => {
+      const ids = (blocks ?? [...runs.values()].map((r) => r.block)).filter(backsAClaim).map((b) => b.id!)
+      return ids.length > 0
+        ? 'mark the claim UNVERIFIED, or cite one of these runs as VERIFIED[<id>]: ' + ids.join(', ')
+        : 'mark the claim UNVERIFIED, or gather evidence and cite a run from it'
+    },
+  }
+}
+
+/**
+ * The codes `downgradeClaims` settles. Each says a claim's grade is not backed
+ * - the wrong run, the wrong number, a citation that does not resolve - so
+ * marking the claim UNVERIFIED states exactly what is true about it. The
+ * prose rules are not here: they are about a line, not a claim's grade.
+ */
+const DOWNGRADED = new Set<string>([
+  'claims/untagged',
+  'claims/malformed-address',
+  'claims/unknown-artifact',
+  'claims/wrong-commit',
+  'claims/bad-predicate',
+  'claims/kind-mismatch',
+  'claims/outcome-mismatch',
+  'claims/count-mismatch',
+  'claims/predicate-unmet',
+  'claims/no-nearby-artifact',
+  'claims/uncited',
+  'claims/short-chain',
+  'seal/not-gathered',
+  'seal/edited',
+])
+
+/** One claim `downgradeClaims` marked UNVERIFIED: its 1-based line, the grade it had, and the finding that failed it. */
+export interface Downgrade {
+  line: number
+  from: string
+  code: string
+}
+
+/**
+ * Marks every claim an error finding failed UNVERIFIED, and returns the text
+ * with what changed. The one fix that needs no judgement: the claim stays,
+ * worded as written, and its grade says what is true - nothing backs it.
+ * Never the other way: nothing here edits a sentence or a predicate to fit
+ * its run, which would make a claim pass by changing what it says.
+ *
+ * A `seal/` finding names its id once, at the first claim citing it, so every
+ * claim citing that id is downgraded with it. A claim with no grade gets a
+ * `**Grounding**: UNVERIFIED` line below it. Line endings are kept as found.
+ */
+export function downgradeClaims(markdown: string, findings: CodedFinding[], gradeWindow = GRADE_WINDOW): { markdown: string; downgraded: Downgrade[] } {
+  const eol = markdown.includes('\r\n') ? '\r\n' : '\n'
+  const lines = markdown.split(/\r?\n/)
+  const claims = findClaims(lines, fencedLineNumbers(lines), gradeWindow)
+  const failing = new Map<number, string>()
+  const failedIds = new Map<string, string>()
+  for (const f of findings) {
+    if (f.level !== 'error' || !DOWNGRADED.has(f.code) || f.line === undefined) continue
+    const claim = claims.find((c) => c.line === f.line! - 1)
+    if (!claim) continue
+    if (f.code.startsWith('seal/') && claim.gradeId) failedIds.set(claim.gradeId, f.code)
+    else if (!failing.has(claim.line)) failing.set(claim.line, f.code)
+  }
+  for (const claim of claims) {
+    const code = claim.gradeId !== undefined ? failedIds.get(claim.gradeId) : undefined
+    if (code && !failing.has(claim.line)) failing.set(claim.line, code)
+  }
+
+  const downgraded: Downgrade[] = []
+  // Bottom up, so a line inserted below one claim moves none of the claims still to come.
+  for (const claim of [...claims].reverse()) {
+    const code = failing.get(claim.line)
+    if (!code) continue
+    if (!claim.grade) {
+      lines.splice(claim.line + 1, 0, '**Grounding**: UNVERIFIED')
+      downgraded.push({ line: claim.line + 1, from: '(no grade)', code })
+      continue
+    }
+    const line = lines[claim.gradeLine!]!
+    const found = GRADE_RE.exec(line)!
+    lines[claim.gradeLine!] = line.slice(0, found.index) + 'UNVERIFIED' + line.slice(found.index + found[0].length)
+    downgraded.push({ line: claim.line + 1, from: found[0], code })
+  }
+  return { markdown: lines.join(eol), downgraded: downgraded.reverse() }
 }
 
 /**
@@ -670,6 +1016,7 @@ export function lintProse(lines: string[], fenced: Set<number>, file: string): C
         code: 'claims/vague-comparison',
         claim: '"' + vague[0].trim() + '"',
         detail: 'compared to what, measured how? Back it or tag the line UNVERIFIED',
+        fix: 'say what was measured against what, or add UNVERIFIED to this line',
         ...where,
       })
     }
@@ -687,6 +1034,7 @@ export function lintProse(lines: string[], fenced: Set<number>, file: string): C
         code: 'claims/success-without-effect',
         claim: '"' + success[0] + '"',
         detail: 'a success claim with no stated effect - add `**Effect**:` saying what changed and how you know',
+        fix: 'add an `**Effect**:` line within three lines of this one, saying what changed and how you know - or drop the word',
         ...where,
       })
     }

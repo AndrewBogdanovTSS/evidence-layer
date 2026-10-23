@@ -29,8 +29,9 @@ export const JSON_END = '---GOVERNANCE-JSON-END---'
  * 3 - findings carry `line`, and the optional `expected`/`observed` values.
  * 4 - findings carry `code` (see `./codes`), and a report says which `check`
  *     produced it. The same document is what `--format json` prints.
+ * 5 - findings carry an optional `fix`: what would settle them, as it stands.
  */
-export const REPORT_SCHEMA = 4
+export const REPORT_SCHEMA = 5
 
 export interface ReportFinding {
   level: string
@@ -41,6 +42,7 @@ export interface ReportFinding {
   expected?: unknown
   observed?: unknown
   code?: string
+  fix?: string
 }
 
 export interface Report {
@@ -79,6 +81,7 @@ export function buildReport(findings: Finding[], mode: string, check?: string): 
       expected: f.expected,
       observed: f.observed,
       code: f.code,
+      fix: f.fix,
     })),
   }
 }

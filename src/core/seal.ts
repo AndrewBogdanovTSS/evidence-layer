@@ -499,6 +499,7 @@ export function checkProvenance(markdown: string, file: string, run: Run): Coded
         code: 'seal/not-gathered',
         claim: 'artifact ' + id + ' came from the gatherer',
         detail: notGatheredDetail(run, id, cited[0]!.command),
+        fix: notGatheredFix(run, cited[0]!.command),
         ...where,
       })
       continue
@@ -513,6 +514,7 @@ export function checkProvenance(markdown: string, file: string, run: Run): Coded
             detail:
               'the block at line ' + (edited.start + 1) + ' differs from the one run ' + run.seal.runId +
               ' wrote - it was edited after it was gathered. Copy it from the bundle again',
+            fix: 'copy the ' + id + ' block from the evidence bundle again, unedited - or mark the claims citing it UNVERIFIED',
             ...where,
           }
         : {
@@ -555,6 +557,7 @@ export function checkFreshness(repo: string, run: Run, now = sourceFingerprint(r
         'the code changed after the evidence was gathered' +
         (paths && paths.length > 0 ? ' (' + summarisePaths(paths) + ')' : '') +
         ' - gather again before citing it',
+      fix: 'gather the evidence again, then cite the runs the new bundle lists',
       expected: run.seal.source.treeId,
       observed: current.treeId,
     }
@@ -593,6 +596,14 @@ function notGatheredDetail(run: Run, id: string, command: string): string {
       ? '. The current run\'s `' + command + '` block is ' + sameCommand + ' - cite that one, copied from the current bundle'
       : '. Cite a block from the current bundle')
   )
+}
+
+/** What to cite instead of a block the current run did not produce. */
+function notGatheredFix(run: Run, command: string): string {
+  const sameCommand = Object.entries(run.seal.artifacts).find(([, a]) => a.command === command)?.[0]
+  return sameCommand
+    ? 'cite ' + sameCommand + ' instead, with its block copied from the current evidence bundle unedited - or mark the claim UNVERIFIED'
+    : 'cite a block from the current evidence bundle, copied unedited - or mark the claim UNVERIFIED'
 }
 
 /** The newest kept run, other than `run`, whose seal lists `id` - or `undefined`. A seal that does not read is skipped. */

@@ -17,6 +17,11 @@
  * `VERIFIED` means **deleting part of the template**. Correct becomes strictly
  * cheaper than convenient, which is the only version of this feature allowed
  * to ship.
+ *
+ * The same pair - `suggestedClaim` - is what a failing claim's finding offers
+ * as its fix, and what the runtime gate hands an agent as the claims it can
+ * make: a writer who cannot work out the right sentence and the right
+ * predicates is given them, read off the run.
  */
 import { classifyCommand, formatArtifact, formatExitLine, parseWorkSummary } from './artifact'
 import type { StopReason } from './artifact'
@@ -172,20 +177,58 @@ function claimSentence(command: string, exitCode: number, stopped?: StopReason, 
  */
 export function generateClaimSkeleton(artifacts: SkeletonArtifact[], options: SkeletonOptions = {}): string {
   const parts: string[] = []
+  // One claim per id. Two steps that run the same command at the same commit
+  // with the same output - a project whose lint step is its typechecker - get
+  // the same id, and the bundle printed the same claim twice: an agent that
+  // kept both made one claim twice, and spent half the shotgun budget on it.
+  const seen = new Set<string>()
   for (const a of artifacts) {
+    if (seen.has(a.id)) continue
     const stopped = a.stopped ?? (a.timedOut ? 'timeout' : undefined)
-    const sentence = claimSentence(a.command, a.exitCode, stopped, a.output)
-    if (!sentence) continue
+    const ready = suggestedClaim({ ...a, stopped })
+    if (!ready) continue
+    seen.add(a.id)
     const block = formatArtifact(a.command, a.output, a.exitCode, { id: a.id, commit: a.commit, stopped })
     parts.push(
-      '**Claim**: ' + sentence,
-      '**Grounding**: VERIFIED[' + a.id + ': ' + suggestPredicates({ output: a.output, exitCode: a.exitCode, stopped }) + ']',
+      ready.claim,
+      ready.grounding,
       '',
       options.fold ? foldDetails(artifactSummary(a.command, block, a.exitCode, stopped), block) : block,
       '',
     )
   }
   return parts.join('\n')
+}
+
+/** The parts of a gathered run a ready claim is written from. `ArtifactBlock` with an id satisfies it. */
+export interface ClaimableArtifact {
+  command: string
+  output: string
+  exitCode: number
+  id: string
+  stopped?: StopReason
+}
+
+/** A claim and its grounding, as the two lines a review keeps. */
+export interface SuggestedClaim {
+  claim: string
+  grounding: string
+}
+
+/**
+ * The claim one gathered run backs, as the two lines a review keeps - `null`
+ * for a run that backs none (a diff, the tree's status). The same pair the
+ * skeleton writes, so a fix a finding suggests, a claim the gate lists and a
+ * claim in the bundle are one sentence, not three that drift: written from
+ * the run, never from what the writer hoped it showed.
+ */
+export function suggestedClaim(artifact: ClaimableArtifact): SuggestedClaim | null {
+  const sentence = claimSentence(artifact.command, artifact.exitCode, artifact.stopped, artifact.output)
+  if (!sentence) return null
+  return {
+    claim: '**Claim**: ' + sentence,
+    grounding: '**Grounding**: VERIFIED[' + artifact.id + ': ' + suggestPredicates(artifact) + ']',
+  }
 }
 
 /**

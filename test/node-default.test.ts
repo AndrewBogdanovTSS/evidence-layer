@@ -9,6 +9,15 @@ describe('parseTestCount', () => {
     expect(parseTestCount('Tests  71 passed (71)')).toBe(71)
   })
 
+  it('reads vitest\'s summary line when a test was skipped or failed - the total, in parentheses', () => {
+    expect(parseTestCount(' Test Files  39 passed (39)\n      Tests  516 passed | 3 skipped (519)')).toBe(519)
+    expect(parseTestCount('      Tests  14 failed | 484 passed | 3 skipped (501)')).toBe(501)
+  })
+
+  it('counts mocha\'s failing and pending tests into the total', () => {
+    expect(parseTestCount('  8 passing (12ms)\n  2 pending\n  1 failing')).toBe(11)
+  })
+
   it('reads jest\'s summary line', () => {
     expect(parseTestCount('Tests:       12 passed, 12 total')).toBe(12)
   })

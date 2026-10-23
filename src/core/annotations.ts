@@ -57,7 +57,7 @@ export function annotations(findings: Finding[]): string[] {
       ...(f.file && f.line ? ['line=' + f.line] : []),
       'title=' + escapeProperty(title),
     ]
-    lines.push('::' + command + ' ' + props.join(',') + '::' + escapeData(f.claim + ' - ' + f.detail))
+    lines.push('::' + command + ' ' + props.join(',') + '::' + escapeData(f.claim + ' - ' + f.detail + (f.fix ? '\nFix: ' + f.fix : '')))
   }
   return lines
 }

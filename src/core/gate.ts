@@ -11,14 +11,18 @@
  *   - **session-start** records which review files exist, and with what bytes,
  *     so that a later Stop checks only what this session wrote - a review left
  *     modified yesterday does not block today's conversation about something
- *     else. It also hands the agent the claim grammar as context.
+ *     else. It also hands the agent the claim grammar as context - as a
+ *     filled-in example, and with the claims the current run backs when
+ *     there is a run for this commit.
  *   - **pre-write** refuses a file-write tool aimed at the gate's own state.
  *     An accidental-write guard, not a sandbox: a shell command can still
  *     write there, and nothing here pretends otherwise.
  *   - **stop** runs `claims`, `receipt` and - when a run is sealed - provenance
  *     and freshness over every review this session changed, and over the
  *     `**Claim**:` lines of the agent's final message. Errors block the stop,
- *     so the agent fixes its claims before anyone reads them.
+ *     so the agent fixes its claims before anyone reads them: one numbered
+ *     item per failing claim, each with the fix its finding carries, then
+ *     the claims the current run does back.
  *
  * Two budgets keep a strict check from becoming a trap. A **retry episode**
  * starts at the first Stop with errors and closes at the first Stop without
@@ -36,26 +40,30 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fencedLineNumbers } from './artifact'
+import { fencedLineNumbers, findArtifactBlocks } from './artifact'
 import { findClaims, lintClaims } from './claims'
+import { formatFix } from './cli'
 import type { Finding, Level } from './cli'
 import type { CodedFinding } from './codes'
 import { gateFailure, journalOutcome, levelOf } from './gate-decision'
 import type { GateDecision, GateEvent, GateOptions, GateOutcome } from './gate-decision'
-import { gatherCommandFor } from './gather-command'
+import { cliCommandFor, gatherCommandFor } from './gather-command'
 import { appendEntry } from './journal'
 import { gitCapture } from './proc'
 import { decidePreWrite } from './protect'
 import { checkReceipt, parseReceipt } from './receipt'
 import { checkFreshness, checkProvenance, freshnessMatters, readCurrentRun, repoRoot, sourceFingerprint, stateDir } from './seal'
 import type { CurrentRun, FingerprintResult } from './seal'
+import { suggestedClaim } from './skeleton'
+import type { SuggestedClaim } from './skeleton'
 
 export * from './gate-decision'
 export { decidePreWrite, isProtected, protectedRoots } from './protect'
 
 const DEFAULT_REVIEWS = ['review.md']
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const MAX_REASON_FINDINGS = 20
+/** Numbered items a reason lists. Past ten, an agent fixing them in order loses its place - the rest are counted. */
+const MAX_REASON_FINDINGS = 10
 const MAX_DETAIL = 300
 
 /** Decides one event. Never throws: an internal failure becomes a decision under the failure policy. */
@@ -171,15 +179,60 @@ function gatherWith(how: GatherHow): string {
   return '`' + how.command + '`' + (how.base ? ' (base ' + how.base + ', as the current run was gathered)' : '')
 }
 
-function grammar(gather: GatherHow): string[] {
+/** How many ready claims a message lists. A bundle has one per kind of run, so this is a cap on a malformed one. */
+const MAX_READY = 8
+
+/**
+ * The claims a sealed bundle backs, one per run, as the skeleton writes them.
+ * Read off the bundle's own blocks, so each is a claim the stop check passes
+ * while the code is what the run was gathered from.
+ */
+function readyClaims(bundle: string): SuggestedClaim[] {
+  const seen = new Set<string>()
+  const ready: SuggestedClaim[] = []
+  for (const block of findArtifactBlocks(bundle.split(/\r?\n/))) {
+    if (block.id === undefined || seen.has(block.id)) continue
+    seen.add(block.id)
+    const pair = suggestedClaim({ ...block, id: block.id })
+    if (pair) ready.push(pair)
+  }
+  return ready.slice(0, MAX_READY)
+}
+
+function formatReady(ready: SuggestedClaim[], runId: string): string[] {
   return [
-    'evidence-layer checks this session. When you report a checkable result - in a review file or in your final answer - state it as a claim, one per line pair:',
+    'Ready claims from run ' + runId + ' - keep the ones your report needs. In your final answer, paste a pair as it is; in a review file, copy it together with its artifact block from the evidence bundle, unedited:',
+    ...ready.flatMap((r) => ['', r.claim, r.grounding]),
+  ]
+}
+
+/**
+ * The claim grammar, shown rather than described. A grammar of placeholders -
+ * `VERIFIED[<artifact id>: <predicates>]` - is copied by a smaller model as it
+ * stands, placeholder and all; a filled-in pair is copied as a claim. The
+ * example is a real ready claim when the current run has one, so copying it
+ * is correct, and an obviously made-up one otherwise, said to be one.
+ */
+function grammar(gather: GatherHow, ready: SuggestedClaim[]): string[] {
+  const example = ready[0] ?? {
+    claim: '**Claim**: The test suite ran 71 passing tests and reports no failures.',
+    grounding: '**Grounding**: VERIFIED[tests-a3f91c: exit=0, passed>=71, failed=0]',
+  }
+  return [
+    'evidence-layer checks this session. When you report a checkable result - in a review file or in your final answer - state it as a claim: a **Claim** line, with a **Grounding** line under it. For example:',
     '',
-    '**Claim**: <what is true>',
-    '**Grounding**: VERIFIED[<artifact id>: <predicates>]   (or DOCUMENTED + a citation, INFERRED + numbered steps, UNVERIFIED)',
+    example.claim,
+    example.grounding,
     '',
-    'VERIFIED ids come from the evidence bundle, which lists ready-made claims - gather it with ' + gatherWith(gather) +
-      ' before you report, and gather again after you change code. Cite artifact blocks exactly as the bundle has them. Ordinary prose is not checked; only **Claim** lines are.',
+    '**Claim**: The retry path handles a dropped connection.',
+    '**Grounding**: UNVERIFIED',
+    '',
+    'The id inside VERIFIED[...] must be one the evidence bundle lists' +
+      (ready.length > 0 ? '' : ' - the one above is only an example') +
+      '; never make one up. The other grades: DOCUMENTED with a citation (a URL, a § section, an issue id like #12, or a file in backticks), ' +
+      'INFERRED with two or more numbered steps below it, and UNVERIFIED when nothing backs the claim - which is honest, not a failure.',
+    'Gather the bundle with ' + gatherWith(gather) + ' before you report, and gather again after you change code. ' +
+      'Cite artifact blocks exactly as the bundle has them. Ordinary prose is not checked; only **Claim** lines are.',
   ]
 }
 
@@ -211,13 +264,22 @@ function sessionStart(event: Extract<GateEvent, { kind: 'session-start' }>, opts
   const head = gitCapture(['rev-parse', 'HEAD'], root)
   const current = readCurrentRun(root, state)
   const gather = gatherHow(root, current)
+  const atHead = 'run' in current && current.run.seal.headSha === head
+  // Only a run for this commit: claims from another one would be handed out
+  // to be refused at the first stop.
+  const ready = 'run' in current && atHead ? readyClaims(current.run.bundle) : []
   const runHint =
     'run' in current
-      ? current.run.seal.headSha === head
+      ? atHead
         ? 'A sealed evidence run exists for the current commit (' + current.run.seal.runId + ').'
         : 'The latest sealed evidence run is for another commit - gather again with ' + gatherWith(gather) + ' before citing it.'
       : 'No sealed evidence run exists in this checkout yet.'
-  const text = [...grammar(gather), '', 'Review files checked at stop: ' + reviews.join(', ') + '. ' + runHint].join('\n')
+  const text = [
+    ...grammar(gather, ready),
+    '',
+    'Review files checked at stop: ' + reviews.join(', ') + '. ' + runHint,
+    ...('run' in current && ready.length > 0 ? ['', ...formatReady(ready, current.run.seal.runId)] : []),
+  ].join('\n')
   return { action: 'context', text, outcome: 'checked', level: null, findings: [] }
 }
 
@@ -264,7 +326,10 @@ function stopContext(root: string, state: string): StopContext {
 function checkReview(ctx: StopContext, path: string): CodedFinding[] {
   const markdown = readFileSync(join(ctx.root, path), 'utf8')
   const receipt = parseReceipt(markdown)
-  const findings = lintClaims(markdown, path, { expectedHeadSha: receipt.headSha })
+  // The sealed bundle is where a review's fixes can point: its runs are the
+  // ones the review may cite, once their blocks are copied in.
+  const suggestFrom = 'run' in ctx.current ? ctx.current.run.bundle : undefined
+  const findings = lintClaims(markdown, path, { expectedHeadSha: receipt.headSha, suggestFrom })
   if (receipt.headSha !== undefined) findings.push(...checkReceipt(receipt, markdown, ctx.root))
   findings.push(...sealFindings(ctx, markdown, path, { fromBundle: false }))
   return findings
@@ -330,18 +395,94 @@ function sealFindings(ctx: StopContext, text: string, file: string, opts: { from
   return findings
 }
 
-/** Problems first, worst first; then warnings, each on a line of its own. Passes are not listed. */
+/** Problems first, worst first; then warnings. Passes are not listed. */
 const REASON_ORDER: Level[] = ['error', 'flaky', 'unverifiable', 'warning']
 
-function formatReason(findings: Finding[], intro: string, footer: string[] = []): string {
+/** How many of the findings that do not block a reason lists - they are said, not dwelt on. */
+const MAX_ASIDES = 5
+
+const clip = (text: string, max: number): string => (text.length > max ? text.slice(0, max) + '...' : text)
+const whereOf = (f: Finding): string => (f.file ? f.file + (f.line ? ':' + f.line : '') : '')
+
+/**
+ * What an agent reads when the gate speaks. The findings that block are
+ * numbered, one item per claim - a claim that fails two rules is one thing to
+ * fix, not two - each with its problem and its fix on lines of their own, so a
+ * model working down the list has one edit per number and the text to make it
+ * with. Everything else that is not a pass follows as one line each, after
+ * them, so a warning never sits between an agent and the error it has to fix.
+ */
+function formatReason(findings: Finding[], intro: string, opts: { blocking?: Level[]; footer?: string[] } = {}): string {
+  const blocking = opts.blocking ?? []
   const listed = REASON_ORDER.flatMap((level) => findings.filter((f) => f.level === level))
-  const lines = listed.slice(0, MAX_REASON_FINDINGS).map((f) => {
-    const where = f.file ? ' (' + f.file + (f.line ? ':' + f.line : '') + ')' : ''
-    const detail = f.detail.length > MAX_DETAIL ? f.detail.slice(0, MAX_DETAIL) + '...' : f.detail
-    return '- [' + f.level + '] ' + f.claim + where + ': ' + detail
+  const items = new Map<string, Finding[]>()
+  listed
+    .filter((f) => blocking.includes(f.level))
+    .forEach((f, i) => {
+      const key = f.line !== undefined ? whereOf(f) : '#' + i
+      items.set(key, [...(items.get(key) ?? []), f])
+    })
+  const lines: string[] = []
+  ;[...items.values()].slice(0, MAX_REASON_FINDINGS).forEach((group, i) => {
+    const where = whereOf(group[0]!)
+    lines.push('', i + 1 + '. ' + (where ? where + ' - ' : '') + clip(group[0]!.claim, 120))
+    for (const f of group) {
+      lines.push('   problem' + (blocking.length > 1 ? ' (' + f.level + ')' : '') + ': ' + clip(f.detail, MAX_DETAIL))
+      if (f.fix) lines.push(formatFix(f.fix, '   '))
+    }
   })
-  if (listed.length > MAX_REASON_FINDINGS) lines.push('- ... and ' + (listed.length - MAX_REASON_FINDINGS) + ' more')
-  return [intro, ...lines, ...footer].join('\n')
+  if (items.size > MAX_REASON_FINDINGS) lines.push('', '... and ' + (items.size - MAX_REASON_FINDINGS) + ' more')
+  const asides = listed.filter((f) => !blocking.includes(f.level))
+  if (asides.length > 0) {
+    if (blocking.length > 0) lines.push('', 'Not blocking:')
+    for (const f of asides.slice(0, MAX_ASIDES)) {
+      const where = whereOf(f)
+      lines.push('- [' + f.level + '] ' + f.claim + (where ? ' (' + where + ')' : '') + ': ' + clip(f.detail, MAX_DETAIL))
+      if (f.fix) lines.push(formatFix(f.fix, '  '))
+    }
+    if (asides.length > MAX_ASIDES) lines.push('- ... and ' + (asides.length - MAX_ASIDES) + ' more')
+  }
+  return [intro, ...lines, ...(opts.footer ?? [])].join('\n')
+}
+
+/**
+ * Says how to gather on the findings whose fix is to gather again. The core
+ * checks cannot know the project's command; the gate can, and "gather again"
+ * without one sends an agent off to find out how - the expensive path.
+ */
+function withGatherFix(findings: CodedFinding[], gather: GatherHow): CodedFinding[] {
+  const fix = 'gather again with ' + gatherWith(gather) + ', then cite the runs the new bundle lists - or mark the claims UNVERIFIED'
+  return findings.map((f) =>
+    f.level !== 'pass' && GATHER_CODES.has(f.code) && (f.fix === undefined || f.fix.startsWith('gather')) ? { ...f, fix } : f,
+  )
+}
+
+const GATHER_CODES = new Set<string>(['seal/stale', 'seal/no-run', 'claims/wrong-commit'])
+
+/**
+ * What a block reason ends with: the one command that marks a review's
+ * failing claims UNVERIFIED, and the claims the current run does back. The
+ * second is what makes the honest fix the cheap one for an agent that cannot
+ * work out the right sentence - it is handed the sentences. Not listed when
+ * the code changed since the run, since every one of them would then be
+ * refused as stale; the stale finding says to gather instead.
+ */
+function blockFooter(ctx: StopContext, findings: Finding[], blocking: Level[], changed: string[]): string[] {
+  const footer: string[] = []
+  const failing = changed.filter((r) => findings.some((f) => f.file === r && blocking.includes(f.level)))
+  if (failing.length > 0) {
+    footer.push(
+      '',
+      'To mark every failing claim in a review file UNVERIFIED in one step, run ' +
+        failing.map((r) => '`' + cliCommandFor(ctx.root) + ' claims ' + r + ' --fix`').join(' or ') + '.',
+    )
+  }
+  if (!('run' in ctx.current)) return footer
+  const stale = ctx.fingerprint() !== undefined && ctx.freshness().level === 'error'
+  const claimsFail = findings.some((f) => blocking.includes(f.level) && f.code !== undefined && /^(claims|seal)\//.test(f.code))
+  const ready = !stale && claimsFail ? readyClaims(ctx.current.run.bundle) : []
+  if (ready.length > 0) footer.push('', ...formatReady(ready, ctx.current.run.seal.runId))
+  return footer
 }
 
 /**
@@ -433,8 +574,12 @@ function stop(event: Extract<GateEvent, { kind: 'stop' }>, opts: GateOptions): G
   }
 
   const ctx = stopContext(root, state)
-  const findings = [...changed.flatMap((r) => checkReview(ctx, r)), ...(message !== undefined ? checkMessage(ctx, message) : [])]
+  const findings = withGatherFix(
+    [...changed.flatMap((r) => checkReview(ctx, r)), ...(message !== undefined ? checkMessage(ctx, message) : [])],
+    ctx.gather,
+  )
   const level = levelOf(findings)
+  const blocking: Level[] = opts.strict === true ? ['error', 'flaky', 'unverifiable'] : ['error']
   const failing = level === 'error' || (opts.strict === true && (level === 'unverifiable' || level === 'flaky'))
   const scope = [...changed, ...(message !== undefined ? ['final message'] : [])]
   const runId = 'run' in ctx.current ? ctx.current.run.seal.runId : undefined
@@ -470,8 +615,9 @@ function stop(event: Extract<GateEvent, { kind: 'stop' }>, opts: GateOptions): G
   const blockReason = formatReason(
     findings,
     'evidence-layer found problems in what you reported (' + scope.join(', ') +
-      '). Fix the claims - back them with the cited artifact, gather again with ' + gatherWith(ctx.gather) +
-      ', or mark them UNVERIFIED - then finish:',
+      '). Fix each numbered item, then finish. Each fix is written to be applied as it stands; marking a claim UNVERIFIED instead ' +
+      'is always allowed. After a code change, gather again with ' + gatherWith(ctx.gather) + '.',
+    { blocking, footer: blockFooter(ctx, findings, blocking, changed) },
   )
 
   if (typeof session !== 'object') {
@@ -483,7 +629,7 @@ function stop(event: Extract<GateEvent, { kind: 'stop' }>, opts: GateOptions): G
     }
     return decided({
       action: 'allow',
-      message: formatReason(findings, 'evidence-layer could not keep a retry count, so it let this stop through with errors:'),
+      message: formatReason(findings, 'evidence-layer could not keep a retry count, so it let this stop through with errors:', { blocking }),
       outcome: 'fail-open-error',
       level,
       findings,
@@ -508,7 +654,9 @@ function stop(event: Extract<GateEvent, { kind: 'stop' }>, opts: GateOptions): G
   }
   return decided({
     action: 'allow',
-    message: formatReason(findings, 'evidence-layer blocked ' + blocks + ' times and is letting this stop through. These problems remain:'),
+    message: formatReason(findings, 'evidence-layer blocked ' + blocks + ' times and is letting this stop through. These problems remain:', {
+      blocking,
+    }),
     outcome: 'retry-exhausted',
     level,
     findings,

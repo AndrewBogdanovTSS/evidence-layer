@@ -59,7 +59,7 @@ describe('--format json', () => {
     for (const review of ['examples/plain-node-project/reviews/good-claims.md', 'examples/plain-node-project/reviews/predicate-mismatch.md']) {
       const { text, json, report } = asJson('claims', review)
       expect(json.status).toBe(text.status)
-      expect(report.schema).toBe(4)
+      expect(report.schema).toBe(5)
       expect(report.check).toBe('claims')
       expect(report.findings.every((f) => f.code !== undefined && f.code in CODES)).toBe(true)
     }

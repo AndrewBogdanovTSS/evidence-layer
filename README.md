@@ -84,6 +84,15 @@ What this layer changes, concretely:
   than the shortcut loses to the shortcut every time, model or not. A run its
   time limit killed is suggested as "did not complete", never as a failure it
   never got to report.
+- **A wrong citation comes back with its correction.** A writer that cites
+  the wrong block or the wrong number - the mistake a smaller model makes most -
+  is not left to work out the fix from a sentence. Every failing finding
+  carries one, read off the run rather than guessed: the claim the cited run
+  does back, as the skeleton would write it, with its predicates filled in.
+  `claims review.md --fix` applies the one fix that needs no judgement, marking
+  every failing claim UNVERIFIED, so the cheapest way past a finding says less,
+  never more. Nothing here needs the writer to be a strong model; it needs it
+  to copy two lines.
 - **Agent review gets a scorecard instead of a vibe.** A commit fixing a bug a
   review let through adds `Missed-By: <review or PR>` to its own message, and
   `governance` extracts those into the journal on every run. "Is the agent's
@@ -226,6 +235,25 @@ rules are mechanical enough to check without reading the output for sense:
   `lintClaims(md, file, { requireWorkSummary: true })` also rejects a success
   claim over a lint or test artifact that carries no summary.
 
+Two more rules hold the claim's own words to the block it cites, just as
+mechanically:
+
+- **A claim cites a run of the kind it names.** "Lint reports no violations"
+  over a typecheck block is the wrong block - `claims/kind-mismatch` - whatever
+  that typecheck showed. The kinds are `classifyCommand`'s: tests, lint,
+  typecheck, lockfile, audit ("dependency audit", not a bare "audit" or
+  "vulnerability", which are ordinary words in a security fix's claims). A
+  claim that names none, or names several including the run's, is held to
+  nothing.
+- **A count the claim states is the run's count.** "72 passing tests" over a
+  work summary of `passed=71` is `claims/count-mismatch`, predicate or no
+  predicate. A number is read only where a word ties it to the run - "71
+  passing tests", "ran 71 tests", "7 files were linted", "3 skipped" - so
+  "adds 3 tests" and "touches 12 files" are left alone, and so is a sentence
+  about what used to be true ("fixes the 2 failing tests"). "Ran N tests" may
+  be the passed count or the total; a count of a kind the run does not
+  summarise is left alone.
+
 Those rules read the claim's wording, which is deliberately narrow and only in
 English. A claim can also say outright which numbers it rests on, as
 predicates inside the tag:
@@ -245,6 +273,24 @@ and so is a `VERIFIED[...]` bracket that is not an address at all - it does not
 fall back to bare `VERIFIED`. The skeleton writes the predicates for you, read
 off the run it gathered. There is no duration key: how long a run took is not
 a property of the code.
+
+Every failing finding carries a `fix` where one is mechanical - printed under
+it, as its own field in `--format json`, and in a GitHub annotation. A claim
+over the wrong run, or with the wrong number, is offered the claim its run does
+back; a receipt whose quote is wrong is offered the file's real first line:
+
+```text
+✘ the suite runs four passing tests, including the new string case. (review.md:17)
+        VERIFIED[tests-333881] `passed>=4` does not hold - the artifact says passed=3
+        fix: replace the claim and its grounding with the lines below - or mark the claim UNVERIFIED:
+          **Claim**: The test suite ran 3 passing tests and reports no failures.
+          **Grounding**: VERIFIED[tests-333881: exit=0, passed>=3, failed=0]
+```
+
+`npx evidence-layer claims review.md --fix` marks every claim an error failed
+UNVERIFIED, in the file, and checks it again. It never rewrites a sentence or a
+predicate to fit its run - that would make a claim pass by changing what it
+says - so it is the one fix applied for the writer rather than offered.
 
 For a review posted as a pull request comment, `generateClaimSkeleton` and
 `generateSampleSkeleton` take `{ fold: true }`: each artifact block, and the
@@ -340,17 +386,19 @@ CI checks a review after a person can already read it. The gate runs the same
 checks at the moment the agent says it is done, so an unbacked "tests pass" is
 caught by the agent that wrote it:
 
-- **When the session starts**, it tells the agent the claim grammar and
-  records which review files exist, so that it later checks only what *this*
-  session wrote.
+- **When the session starts**, it shows the agent the claim grammar as a
+  filled-in example rather than a template of placeholders, lists the claims
+  the sealed run for this commit backs, ready to paste, and records which
+  review files exist, so that it later checks only what *this* session wrote.
 - **Before each file write**, it refuses a write into its own ledger - an
   accidental-write guard, not a sandbox: a shell command can still write there.
 - **When the agent stops**, it runs `claims`, `receipt` and, against the sealed
   run, provenance and freshness - over every review file the session changed
   (default `review.md`) and the `**Claim**:` lines of the agent's final reply,
   whose ids resolve against the sealed bundle. Ordinary prose is not graded. An
-  error blocks the stop with the findings as the reason, and the agent fixes its
-  claims.
+  error blocks the stop, and the agent fixes its claims from the reason: one
+  numbered item per failing claim with its problem and its fix, the `--fix`
+  command for a review file, and the claims the current run does back.
 
 Two budgets keep it from becoming a trap. A **retry episode** opens at the first
 stop with errors and closes at the first clean one; inside it the gate blocks
@@ -558,7 +606,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **503 tests** across **38 files**, and that sentence is checked
+The suite is **523 tests** across **39 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

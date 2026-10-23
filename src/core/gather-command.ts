@@ -18,6 +18,9 @@
  * field names (npm when it names none). Anything else answers `null`, and the
  * caller says so in words rather than inventing a command that may not exist.
  *
+ * `cliCommandFor` answers the same question for this package's own CLI, so a
+ * message that says "run `claims review.md --fix`" can say how, too.
+ *
  * Not read: the environment a package manager sets for a script
  * (`npm_lifecycle_event`). A gather called from inside another script - a
  * test suite, a release script - would name that script instead.
@@ -35,6 +38,23 @@ export function gatherCommandFor(root: string, recorded?: string): string | null
   if (!read || !isRecord(read.scripts) || typeof read.scripts.evidence !== 'string') return null
   const manager = typeof read.packageManager === 'string' ? /^(npm|pnpm|yarn|bun)@/.exec(read.packageManager)?.[1] : undefined
   return (manager ?? 'npm') + ' run evidence'
+}
+
+/**
+ * How to run this package's CLI in the project at `root`, for a message that
+ * tells an agent to run one of its commands (`claims review.md --fix`). The
+ * package's own checkout runs its last build, as its gate does; any other
+ * project runs the copy it installed, through its package manager's runner.
+ * A guess at a global install is never made - `npx` finds the local one.
+ */
+export function cliCommandFor(root: string): string {
+  const read = readManifest(root)
+  if (read?.name === 'evidence-layer') return 'node dist/bin/evidence-layer.mjs'
+  const manager = typeof read?.packageManager === 'string' ? /^(npm|pnpm|yarn|bun)@/.exec(read.packageManager)?.[1] : undefined
+  if (manager === 'pnpm') return 'pnpm exec evidence-layer'
+  if (manager === 'yarn') return 'yarn evidence-layer'
+  if (manager === 'bun') return 'bunx evidence-layer'
+  return 'npx evidence-layer'
 }
 
 function readManifest(root: string): Record<string, unknown> | null {
