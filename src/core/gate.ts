@@ -199,9 +199,16 @@ function readyClaims(bundle: string): SuggestedClaim[] {
   return ready.slice(0, MAX_READY)
 }
 
+/**
+ * The ready claims as a message lists them. Session start does not fingerprint
+ * the tree - it runs at every session, and hashing a large checkout there is a
+ * cost every session pays - so the condition the claims hold under is said
+ * outright rather than checked: a file changed since the run makes them stale.
+ */
 function formatReady(ready: SuggestedClaim[], runId: string): string[] {
   return [
-    'Ready claims from run ' + runId + ' - keep the ones your report needs. In your final answer, paste a pair as it is; in a review file, copy it together with its artifact block from the evidence bundle, unedited:',
+    'Ready claims from run ' + runId + ' - keep the ones your report needs. In your final answer, paste a pair as it is; in a review file, copy it together with its artifact block from the evidence bundle, unedited. ' +
+      'They hold only while every file is what it was when that run was gathered - if anything changed since, gather again and use the new ones:',
     ...ready.flatMap((r) => ['', r.claim, r.grounding]),
   ]
 }
@@ -478,9 +485,14 @@ function blockFooter(ctx: StopContext, findings: Finding[], blocking: Level[], c
     )
   }
   if (!('run' in ctx.current)) return footer
-  const stale = ctx.fingerprint() !== undefined && ctx.freshness().level === 'error'
   const claimsFail = findings.some((f) => blocking.includes(f.level) && f.code !== undefined && /^(claims|seal)\//.test(f.code))
-  const ready = !stale && claimsFail ? readyClaims(ctx.current.run.bundle) : []
+  // Read here even when no text cited the run, and so nothing checked it yet:
+  // a text with no VERIFIED claim is exactly the one handed these, and claims
+  // the next stop refuses as stale would spend a block of the episode on
+  // following the gate's own advice. The block path only - a clean stop pays
+  // nothing more.
+  if (!claimsFail || ctx.freshness().level === 'error') return footer
+  const ready = readyClaims(ctx.current.run.bundle)
   if (ready.length > 0) footer.push('', ...formatReady(ready, ctx.current.run.seal.runId))
   return footer
 }

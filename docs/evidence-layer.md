@@ -188,7 +188,8 @@ the claim. And a count it states about the run ("71 passing tests", "ran 71
 tests", "7 files were linted", "0 failures") must be the count the run's work
 summary carries (`claims/count-mismatch`). A number no word ties to the run
 ("adds 3 tests") is not read, nor is any count in a sentence about what used
-to be true ("fixes the 2 failing tests").
+to be true ("fixes the 2 failing tests"), nor the number a count is taken out
+of ("3 of 71 tests failed").
 Both catch the citation a writer most often gets wrong, the wrong block,
 without reading the output for sense.
 

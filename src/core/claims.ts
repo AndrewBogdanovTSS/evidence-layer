@@ -273,12 +273,14 @@ const qualified = (m: RegExpMatchArray): Reading[] => [key(QUALIFIER_KEY[m[2]!.t
 // the writer pass it by choosing the spelling. Zero to twenty, the numbers
 // prose spells; "twenty-one" and above are written as digits in practice, and
 // "no" and "a" are not read - "no failing tests" is the outcome rules' claim,
-// and "a test" counts nothing.
+// and "a test" counts nothing. Nothing straight after a hyphen is read either:
+// `\b` falls inside "seventy-one" and "2-3", and "one" or "3" there is the
+// tail of another number, not a count.
 const NUMBER_WORDS = [
   'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
   'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
 ]
-const N = '(\\d+|' + NUMBER_WORDS.join('|') + ')'
+const N = '(?<!-)(\\d+|' + NUMBER_WORDS.join('|') + ')'
 const countRe = (source: string): RegExp => new RegExp(source.replaceAll('<n>', N), 'gi')
 const countValue = (written: string): number => {
   const word = NUMBER_WORDS.indexOf(written.toLowerCase())
@@ -313,6 +315,11 @@ const COUNT_RULES: readonly { re: RegExp; kind: 'tests' | 'lint'; readings: (m: 
 // a smaller cost than an error over an honest sentence.
 const HISTORY_RE = /\b(?:fix(?:es|ed|ing)?|previously|before|used to|no longer|earlier)\b/i
 
+// "3 of 71 tests failed": the number after "of" is what the count is taken
+// out of, not the count - read as one, an honest failure report failed over
+// `failed=3`. Not read at all, like the number before it.
+const OUT_OF_RE = /\bof\s+$/i
+
 /** One count a sentence states: the words, the number, the run kind it counts, and the readings it may equal. */
 interface StatedCount {
   text: string
@@ -324,7 +331,9 @@ interface StatedCount {
 function statedCounts(text: string): StatedCount[] {
   if (HISTORY_RE.test(text)) return []
   return COUNT_RULES.flatMap((rule) =>
-    [...text.matchAll(rule.re)].map((m) => ({ text: m[0], value: countValue(m[1]!), kind: rule.kind, readings: rule.readings(m) })),
+    [...text.matchAll(rule.re)]
+      .filter((m) => !OUT_OF_RE.test(text.slice(0, m.index)))
+      .map((m) => ({ text: m[0], value: countValue(m[1]!), kind: rule.kind, readings: rule.readings(m) })),
   )
 }
 
