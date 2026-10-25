@@ -12,7 +12,7 @@ jobs:
       # findings become annotations on its lines. A change with no review.md is
       # `misconfigured`, not a pass. It runs the evidence-layer installed above,
       # so this job and a laptop give the same verdict.
-      - uses: AndrewBogdanovTSS/evidence-layer@v0.14.0
+      - uses: AndrewBogdanovTSS/evidence-layer@v0.15.0
         with:
           claims: review.md
           governance: 'true'
