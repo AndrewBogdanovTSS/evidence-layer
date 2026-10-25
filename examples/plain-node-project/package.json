@@ -8,6 +8,7 @@
     "test": "node --test test/run.test.js",
     "lint": "echo no linter configured && exit 0",
     "evidence": "node scripts/evidence.mjs",
+    "ci:local": "node scripts/ci-local.mjs",
     "standalone": "node scripts/standalone.mjs"
   },
   "devDependencies": {

@@ -43,7 +43,9 @@ makes the copy where they work, and `test/example.test.ts` runs on that copy.
 Its workflow does not run here either - GitHub reads only the top level - so
 the `example-evidence` and `example-review` jobs in `.github/workflows/ci.yml`
 run its gather-then-verify handoff on such a copy. A change to how the
-example's workflow hands the bundle over changes those jobs too.
+example's workflow hands the bundle over changes those jobs too, and
+`scripts/ci-local.mjs` (`npm run ci:local`, which reads the review step out of
+the workflow) must still read it - `test/example.test.ts` holds it to that.
 
 ## Rules the tests enforce
 

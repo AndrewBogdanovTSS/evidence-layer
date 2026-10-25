@@ -518,6 +518,10 @@ proves more, but only in the checkout that gathered.
 [`examples/plain-node-project/.github/workflows/ci.yml`](examples/plain-node-project/.github/workflows/ci.yml)
 is the layout: gather, then review, then verify
 ([DEC-0011](docs/decisions/0011-ci-evidence-crosses-jobs-as-a-bundle.md)).
+Its `npm run ci:local` runs those jobs on your machine the same way, the model
+step read out of the workflow rather than copied, so you see what CI will
+report before you push - see
+[the example's README](examples/plain-node-project/README.md#before-you-push-npm-run-cilocal).
 
 Outside the action, `--format github` on `claims`, `receipt` and `governance`
 does the same in any `run:` step. A review is text written by someone this
@@ -645,7 +649,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **546 tests** across **40 files**, and that sentence is checked
+The suite is **550 tests** across **40 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

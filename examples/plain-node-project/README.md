@@ -24,6 +24,7 @@ It exists twice over.
    | [`package.json`](package.json) | `evidence-layer` as a dev dependency (this checkout, via `file:../..`; in your project, the registry) and an `evidence` script |
    | [`scripts/evidence.mjs`](scripts/evidence.mjs) | gathers the evidence before a review is written: runs `npm test`, appends Node's test counts as a work summary, seals the run, and exits 1 when the suite failed |
    | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | gathers in CI - the suite runs once, inside the gather - and uploads the bundle; checks governance alongside; on a pull request, a model reviews from the bundle and its review is held to that bundle - see [below](#in-ci-gather-review-verify) |
+   | [`scripts/ci-local.mjs`](scripts/ci-local.mjs) | `npm run ci:local`: the workflow's jobs, run locally the way CI runs them - see [below](#before-you-push-npm-run-cilocal) |
    | [`.claude/settings.json`](.claude/settings.json), [`.codex/hooks.json`](.codex/hooks.json) | the runtime gate, written by `evidence-layer init claude` and `init codex` |
    | [`scripts/standalone.mjs`](scripts/standalone.mjs) | `npm run standalone`: copies this project out as a repository of its own - see below. Not part of the setup; the copy leaves it behind |
    | [`docs/decisions/0001-example.md`](docs/decisions/0001-example.md) | two invariants, one enforced by a command and one by "a human" |
@@ -298,6 +299,53 @@ To use it, in a repository of its own:
   block needs no stronger model). Pull requests from forks get neither secrets
   nor a token that can comment, which is why `review` is not required.
 - The default branch is `main`; change `branches:` if yours is not.
+
+### Before you push: `npm run ci:local`
+
+`npm run ci:local` runs the workflow's jobs on your machine, in the order and
+shape CI runs them, and ends with what CI would report:
+
+```text
+=== what CI would report ===========================================
+  evidence    required  pass
+  governance  required  pass
+  review      optional  pass - review from the model
+```
+
+- `evidence` and `governance` run side by side; `review` runs only once
+  `evidence` passed, as `needs: evidence` makes it.
+- The review's checks read the bundle from a separate directory - the
+  "artifact" - not from the working tree, so a review that cites a block the
+  gather did not write, or edits one, fails here exactly as it would in CI.
+- The model step is read out of the workflow - its `prompt`, `claude_args` and
+  `settings` - not kept as a second copy, so it cannot drift from what CI asks.
+  It needs the `claude` command (Claude Code) on PATH and spends tokens as the
+  CI job does. `REVIEW_MODEL=claude-sonnet-5-5 npm run ci:local` stands in for
+  the repository variable.
+
+Run it in a repository of its own - `npm run standalone` makes one from this
+template; inside evidence-layer's checkout it refuses, because git would answer
+for evidence-layer. Commit the change first: it gathers from the working tree,
+where CI gathers from the commit, and says so when the two differ.
+
+| Command | What it runs |
+| --- | --- |
+| `npm run ci:local` | every job, the review by the model - against `origin/main`, or `main` when there is no remote |
+| `npm run ci:local -- --base <ref>` | the same, against the base you name |
+| `npm run ci:local -- --review-skeleton` | the review is the bundle's own suggested claims - what the model is asked to copy - so the whole pipeline runs with no model and no tokens |
+| `npm run ci:local -- --review notes.md` | the review is a file you wrote, checked as CI would check the model's |
+| `npm run ci:local -- --no-review` | the two required jobs only |
+
+It exits 0 when every job that ran passed, 1 when one failed, and 2 when it
+could not run - a bad option, no repository of its own, or a review step in the
+workflow it cannot read. A model step on an empty diff is skipped rather than
+paid for. What it leaves behind - `evidence.local.md`, `change.diff`,
+`ai-review.md` - is ignored by git, and the summary prints where the "artifact"
+copy is.
+
+What it does not reproduce: a fresh checkout and `npm ci` (it uses your working
+tree and `node_modules`), the pull request comment (it prints the review
+instead), and required checks, which only the repository's settings make.
 
 ## Using it on your own project
 

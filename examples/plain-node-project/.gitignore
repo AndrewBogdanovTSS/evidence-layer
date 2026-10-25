@@ -1,3 +1,7 @@
 node_modules/
 # Written by scripts/evidence.mjs - one working copy's evidence, never history.
 evidence.local.md
+# Written by the workflow's jobs, and by scripts/ci-local.mjs when it runs them:
+# the diff the review reads, and the review the model writes.
+change.diff
+ai-review.md
