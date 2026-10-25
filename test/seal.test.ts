@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -168,27 +168,26 @@ describe('sourceFingerprint moves for every change git can see, and names it', (
     expect(fp(dir).treeId).toBe(before)
   })
 
-  // An edit that keeps a file's size, made in the second its index was
-  // written, leaves every stat field git compares as it was - the example's
-  // end-to-end test does exactly this, in under a second. git rereads such a
-  // file only because its timestamp is not older than the index's ("racily
-  // clean"). A throwaway index stamped with the moment it was copied loses
-  // that, and the edit reads as no change: `seal/fresh` over changed code.
-  // The second is pinned here rather than raced for, so this fails every run.
+  // An edit that keeps a file's size, made in the second git last wrote the
+  // index, matches every stat field Linux git compares - it reads timestamps
+  // to the second. git rereads such a file only because its entry is not
+  // older than the index ("racily clean"). A throwaway copy of the index
+  // stamped with the moment it was copied is newer than that entry once the
+  // copy falls in the next second, and the edit reads as no change: the seal
+  // called changed code fresh, intermittently, in example.test.ts on Linux CI.
+  // So the timing is made to happen rather than faked with utimes: commit and
+  // edit inside one second, fingerprint in the next. Where git compares
+  // sub-second times (git for Windows) it holds either way.
   it('moves for a same-size edit made in the second the index was written', () => {
+    const waitUntil = (ready: () => boolean) => {
+      while (!ready()) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5)
+    }
+    waitUntil(() => Date.now() % 1000 < 100)
     const dir = repo({ 'src/a.js': 'n + 1\n' })
-    // ctime cannot be set from outside; the case it stands in for is an edit
-    // close enough that ctime agrees too.
-    sh(dir, 'config', 'core.trustctime', 'false')
-    const second = new Date(Math.floor(Date.now() / 1000 - 60) * 1000)
-    utimesSync(join(dir, 'src/a.js'), second, second)
-    sh(dir, 'update-index', '-q', '--refresh')
-    utimesSync(join(dir, '.git', 'index'), second, second)
     const before = fp(dir).treeId
-
     writeFileSync(join(dir, 'src/a.js'), 'n + 2\n')
-    utimesSync(join(dir, 'src/a.js'), second, second)
-    expect(sh(dir, 'status', '--porcelain')).toContain('src/a.js')
+    const second = Math.floor(statSync(join(dir, '.git', 'index')).mtimeMs / 1000)
+    waitUntil(() => Math.floor(Date.now() / 1000) > second)
     expect(fp(dir).treeId).not.toBe(before)
   })
 
