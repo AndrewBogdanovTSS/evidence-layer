@@ -90,6 +90,15 @@ export interface Finding {
    * and owe nobody a registry.
    */
   code?: string
+  /**
+   * What would settle the finding, written to be applied as it stands: the
+   * lines to put in place of a claim, the row a receipt is missing, or the
+   * command to run. Read off the artifact or the repository, never guessed -
+   * a writer who could not work out the corrected line is handed it, which
+   * is what lets a smaller model fix a claim it got wrong. Absent where no
+   * fix is mechanical; a fix that says less (`UNVERIFIED`) is always one.
+   */
+  fix?: string
 }
 
 /**
@@ -125,10 +134,19 @@ export function report(title: string, findings: Finding[]): void {
     const where = f.file ? ' (' + f.file + (f.line ? ':' + f.line : '') + ')' : ''
     console.log(ICON[f.level] + ' ' + f.claim + where)
     if (f.detail) console.log('        ' + f.detail)
+    if (f.fix) console.log(formatFix(f.fix, '        '))
   }
   console.log('')
   console.log(summarise(findings))
   console.log('')
+}
+
+/** A finding's fix as printed: `fix: ` and its first line, any further lines indented under it. */
+export function formatFix(fix: string, indent: string): string {
+  return fix
+    .split('\n')
+    .map((line, i) => (i === 0 ? indent + 'fix: ' + line : indent + '  ' + line))
+    .join('\n')
 }
 
 export function summarise(findings: Finding[]): string {

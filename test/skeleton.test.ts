@@ -26,6 +26,13 @@ describe('generateClaimSkeleton', () => {
     expect(skeleton).not.toContain('reports no failures')
   })
 
+  it('writes one claim per id - two steps that ran the same command at the same commit are one run', () => {
+    // This repository's lint step is its typechecker: same command, same id.
+    const skeleton = generateClaimSkeleton([artifact('pnpm typecheck', 0, 'types-eeeeee'), artifact('pnpm typecheck', 0, 'types-eeeeee')])
+    expect(skeleton.match(/\*\*Claim\*\*/g)).toHaveLength(1)
+    expect(skeleton.match(/```artifact:types-eeeeee/g)).toHaveLength(1)
+  })
+
   it('skips the diff kind - it is context, not a claim a reader would grade', () => {
     const skeleton = generateClaimSkeleton([artifact('git diff --stat a...b', 0, 'diff-cccccc')])
     expect(skeleton.trim()).toBe('')

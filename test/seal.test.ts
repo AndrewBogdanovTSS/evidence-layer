@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { artifactId, formatArtifact } from '../src/core/artifact'
 import { gatherEvidence } from '../src/core/gather'
@@ -123,7 +123,7 @@ describe('sourceFingerprint', () => {
     const wt = dir + '-wt'
     sh(dir, 'worktree', 'add', '-q', wt)
     expect(readFileSync(join(wt, '.git'), 'utf8')).toMatch(/^gitdir: /)
-    expect(stateDir(wt)).toBe(join(dir, '.git', 'worktrees', wt.split('/').at(-1)!, 'evidence-layer'))
+    expect(stateDir(wt)).toBe(join(dir, '.git', 'worktrees', basename(wt), 'evidence-layer'))
     expect(fp(wt).treeId).toBe(fp(dir).treeId)
   })
 })
@@ -131,21 +131,21 @@ describe('sourceFingerprint', () => {
 describe('sourceFingerprint moves for every change git can see, and names it', () => {
   // DEC-0005: editing any non-ignored file always moves the fingerprint. An
   // edit is one kind of change; these are the others a working tree has.
-  const cases: [string, (dir: string) => void, string[]][] = [
+  const cases: [string, (dir: string) => void, string[], { skip?: boolean }?][] = [
     ['a deleted tracked file', (dir) => rmSync(join(dir, 'src/a.js')), ['src/a.js']],
     ['a renamed file - as its old path and its new one', (dir) => renameSync(join(dir, 'src/a.js'), join(dir, 'src/b.js')), ['src/a.js', 'src/b.js']],
     ['a deleted directory, every file in it', (dir) => rmSync(join(dir, 'src'), { recursive: true }), ['src/a.js', 'src/nested/c.js']],
     ['a deleted untracked file', (dir) => rmSync(join(dir, 'notes.txt')), ['notes.txt']],
     ['a symbolic link pointed elsewhere', (dir) => (rmSync(join(dir, 'link')), symlinkSync('src/nested/c.js', join(dir, 'link'))), ['link']],
-  ]
-  if (process.platform !== 'win32') {
     // Git records only the executable bit, and only where `core.fileMode` is
     // on - the default on POSIX; Windows has no bit to record, so no change.
-    cases.push(['a file made executable', (dir) => chmodSync(join(dir, 'src/a.js'), 0o755), ['src/a.js']])
-  }
+    // Skipped there rather than left out, so the suite is one size everywhere
+    // and the README's test count holds on every platform.
+    ['a file made executable', (dir) => chmodSync(join(dir, 'src/a.js'), 0o755), ['src/a.js'], { skip: process.platform === 'win32' }],
+  ]
 
-  for (const [what, change, named] of cases) {
-    it(what, () => {
+  for (const [what, change, named, opts] of cases) {
+    it(what, opts ?? {}, () => {
       const dir = repo({ 'src/a.js': 'a\n', 'src/nested/c.js': 'c\n' })
       symlinkSync('src/a.js', join(dir, 'link'))
       writeFileSync(join(dir, 'notes.txt'), 'untracked, not ignored\n')
