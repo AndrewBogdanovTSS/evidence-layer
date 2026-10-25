@@ -168,6 +168,30 @@ describe('sourceFingerprint moves for every change git can see, and names it', (
     expect(fp(dir).treeId).toBe(before)
   })
 
+  // An edit that keeps a file's size, made in the second its index was
+  // written, leaves every stat field git compares as it was - the example's
+  // end-to-end test does exactly this, in under a second. git rereads such a
+  // file only because its timestamp is not older than the index's ("racily
+  // clean"). A throwaway index stamped with the moment it was copied loses
+  // that, and the edit reads as no change: `seal/fresh` over changed code.
+  // The second is pinned here rather than raced for, so this fails every run.
+  it('moves for a same-size edit made in the second the index was written', () => {
+    const dir = repo({ 'src/a.js': 'n + 1\n' })
+    // ctime cannot be set from outside; the case it stands in for is an edit
+    // close enough that ctime agrees too.
+    sh(dir, 'config', 'core.trustctime', 'false')
+    const second = new Date(Math.floor(Date.now() / 1000 - 60) * 1000)
+    utimesSync(join(dir, 'src/a.js'), second, second)
+    sh(dir, 'update-index', '-q', '--refresh')
+    utimesSync(join(dir, '.git', 'index'), second, second)
+    const before = fp(dir).treeId
+
+    writeFileSync(join(dir, 'src/a.js'), 'n + 2\n')
+    utimesSync(join(dir, 'src/a.js'), second, second)
+    expect(sh(dir, 'status', '--porcelain')).toContain('src/a.js')
+    expect(fp(dir).treeId).not.toBe(before)
+  })
+
   it('makes a sealed run stale for a rename, naming both paths', () => {
     const dir = repo({ 'src/a.js': 'a\n' })
     const b = block('Tests 1 passed (1)')
