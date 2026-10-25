@@ -33,7 +33,7 @@ import {
   report,
   run,
 } from '../src/index'
-import type { Finding, RunResult } from '../src/index'
+import type { Finding, Report, ReportFinding, RunResult } from '../src/index'
 import { setupLadder } from '../demo/ladder.mjs'
 
 const HELP = `
@@ -138,6 +138,15 @@ function checkFixtures(repo: string): Finding[] {
  * not files but refs (see `demo/ladder.mjs`), so they are recreated first -
  * idempotently, outside `refs/heads/`, touching neither the working tree nor
  * the index. A clone where git refuses that gets `unverifiable`, not a pass.
+ *
+ * The exit code alone is not the claim. A checker that throws also exits 1,
+ * so `ladder-bad` would "still fail" with its parser gone - which is what
+ * TypeScript 7 did, its root export no longer carrying the compiler API. So
+ * each fixture is run with `--format json` and must also produce the findings
+ * it was built to produce, at the level it was built to produce them: the
+ * renamed copy of `formatPrice`, caught by the trailer check and by the clone
+ * check. Matched on the claim and the detail rather than a code, because
+ * `check:ladder` is this repository's script and its findings carry none.
  */
 function checkLadderFixtures(repo: string): Finding[] {
   try {
@@ -151,20 +160,77 @@ function checkLadderFixtures(repo: string): Finding[] {
       },
     ]
   }
-  const expectations = [
-    { ref: 'demo/ladder-bad', exit: EXIT.failed },
-    { ref: 'demo/ladder-refactor', exit: EXIT.ok },
+  const rung = 'Ladder-Rung: 2 reuse formatPrice'
+  const clone = 'no function this commit adds is an existing one renamed'
+  const expectations: { ref: string; exit: number; findings: { claim: string; level: string; detail?: RegExp }[] }[] = [
+    {
+      ref: 'demo/ladder-bad',
+      exit: EXIT.failed,
+      findings: [
+        { claim: rung, level: 'error', detail: /\bformatDiscount\b.* is formatPrice renamed/ },
+        { claim: clone, level: 'error', detail: /\bformatDiscount\b.* is formatPrice\b/ },
+      ],
+    },
+    {
+      ref: 'demo/ladder-refactor',
+      exit: EXIT.ok,
+      findings: [
+        { claim: rung, level: 'pass' },
+        { claim: clone, level: 'pass' },
+      ],
+    },
   ]
-  return expectations.map(({ ref, exit }): Finding => {
-    const result = run('pnpm check:ladder ' + ref, { cwd: repo, timeoutMs: 120_000 })
-    return {
-      level: result.exitCode === exit ? 'pass' : 'error',
-      claim: 'fixture ' + ref + ' still exits ' + exit,
-      detail: result.exitCode === exit ? 'as expected' : 'exited ' + result.exitCode + ' instead',
-      expected: exit,
-      observed: result.exitCode,
+  return expectations.map(({ ref, exit, findings }): Finding => {
+    const result = run('pnpm check:ladder ' + ref + ' --format json', { cwd: repo, timeoutMs: 120_000 })
+    const claim = 'fixture ' + ref + ' still exits ' + exit + ', for the reason it was built for'
+    if (result.exitCode !== exit) {
+      return { level: 'error', claim, detail: 'exited ' + result.exitCode + ' instead', expected: exit, observed: result.exitCode }
     }
+    const reported = ladderFindings(result.output)
+    if (!reported) {
+      return {
+        level: 'error',
+        claim,
+        detail: 'exited ' + exit + ' but printed no report - the checker did not get as far as checking',
+        expected: exit,
+        observed: result.exitCode,
+      }
+    }
+    const missing = findings.filter(
+      (want) =>
+        !reported.some((f) => f.claim === want.claim && f.level === want.level && (!want.detail || want.detail.test(f.detail))),
+    )
+    return missing.length === 0
+      ? { level: 'pass', claim, detail: 'as expected', expected: exit, observed: result.exitCode }
+      : {
+          level: 'error',
+          claim,
+          detail:
+            'exited ' + exit + ', but without ' + missing.map((m) => m.level + ' "' + m.claim + '"').join(' or ') +
+            ' - it reported: ' + (reported.map((f) => f.level + ' "' + f.claim + '"').join(', ') || 'nothing'),
+          expected: exit,
+          observed: result.exitCode,
+        }
   })
+}
+
+/**
+ * The findings out of `check:ladder --format json`. The document is the whole
+ * of the script's stdout, but `run` hands back pnpm's lines around it too, so
+ * it is cut out by its first and last lines - `JSON.stringify` with an indent
+ * puts the outer braces, and only those, at the start of a line.
+ */
+function ladderFindings(output: string): ReportFinding[] | null {
+  const lines = output.split('\n')
+  const start = lines.indexOf('{')
+  const end = lines.indexOf('}', start)
+  if (start === -1 || end === -1) return null
+  try {
+    const parsed = JSON.parse(lines.slice(start, end + 1).join('\n')) as Partial<Report>
+    return Array.isArray(parsed.findings) ? parsed.findings : null
+  } catch {
+    return null
+  }
 }
 
 function main(): void {
