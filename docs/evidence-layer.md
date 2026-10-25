@@ -250,6 +250,19 @@ Read `bad-claims.md` and `good-claims.md` side by side. The repaired one is
 longer, hedges more and sounds less confident - and it is the only one of the
 two that could be proved wrong.
 
+`--seal` holds every cited block to the run this checkout gathered, and so
+works only where the gather ran. `--bundle <file>` holds it to a bundle file
+instead - in CI, the one a gather job uploaded, wherever the review was then
+written: every cited block must be, canonically, the one the bundle carries
+under its id. Without one of the two, `claims` cannot tell a gathered block
+from one typed by hand under an invented id: the id hashes the full output and
+the block shows a trimmed one, so the id cannot be recomputed from it. A
+bundle is as trustworthy as where it came from - CI's own artifact, not one
+committed beside the review - and carries no fingerprint of the source, so
+pass `--sha` with the commit under review; without it, the review's receipt
+and then the bundle's own `- Head:` line name the commit. A bundle file that
+is not there is bad usage, exit 2, never a pass.
+
 Referencing an artifact is not supposed to cost more than writing a bare tag -
 see step 3 below. `pnpm evidence` computes every id and writes the
 `**Claim**` / `**Grounding**: VERIFIED[id: predicates]` pair already filled
@@ -529,6 +542,10 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `seal/stale` | the code changed after the evidence was gathered |
 | `seal/partial-coverage` | what was hashed is unchanged, but part of the tree could not be hashed |
 | `seal/fresh` | the code is what it was when the evidence was gathered |
+| `bundle/broken` | the bundle to check against cannot be read as an evidence bundle |
+| `bundle/not-gathered` | the bundle has no artifact with this id - naming the bundle's id for the same command, when it has one |
+| `bundle/edited` | the cited block differs from the one in the bundle |
+| `bundle/provenance` | the cited block is the one in the bundle |
 | `governance/no-invariants` | no decision record declares an invariant |
 | `governance/no-command` | an invariant names no runnable command |
 | `governance/unknown-script` | an invariant names a script package.json does not have |

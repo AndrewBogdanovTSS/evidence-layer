@@ -9,23 +9,32 @@
  * no judgement, so it is the one this applies; every other fix is printed
  * beside its finding for the writer to make.
  *
+ * `--bundle` holds every cited block to a bundle file instead of a checkout's
+ * seal - the one a CI gather job uploaded, wherever the review was written.
+ * A bundle that is not there is bad usage, never a pass.
+ *
  * Exit codes: 0 clean - 1 at least one error - 2 bad usage.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { EXIT, downgradeClaims, exitCodeFor, formatOf, help, lintClaims, parseArgs, parseReceipt, printFindings, usage } from '../index'
 import { checkFreshness, checkProvenance, readCurrentRun } from '../core/seal'
+import { checkBundle, readBundle } from '../core/bundle'
 import type { CodedFinding } from '../index'
 
 const HELP = `
-evidence-layer claims <review.md> [--sha <expected-head>] [--seal] [--repo <path>] [--fix] [--strict]
-                                  [--format text|json|github]
+evidence-layer claims <review.md> [--sha <expected-head>] [--seal] [--bundle <file>] [--repo <path>]
+                                  [--fix] [--strict] [--format text|json|github]
 
 Lints a review for grounding tags and their required backing.
 
-  --sha     expected head commit; falls back to the review's own Access Receipt
+  --sha     expected head commit; falls back to the review's own Access Receipt,
+            then to the head the --bundle names
   --seal    also hold every cited block to this checkout's sealed run: it must be
             one the gatherer wrote, unedited, and the code must not have changed
             since. Local only - CI has no seal unless it gathers its own.
+  --bundle  also hold every cited block to this evidence bundle - the one a CI
+            gather job uploaded - wherever the review was written: it must be
+            in the bundle, unedited. Does not check freshness; pass --sha
   --repo    the checkout whose seal to read (default: the current directory)
   --fix     mark every claim an error failed UNVERIFIED, in the review itself,
             then check it again. Never rewrites a sentence or a predicate - the
@@ -52,11 +61,22 @@ export function run(argv: string[]): void {
 
   const repo = typeof args.repo === 'string' ? args.repo : process.cwd()
   const current = args.seal === true ? readCurrentRun(repo) : undefined
+  if (args.bundle !== undefined && typeof args.bundle !== 'string') usage(HELP)
+  if (typeof args.bundle === 'string' && !existsSync(args.bundle)) {
+    console.error('no such bundle file: ' + args.bundle)
+    process.exit(EXIT.usage)
+  }
+  const given = typeof args.bundle === 'string' ? readBundle(args.bundle) : undefined
   const check = (markdown: string): CodedFinding[] => {
-    const expectedHeadSha = typeof args.sha === 'string' ? args.sha : parseReceipt(markdown).headSha
-    // With a seal there is a bundle to suggest runs from; without one, nothing local is read.
-    const suggestFrom = current && 'run' in current ? current.run.bundle : undefined
+    const bundle = given && 'bundle' in given ? given.bundle : undefined
+    const expectedHeadSha = typeof args.sha === 'string' ? args.sha : parseReceipt(markdown).headSha ?? bundle?.headSha
+    // With a seal or a bundle there is a bundle to suggest runs from; without one, nothing local is read.
+    const suggestFrom = current && 'run' in current ? current.run.bundle : bundle?.text
     const findings: CodedFinding[] = lintClaims(markdown, path, { expectedHeadSha, suggestFrom })
+    if (bundle) findings.push(...checkBundle(markdown, path, bundle))
+    else if (given && 'broken' in given) {
+      findings.push({ level: 'error', code: 'bundle/broken', claim: 'the cited blocks are the ones in ' + args.bundle, detail: given.broken })
+    }
     if (current === undefined) return findings
     if ('run' in current) {
       findings.push(...checkProvenance(markdown, path, current.run), checkFreshness(repo, current.run))

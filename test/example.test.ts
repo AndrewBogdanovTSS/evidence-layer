@@ -107,6 +107,26 @@ describe('examples/plain-node-project, end to end', () => {
     expect(readFileSync(join(dir, 'evidence.local.md'), 'utf8')).toContain('[SUMMARY tests: passed=0 failed=3')
   })
 
+  it('checks a review written where there is no seal against the bundle the gather wrote', () => {
+    const dir = standaloneCopy()
+    const gathered = spawnSync(process.execPath, ['scripts/evidence.mjs', '--base', 'HEAD'], { cwd: dir, encoding: 'utf8' })
+    expect(gathered.status, gathered.stderr).toBe(0)
+    const suggested = /## Suggested claims\n([\s\S]*?)(?:\n## |$)/.exec(readFileSync(join(dir, 'evidence.local.md'), 'utf8'))![1]!
+
+    // The review job: no checkout, no seal - the review and the bundle the gather job uploaded.
+    const job = mkdtempSync(join(tmpdir(), 'el-example-review-'))
+    writeFileSync(join(job, 'evidence.local.md'), readFileSync(join(dir, 'evidence.local.md')))
+    writeFileSync(join(job, 'review.md'), suggested)
+    const check = () => {
+      const res = spawnSync(process.execPath, [BIN, 'claims', 'review.md', '--bundle', 'evidence.local.md', '--format', 'json'], { cwd: job, encoding: 'utf8' })
+      return { status: res.status, codes: (JSON.parse(res.stdout) as { findings: { code: string }[] }).findings.map((f) => f.code) }
+    }
+    expect(check()).toEqual({ status: 0, codes: expect.arrayContaining(['claims/verified', 'bundle/provenance']) })
+    // One line of the block's output changed: still a well-formed block, no longer the gatherer's.
+    writeFileSync(join(job, 'review.md'), suggested.replace('# tests 3', '# tests 4'))
+    expect(check()).toEqual({ status: 1, codes: expect.arrayContaining(['bundle/edited']) })
+  })
+
   it('runs the hook commands its .claude and .codex files hold, the way each host runs them', () => {
     const dir = standaloneCopy()
     const command = (file: string) =>

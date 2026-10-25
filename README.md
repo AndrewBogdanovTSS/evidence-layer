@@ -143,7 +143,7 @@ npx evidence-layer journal tag <id> real     # mark a finding real or false
 
 | command | the claim it makes falsifiable |
 | --- | --- |
-| `claims` | "I verified this" - every `VERIFIED[id]` tag must address a real artifact collected at the commit under review |
+| `claims` | "I verified this" - every `VERIFIED[id]` tag must address a real artifact collected at the commit under review; with `--seal`, one this checkout's gather wrote about this code, and with `--bundle`, one a given bundle carries |
 | `receipt` | "I read this repository" - the review's Access Receipt must match the repository's own git output, and a cited file must be backed by that file's own verbatim first line |
 | `ci-summary` | nothing; it renders a captured run for a CI job summary, and reports `unverifiable` when it has nothing to read |
 | `governance` | "this is enforced" - every invariant a decision record declares must be reachable from a git hook or a CI workflow, and no governance exception may be past its expiry; on the way, it records every `Missed-By:` commit trailer into the journal (`--no-journal` to skip) |
@@ -392,6 +392,15 @@ catches the default failure, not someone rewriting it on purpose; CI, which
 gathers its own evidence, stays the independent party. Without `--seal`,
 nothing changes and nothing local is read.
 
+It also holds only in the checkout that gathered. Where the review is written
+somewhere else - a later CI job, a person reading the bundle CI uploaded -
+`--bundle <file>` does the provenance half instead: every cited block must be,
+canonically, the one that bundle carries under its id (`bundle/edited`,
+`bundle/not-gathered`). A bundle has no fingerprint of the source, so freshness
+is not checked; give `--sha` the commit under review, and a bundle from any
+other commit fails as `claims/wrong-commit`. A bundle that is not there is bad
+usage, never a pass.
+
 ## In an agent's session: the runtime gate
 
 CI checks a review after a person can already read it. The gate runs the same
@@ -481,6 +490,8 @@ package's `2` (bad usage) is their "block".
     # receipt: review.md         # needs fetch-depth: 0 and the target branch
     # governance: 'true'         # also run governance --enforce
     # strict: 'true'             # warnings and unverifiable fail too
+    # bundle: evidence.local.md  # hold every cited block to the bundle CI gathered
+    # sha: ${{ github.event.pull_request.head.sha }}
 ```
 
 Every finding that is not a pass becomes an annotation on its line, titled by
@@ -618,7 +629,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **536 tests** across **39 files**, and that sentence is checked
+The suite is **545 tests** across **40 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

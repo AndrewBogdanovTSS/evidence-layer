@@ -15,7 +15,7 @@ const ACTION = join(root, 'action', 'run.mjs')
 const GOOD = readFileSync(join(root, 'examples', 'plain-node-project', 'reviews', 'good-claims.md'), 'utf8')
 const BAD = readFileSync(join(root, 'examples', 'plain-node-project', 'reviews', 'bad-claims.md'), 'utf8')
 
-function workspace(pkg: 'installed' | 'old' | 'unbuilt-self' | 'none'): string {
+function workspace(pkg: 'installed' | 'old' | 'no-bundle' | 'unbuilt-self' | 'none'): string {
   const dir = mkdtempSync(join(tmpdir(), 'el-action-'))
   writeFileSync(join(dir, 'good.md'), GOOD)
   writeFileSync(join(dir, 'bad.md'), BAD)
@@ -26,6 +26,13 @@ function workspace(pkg: 'installed' | 'old' | 'unbuilt-self' | 'none'): string {
   if (pkg === 'old') {
     mkdirSync(join(dir, 'node_modules', 'evidence-layer'), { recursive: true })
     writeFileSync(join(dir, 'node_modules', 'evidence-layer', 'package.json'), '{"name":"evidence-layer","version":"0.6.0","evidenceLayer":{"hookProtocol":1}}')
+  }
+  if (pkg === 'no-bundle') {
+    mkdirSync(join(dir, 'node_modules', 'evidence-layer'), { recursive: true })
+    writeFileSync(
+      join(dir, 'node_modules', 'evidence-layer', 'package.json'),
+      '{"name":"evidence-layer","version":"0.15.0","evidenceLayer":{"hookProtocol":1,"outputFormats":["text","json","github"]}}',
+    )
   }
   if (pkg === 'unbuilt-self') writeFileSync(join(dir, 'package.json'), '{"name":"evidence-layer","version":"9.9.9"}')
   return dir
@@ -114,6 +121,25 @@ describe('the action', () => {
     writeFileSync(log, '')
     expect(action(workspace('none'), { claims: 'good.md', version: '0.6.0' }, env).outputs.conclusion).toBe('success')
     expect(readFileSync(log, 'utf8').trim()).toBe('--yes evidence-layer@0.6.0 claims good.md --format github')
+  })
+
+  it('holds every claims review to the bundle it is given, and a missing bundle is misconfigured', () => {
+    const dir = workspace('installed')
+    // A bundle carrying exactly good.md's block - and one carrying only a different run.
+    writeFileSync(join(dir, 'bundle.md'), GOOD)
+    writeFileSync(join(dir, 'other.md'), '```artifact:tests-abcdef@f8ae76a\n$ npm test\nok\nexit: 0\n```\n')
+    const held = action(dir, { claims: 'good.md', bundle: 'bundle.md' })
+    expect(held.outputs).toEqual({ 'exit-code': '0', conclusion: 'success' })
+    const other = action(dir, { claims: 'good.md', bundle: 'other.md' })
+    expect(other.outputs.conclusion).toBe('failure')
+    expect(other.stdout).toMatch(/^::error file=good\.md,line=\d+,title=bundle\/not-gathered/m)
+    expect(action(dir, { claims: 'good.md', bundle: 'gone.md' }).outputs.conclusion).toBe('misconfigured')
+  })
+
+  it('refuses a bundle for an installed package that would ignore it, rather than passing unchecked', () => {
+    const res = action(workspace('no-bundle'), { claims: 'good.md', bundle: 'bundle.md' })
+    expect(res.status).toBe(2)
+    expect(res.stdout).toContain('cannot check claims against a bundle')
   })
 
   it('treats nothing to check as misconfigured, not as a pass', () => {

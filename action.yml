@@ -13,6 +13,12 @@ inputs:
   claims:
     description: Review files to check with `evidence-layer claims`, comma- or newline-separated.
     default: review.md
+  bundle:
+    description: An evidence bundle - the one a gather job uploaded - to hold every block the `claims` reviews cite to (`claims --bundle`). Missing is misconfigured, not a pass.
+    default: ''
+  sha:
+    description: The commit the reviews must be about (`claims --sha`), e.g. the pull request's head SHA. Default - each review's own Access Receipt, then the bundle's head.
+    default: ''
   receipt:
     description: Review files whose Access Receipt to check with `evidence-layer receipt`. Needs a full clone (`fetch-depth 0`) and the target branch fetched.
     default: ''
