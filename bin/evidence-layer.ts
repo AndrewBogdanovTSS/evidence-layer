@@ -2,10 +2,10 @@
 /**
  * The one executable this package installs.
  *
- * Five checks, one name. The alternative - five separate bins called
- * `check-claims`, `ci-summary`, `journal-report` - would squat five generic
- * names in every consuming project's `node_modules/.bin`, and none of those
- * names says who is making the claim.
+ * Every command, one name. The alternative - a separate bin per command,
+ * `check-claims`, `ci-summary`, `journal-report` - would squat a handful of
+ * generic names in every consuming project's `node_modules/.bin`, and none of
+ * those names says who is making the claim.
  *
  * The colon-separated aliases (`check:claims`, `journal:report`, ...) are the
  * script names this package used while it lived inside another repository.
@@ -22,7 +22,7 @@
  */
 import { EXIT } from '../src/core/cli'
 
-/** Substituted at build time from `package.json`; `test/cli-bin.test.ts` proves the two still agree. */
+/** Substituted at build time from `package.json`; `test/bin.test.ts` proves the two still agree. */
 declare const __EVIDENCE_LAYER_VERSION__: string
 
 const HELP = `

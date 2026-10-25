@@ -16,9 +16,8 @@ The plan it implements, in the order it was written:
    seven questions revision 4 said had to be answered before the seal and gate.
 4. [`runtime-gate-decisions.md`](runtime-gate-decisions.md) - the answers, and
    the live-session observation.
-5. [`evidence-layer-development-strategy.md`](evidence-layer-development-strategy.md)
-   and [`evidence-layer-roadmap.md`](evidence-layer-roadmap.md) - where the
-   package goes next.
+5. [`evidence-layer-development-strategy.md`](evidence-layer-development-strategy.md) -
+   where the package goes next.
 
 ## 1. A security problem found on the way
 
@@ -82,8 +81,8 @@ change it.
 
 The strategy's references were spot-checked: SpecTruth, OpenFab and the
 ClaimReceipt paper exist and say roughly what the document says they do
-(OpenFab's front page mentions in-toto, not DSSE). `evidence-layer-roadmap.md`
-is an almost word-for-word copy of the strategy document and could be removed.
+(OpenFab's front page mentions in-toto, not DSSE). `evidence-layer-roadmap.md`,
+an almost word-for-word copy of the strategy document, has since been removed.
 
 - **Worth doing next:** `--format json` and machine-readable reason codes on
   findings; a GitHub Action; adapters that turn JUnit, SARIF and pytest output
