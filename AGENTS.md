@@ -12,10 +12,15 @@ own first consumer: every check runs against this repository too.
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm test                    # builds, then runs the suite - the CLI tests run dist/
-pnpm check:all --enforce     # every repository check, plus: does anything run them?
+pnpm typecheck               # the one step check:all does not run
+pnpm check:all --enforce     # pnpm test (builds, then runs the suite - the CLI tests
+                             # run dist/), every repository check, plus: does
+                             # anything run them?
 ```
+
+`check:all` runs the suite once and hands its output to `check:docs`, so there
+is no need to run `pnpm test` first; on its own, `pnpm check:docs` runs the
+suite itself.
 
 `pnpm hooks:install` wires the same fast checks into a pre-push hook.
 
