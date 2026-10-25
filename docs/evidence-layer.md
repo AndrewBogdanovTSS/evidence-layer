@@ -225,12 +225,18 @@ pnpm check:claims examples/plain-node-project/reviews/good-claims.md      # clea
 pnpm check:claims examples/plain-node-project/reviews/phantom-artifact.md # ids reference nothing here
 pnpm check:claims examples/plain-node-project/reviews/shotgun-artifact.md # one artifact, four claims
 pnpm check:claims examples/plain-node-project/reviews/predicate-mismatch.md # the artifact says three, not four
+pnpm check:claims examples/plain-node-project/reviews/count-mismatch.md   # "four passing tests", no predicate
+pnpm check:claims examples/plain-node-project/reviews/kind-mismatch.md    # a lint claim over a test run
+pnpm check:claims examples/plain-node-project/reviews/outcome-mismatch.md # failed, timed out, all skipped
+pnpm check:claims examples/plain-node-project/reviews/fix-me.md           # three fixes to print; --fix it on a copy
 ```
 
-These five are asserted to keep behaving that way by `pnpm check:all`, which
+These nine are asserted to keep behaving that way by `pnpm check:all`, which
 runs each of them and checks the exit code against the one written down above.
 A negative fixture that quietly starts passing is a checker that quietly
-stopped working.
+stopped working. An exit code alone would not notice a fixture failing for the
+wrong reason, so `test/codes.test.ts` also holds the last four to the codes
+they are named for, and to nothing else.
 
 Read `bad-claims.md` and `good-claims.md` side by side. The repaired one is
 longer, hedges more and sounds less confident - and it is the only one of the

@@ -268,26 +268,46 @@ const QUALIFIER_KEY: Record<string, string> = {
 }
 const qualified = (m: RegExpMatchArray): Reading[] => [key(QUALIFIER_KEY[m[2]!.toLowerCase()]!)]
 
+// A count spelled out is the same count: "four passing tests" over `passed=3`
+// is as wrong as "4 passing tests", and a rule that read only digits would let
+// the writer pass it by choosing the spelling. Zero to twenty, the numbers
+// prose spells; "twenty-one" and above are written as digits in practice, and
+// "no" and "a" are not read - "no failing tests" is the outcome rules' claim,
+// and "a test" counts nothing. Nothing straight after a hyphen is read either:
+// `\b` falls inside "seventy-one" and "2-3", and "one" or "3" there is the
+// tail of another number, not a count.
+const NUMBER_WORDS = [
+  'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+  'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
+]
+const N = '(?<!-)(\\d+|' + NUMBER_WORDS.join('|') + ')'
+const countRe = (source: string): RegExp => new RegExp(source.replaceAll('<n>', N), 'gi')
+const countValue = (written: string): number => {
+  const word = NUMBER_WORDS.indexOf(written.toLowerCase())
+  return word === -1 ? Number(written) : word
+}
+
 /**
  * The shapes of a count this reads, each anchored to a word that says the
  * number is about the run - a qualifier ("71 passing tests"), a verb ("ran
  * 71 tests", "7 files were linted") or a summary key ("3 skipped"). A bare
  * number and noun is not one: "adds 3 tests" and "touches 12 files" are
  * about the change, not the run, and a rule that failed them would teach
- * writers to stop reading its output.
+ * writers to stop reading its output. `<n>` in each pattern is a number, in
+ * digits or spelled out.
  */
 const COUNT_RULES: readonly { re: RegExp; kind: 'tests' | 'lint'; readings: (m: RegExpMatchArray) => Reading[] }[] = [
-  { re: /\b(\d+)\s+(passing|passed|failing|failed|skipped)\s+tests?\b/gi, kind: 'tests', readings: qualified },
-  { re: /\b(\d+)\s+tests?\s+(?:were\s+|have\s+)?(passed|pass|failed|fail|skipped)\b/gi, kind: 'tests', readings: qualified },
+  { re: countRe(String.raw`\b<n>\s+(passing|passed|failing|failed|skipped)\s+tests?\b`), kind: 'tests', readings: qualified },
+  { re: countRe(String.raw`\b<n>\s+tests?\s+(?:were\s+|have\s+)?(passed|pass|failed|fail|skipped)\b`), kind: 'tests', readings: qualified },
   // "Ran 71 tests" is how many passed or how many there were - both are honest readings.
-  { re: /\b(?:ran|runs|run|executed|executes)\s+(\d+)\s+tests?\b/gi, kind: 'tests', readings: () => [key('passed'), TOTAL] },
-  { re: /\b(\d+)\s+tests?\s+(?:ran|run)\b/gi, kind: 'tests', readings: () => [key('passed'), TOTAL] },
-  { re: /\b(\d+)\s+(passed|failed|skipped|todo)\b(?!\s+tests?\b)/gi, kind: 'tests', readings: qualified },
-  { re: /\b(\d+)\s+failures?\b/gi, kind: 'tests', readings: () => [key('failed')] },
-  { re: /\b(?:checked|linted|scanned)\s+(\d+)\s+files?\b/gi, kind: 'lint', readings: () => [CHECKED_FILES, key('files')] },
-  { re: /\b(\d+)\s+files?\s+(?:were\s+)?(?:checked|linted|scanned)\b/gi, kind: 'lint', readings: () => [CHECKED_FILES, key('files')] },
-  { re: /\b(\d+)\s+(?:files?\s+(?:were\s+)?ignored|ignored\s+files?)\b/gi, kind: 'lint', readings: () => [key('ignored')] },
-  { re: /\b(\d+)\s+(?:lint\s+)?(errors?|warnings?)\b/gi, kind: 'lint', readings: (m) => [key(/^e/i.test(m[2]!) ? 'errors' : 'warnings')] },
+  { re: countRe(String.raw`\b(?:ran|runs|run|executed|executes)\s+<n>\s+tests?\b`), kind: 'tests', readings: () => [key('passed'), TOTAL] },
+  { re: countRe(String.raw`\b<n>\s+tests?\s+(?:ran|run)\b`), kind: 'tests', readings: () => [key('passed'), TOTAL] },
+  { re: countRe(String.raw`\b<n>\s+(passed|failed|skipped|todo)\b(?!\s+tests?\b)`), kind: 'tests', readings: qualified },
+  { re: countRe(String.raw`\b<n>\s+failures?\b`), kind: 'tests', readings: () => [key('failed')] },
+  { re: countRe(String.raw`\b(?:checked|linted|scanned)\s+<n>\s+files?\b`), kind: 'lint', readings: () => [CHECKED_FILES, key('files')] },
+  { re: countRe(String.raw`\b<n>\s+files?\s+(?:were\s+)?(?:checked|linted|scanned)\b`), kind: 'lint', readings: () => [CHECKED_FILES, key('files')] },
+  { re: countRe(String.raw`\b<n>\s+(?:files?\s+(?:were\s+)?ignored|ignored\s+files?)\b`), kind: 'lint', readings: () => [key('ignored')] },
+  { re: countRe(String.raw`\b<n>\s+(?:lint\s+)?(errors?|warnings?)\b`), kind: 'lint', readings: (m) => [key(/^e/i.test(m[2]!) ? 'errors' : 'warnings')] },
 ]
 
 // A sentence about what used to be true - "fixes the 2 failing tests" - states
@@ -313,7 +333,7 @@ function statedCounts(text: string): StatedCount[] {
   return COUNT_RULES.flatMap((rule) =>
     [...text.matchAll(rule.re)]
       .filter((m) => !OUT_OF_RE.test(text.slice(0, m.index)))
-      .map((m) => ({ text: m[0], value: Number(m[1]), kind: rule.kind, readings: rule.readings(m) })),
+      .map((m) => ({ text: m[0], value: countValue(m[1]!), kind: rule.kind, readings: rule.readings(m) })),
   )
 }
 

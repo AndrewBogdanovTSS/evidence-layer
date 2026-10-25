@@ -2,8 +2,8 @@
  * evidence-layer - checks that turn a review's assertions into claims that
  * could be proved wrong.
  *
- * Seven ideas, each in its own module under `./core`, none of them coupled to
- * any particular project's stack:
+ * One idea per module under `./core`, none of them coupled to any particular
+ * project's stack:
  *
  *   - `cli`               argument parsing, the five-outcome model, exit codes
  *   - `codes`             which rule produced a finding, as a word a program can match
@@ -23,6 +23,10 @@
  *   - `skeleton`           pre-filled claims and sample quotes, so honest stays cheap
  *   - `gather`             running the expensive checks before a review is written
  *   - `gather-command`     what a project calls its gatherer, so "gather again" can say how
+ *
+ * The runtime gate's modules - `gate`, `gate-decision`, `protect` - are not
+ * exported: `evidence-layer hook` is their interface, and the host protocols
+ * it speaks are the contract, not these functions.
  *
  * `./adapters/node-default` is the one place allowed to know this is Node - see
  * that file for exactly what "zero-config" does and does not cover.
