@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { artifactId, formatArtifact } from '../src/core/artifact'
 import { decide, isProtected, journalOutcome, levelOf } from '../src/core/gate'
@@ -62,6 +62,26 @@ describe('session-start', () => {
       expect(decision.text).toContain('**Claim**')
       expect(decision.text).toContain('No sealed evidence run')
     }
+  })
+
+  it('shows the grammar as a filled-in example, and lists the claims a run for this commit backs', () => {
+    const dir = repo()
+    const none = start(dir, 'before')
+    // No run yet: the example is said to be one, so it is not copied as a real id.
+    expect(none.action === 'context' && none.text).toContain('the one above is only an example')
+    expect(none.action === 'context' && none.text).not.toContain('<artifact id>')
+
+    const sealed = sealTests(dir)
+    const ready = start(dir, 'after')
+    expect(ready.action).toBe('context')
+    if (ready.action !== 'context') return
+    const pair = '**Claim**: The test suite ran 3 passing tests and reports no failures.\n**Grounding**: VERIFIED[' + sealed.id + ': exit=0, passed>=3, failed=0]'
+    expect(ready.text).toContain('Ready claims from run')
+    expect(ready.text).toContain(pair)
+    expect(ready.text).not.toContain('only an example')
+
+    // And a pair pasted as it is passes the stop.
+    expect(stop(dir, {}, { sessionId: 'after', message: pair })).toMatchObject({ action: 'allow', level: 'pass' })
   })
 
   it('outside a git repository, stays out of the way', () => {
@@ -275,7 +295,7 @@ describe('pre-write', () => {
     const dir = repo()
     const wt = dir + '-wt'
     sh(dir, 'worktree', 'add', '-q', wt)
-    const wtState = join(dir, '.git', 'worktrees', wt.split('/').at(-1)!, 'evidence-layer', 'current.json')
+    const wtState = join(dir, '.git', 'worktrees', basename(wt), 'evidence-layer', 'current.json')
     expect(isProtected(wt, wtState)).toBe(true)
     expect(write(wt, join(wt, 'src', 'a.js')).action).toBe('allow')
     expect(write(dir, join(dir, '.git', 'config')).action).toBe('allow')
@@ -317,6 +337,50 @@ describe('stop - what the agent is told', () => {
       message: expect.stringContaining('- [warning] artifact ' + sealed.id + ' backs 3 claims'),
     })
     expect(decision.action === 'allow' && decision.message).not.toContain('could not be checked')
+  })
+
+  it('numbers each failing claim with its problem and fix, then hands over the ready claims and the --fix command', () => {
+    const dir = repo()
+    start(dir)
+    const sealed = sealTests(dir)
+    const wrongCount = '**Claim**: the suite ran 4 passing tests.\n**Grounding**: VERIFIED[' + sealed.id + ']\n'
+    writeFileSync(join(dir, 'review.md'), '# Review\n\n' + wrongCount + '\n' + sealed.block + '\n\n**Claim**: the suite passes.\n')
+    const decision = stop(dir)
+    expect(decision.action).toBe('block')
+    if (decision.action !== 'block') return
+    const reason = decision.reason
+    expect(reason).toContain('\n1. review.md:3 - the suite ran 4 passing tests.\n   problem: VERIFIED[' + sealed.id + '] says "4 passing tests"')
+    expect(reason).toContain('   fix: replace the claim and its grounding with the lines below - or mark the claim UNVERIFIED:\n     **Claim**: The test suite ran 3 passing tests')
+    expect(reason).toContain('\n2. review.md:')
+    expect(reason).toContain('`npx evidence-layer claims review.md --fix`')
+    expect(reason).toContain('Ready claims from run')
+  })
+
+  it('says how to gather on a finding whose fix is to gather again', () => {
+    const dir = repo()
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { evidence: 'node gather.mjs' }, packageManager: 'pnpm@9.0.0' }))
+    sh(dir, 'add', '-A')
+    sh(dir, 'commit', '-qm', 'manifest')
+    start(dir)
+    const sealed = sealTests(dir)
+    writeFileSync(join(dir, 'src/a.js'), 'changed\n')
+    writeFileSync(join(dir, 'review.md'), backedReview(sealed))
+    const decision = stop(dir)
+    expect(decision.action === 'block' && decision.reason).toContain('fix: gather again with `pnpm run evidence`')
+    // A pnpm project runs the CLI through pnpm, and stale claims are not handed out as ready.
+    expect(decision.action === 'block' && decision.reason).not.toContain('Ready claims')
+  })
+
+  it('does not hand out stale ready claims when nothing cited the run - pasting them would only be blocked again', () => {
+    const dir = repo()
+    start(dir)
+    const sealed = sealTests(dir)
+    writeFileSync(join(dir, 'src/a.js'), 'changed after the gather\n')
+    // No VERIFIED claim here, so no check of this stop read the run's freshness.
+    const first = stop(dir, {}, { message: '**Claim**: the suite passes.\n' })
+    expect(first.action).toBe('block')
+    expect(first.action === 'block' && first.reason).not.toContain('Ready claims')
+    expect(first.action === 'block' && first.reason).not.toContain(sealed.id)
   })
 
   it('keeps the journal entry id out of the reason the agent reads, so it cannot tag its own block', () => {

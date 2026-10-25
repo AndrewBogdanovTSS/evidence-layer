@@ -204,7 +204,8 @@ function checkTestCount(readme: string, repo: string, suiteOutputFile: string | 
   }
 
   const findings = [compare(TEST_COUNT_CLAIM, statedTests, String(count))]
-  const files = /Test Files\s+\d+ passed \((\d+)\)/.exec(suite.output)?.[1]
+  // The same two forms as the test line: `39 passed (39)`, or `1 failed | 38 passed (39)`.
+  const files = /Test Files\s+\d+ [a-z][^\n(]*\((\d+)\)/.exec(suite.output)?.[1]
   if (statedFiles && files) {
     findings.push(compare('the test-file count on the page is the shape of the suite', statedFiles, files))
   }

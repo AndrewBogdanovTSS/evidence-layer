@@ -27,14 +27,23 @@ import { join } from 'node:path'
  * not a guess - a caller should report `unverifiable`, never assume zero.
  */
 export function parseTestCount(output: string): number | null {
-  const vitest = /Tests\s+\d+ passed \((\d+)\)/.exec(output)
+  // `Tests  71 passed (71)`, and - the line a suite with a skipped or failing
+  // test prints - `Tests  14 failed | 484 passed | 3 skipped (501)`. Matching
+  // only the first form returned `null` for every run that skipped a test,
+  // which made a platform-skipped test enough to stop the count being checked.
+  const vitest = /^\s*Tests\s+\d+ [a-z][^\n(]*\((\d+)\)/m.exec(output)
   if (vitest) return Number(vitest[1])
 
   const jest = /Tests:\s+\d+ passed,\s*(\d+) total/i.exec(output)
   if (jest) return Number(jest[1])
 
+  // Mocha prints its total as three lines; passing alone is the total only
+  // when nothing failed or was pending.
   const mocha = /(\d+)\s+passing/i.exec(output)
-  if (mocha) return Number(mocha[1])
+  if (mocha) {
+    const other = (word: string) => Number(new RegExp('(\\d+)\\s+' + word, 'i').exec(output)?.[1] ?? 0)
+    return Number(mocha[1]) + other('pending') + other('failing')
+  }
 
   // Node's built-in test runner: `ℹ tests N` (default "spec" reporter, current
   // versions) or `# tests N` (the TAP reporter, `--test-reporter=tap`). Found

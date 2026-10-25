@@ -180,6 +180,26 @@ unknown key, a fragment that does not parse, a count the artifact does not
 carry, a bracket that is not an address) is an error rather than a predicate
 quietly dropped, because a dropped predicate is a typo that passes.
 
+Two rules read the claim's words against the block it cites, predicate or
+not. A claim that names a kind of run - tests, lint, typecheck, lockfile,
+audit - must cite a run of a kind it names (`claims/kind-mismatch`), checked
+before the outcome rules, because a verdict on the wrong run says nothing about
+the claim. And a count it states about the run ("71 passing tests", "ran 71
+tests", "7 files were linted", "0 failures") must be the count the run's work
+summary carries (`claims/count-mismatch`). A number no word ties to the run
+("adds 3 tests") is not read, nor is any count in a sentence about what used
+to be true ("fixes the 2 failing tests"), nor the number a count is taken out
+of ("3 of 71 tests failed").
+Both catch the citation a writer most often gets wrong, the wrong block,
+without reading the output for sense.
+
+A failing finding carries a `fix` where one is mechanical: the claim its run
+does back, written as the skeleton writes it, or the grounding line with the
+run's own predicates - so a writer that cannot work out the correction is
+handed it. `--fix` applies the one fix that needs no judgement: every claim an
+error failed is marked UNVERIFIED in the file, and the review is checked again.
+It never edits a sentence or a predicate to fit its run.
+
 Where the grade sits: on the `**Claim**:` line or within two lines of prose
 below it (`lintClaims(md, file, { gradeWindow })` widens that for a review
 template that puts more between them). A fenced block between the claim and
@@ -398,12 +418,12 @@ be true and useless.
 github` for a GitHub Actions step - annotations titled by code, then the text,
 then a job summary (see the README's section on the Action). With `json`,
 stdout is one JSON document and nothing else - the same report `check:all`
-prints between its delimiters, schema 4 - and the exit code is the one the
+prints between its delimiters, schema 5 - and the exit code is the one the
 text mode would have given:
 
 ```json
 {
-  "schema": 4,
+  "schema": 5,
   "check": "claims",
   "mode": "default",
   "generatedAt": "2026-10-18T14:43:52.827Z",
@@ -415,11 +435,18 @@ text mode would have given:
       "detail": "VERIFIED[tests-333881] `passed>=4` does not hold - the artifact says passed=3",
       "file": "examples/plain-node-project/reviews/predicate-mismatch.md",
       "line": 17,
-      "code": "claims/predicate-unmet"
+      "code": "claims/predicate-unmet",
+      "fix": "replace the claim and its grounding with the lines below - or mark the claim UNVERIFIED:\n**Claim**: The test suite ran 3 passing tests and reports no failures.\n**Grounding**: VERIFIED[tests-333881: exit=0, passed>=3, failed=0]"
     }
   ]
 }
 ```
+
+`fix`, present where one is mechanical, is what would settle the finding,
+written to be applied as it stands: the lines to put in place of a claim -
+read off the cited run, never off the claim - the row a receipt is missing,
+or the command to run. Its wording may change like `detail`'s; the lines
+after its first are the text to paste.
 
 `claim` and `detail` are written for a person and will be reworded. `code` is
 written for a program: it names the rule that produced the finding, and a
@@ -439,6 +466,8 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `claims/bad-predicate` | a predicate in a `VERIFIED[id: ...]` tag cannot be checked |
 | `claims/outcome-mismatch` | the cited artifact's exit code or summary contradicts what the claim says |
 | `claims/predicate-unmet` | the cited artifact does not satisfy a predicate the claim states |
+| `claims/kind-mismatch` | the claim names a kind of run - tests, lint, typecheck - and cites a run of another kind |
+| `claims/count-mismatch` | a count the claim states is not the count the cited run's work summary carries |
 | `claims/verified` | a `VERIFIED[id]` claim is backed by the artifact it names |
 | `claims/no-nearby-artifact` | a bare `VERIFIED` has no artifact block close enough below it |
 | `claims/verified-nearby` | a bare `VERIFIED` claim is backed by the artifact block below it |

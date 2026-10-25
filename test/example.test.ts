@@ -50,7 +50,7 @@ describe('npm run standalone', () => {
     const dir = standaloneCopy()
     // Inside the checkout the answer is evidence-layer's top level, which is
     // why the copy exists: every hook and seal asks git this.
-    expect(sh(EXAMPLE, 'rev-parse', '--show-toplevel')).toBe(root)
+    expect(realpathSync(sh(EXAMPLE, 'rev-parse', '--show-toplevel'))).toBe(realpathSync(root))
     expect(realpathSync(sh(dir, 'rev-parse', '--show-toplevel'))).toBe(realpathSync(dir))
     expect(sh(dir, 'status', '--porcelain')).toBe('')
     expect(realpathSync(join(dir, 'node_modules', 'evidence-layer'))).toBe(realpathSync(root))
