@@ -31,23 +31,29 @@
  * count as source and how big a function must be to count as a copy are this
  * repository's calls.
  *
+ * `--format json` prints the findings as the package's report document, so
+ * `pnpm check:all` can tell a fixture that failed for the reason it was built
+ * for from a checker that crashed - both exit 1.
+ *
  * Exit codes: 0 clean - 1 at least one error - 2 bad usage.
  */
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
-import { exitCodeFor, help, parseArgs, report, usage } from '../src/index'
+import { exitCodeFor, formatOf, help, parseArgs, printFindings, usage } from '../src/index'
 import type { Finding } from '../src/index'
 
 const HELP = `
-pnpm check:ladder [<commit>] [--repo <path>]
+pnpm check:ladder [<commit>] [--repo <path>] [--format text|json|github]
 
 Checks the commit's Ladder-Rung trailers against its diff, and every function
 the diff adds against every function in the tree, up to renaming.
 
   <commit>  default HEAD; any revision git resolves (demo/ladder-bad works)
   --repo    repository root (default: the one this script lives in)
+  --format  text (default); json prints the report document instead; github
+            adds annotations to the text. The exit code is the same
 
 exit 0 = clean, 1 = at least one error, 2 = bad usage
 `
@@ -286,6 +292,7 @@ function checkRung(
 function main(): void {
   const args = parseArgs(process.argv.slice(2))
   if (args.help) help(HELP)
+  const format = formatOf(args, HELP)
   const here = fileURLToPath(new URL('.', import.meta.url))
   const repo = typeof args.repo === 'string' ? args.repo : join(here, '..')
   const target = args._[0] ?? 'HEAD'
@@ -343,7 +350,7 @@ function main(): void {
     )
   }
 
-  report('The ladder, checked against ' + target + ' (' + sha.slice(0, 7) + ')', findings)
+  printFindings(format, 'The ladder, checked against ' + target + ' (' + sha.slice(0, 7) + ')', findings, 'enforce', 'ladder')
   process.exit(exitCodeFor(findings))
 }
 

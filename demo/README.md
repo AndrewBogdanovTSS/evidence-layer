@@ -121,7 +121,9 @@ holds the trailer to the diff.
 | `demo/ladder-refactor` | the next commit: the copy removed, `formatPrice` called instead, same trailer - now true |
 
 The first fails twice - the rung claim is refuted, and the clone check finds
-the copy whatever the trailer says. The second passes both. The commits are
+the copy whatever the trailer says. The second passes both. `pnpm check:all`
+holds each to its exit code and to those two findings, since a checker that
+crashed exits 1 too and must not pass for one that caught the copy. The commits are
 built from `ladder/commits/` by `ladder.mjs`; their sources end in `.txt` so
 that nothing scanning this repository's JavaScript mistakes the deliberate copy
 for real code.
