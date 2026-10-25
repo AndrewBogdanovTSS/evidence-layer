@@ -371,6 +371,18 @@ describe('stop - what the agent is told', () => {
     expect(decision.action === 'block' && decision.reason).not.toContain('Ready claims')
   })
 
+  it('does not hand out stale ready claims when nothing cited the run - pasting them would only be blocked again', () => {
+    const dir = repo()
+    start(dir)
+    const sealed = sealTests(dir)
+    writeFileSync(join(dir, 'src/a.js'), 'changed after the gather\n')
+    // No VERIFIED claim here, so no check of this stop read the run's freshness.
+    const first = stop(dir, {}, { message: '**Claim**: the suite passes.\n' })
+    expect(first.action).toBe('block')
+    expect(first.action === 'block' && first.reason).not.toContain('Ready claims')
+    expect(first.action === 'block' && first.reason).not.toContain(sealed.id)
+  })
+
   it('keeps the journal entry id out of the reason the agent reads, so it cannot tag its own block', () => {
     const dir = repo()
     start(dir)

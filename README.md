@@ -250,9 +250,10 @@ mechanically:
   predicate. A number is read only where a word ties it to the run - "71
   passing tests", "ran 71 tests", "7 files were linted", "3 skipped" - so
   "adds 3 tests" and "touches 12 files" are left alone, and so is a sentence
-  about what used to be true ("fixes the 2 failing tests"). "Ran N tests" may
-  be the passed count or the total; a count of a kind the run does not
-  summarise is left alone.
+  about what used to be true ("fixes the 2 failing tests"). Nor is the number
+  a count is taken out of: "3 of 71 tests failed" is not read as 71 failures.
+  "Ran N tests" may be the passed count or the total; a count of a kind the run
+  does not summarise is left alone.
 
 Those rules read the claim's wording, which is deliberately narrow and only in
 English. A claim can also say outright which numbers it rests on, as
@@ -606,7 +607,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **523 tests** across **39 files**, and that sentence is checked
+The suite is **525 tests** across **39 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

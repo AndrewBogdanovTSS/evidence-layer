@@ -85,6 +85,15 @@ describe('the counts a claim states', () => {
     expect(countProblem(tests, 'This fixes the 2 failing tests from #12.')).toBeNull()
   })
 
+  it('does not read "N of M tests" as M tests - an honest failure report passes', () => {
+    const red = run('pnpm test', 'not ok\n[SUMMARY tests: passed=68 failed=3 skipped=0 todo=0]', 1)
+    expect(countProblem(red, '3 of 71 tests failed.')).toBeNull()
+    expect(countProblem(red, '3 out of 71 tests failed.')).toBeNull()
+    expect(failing(claim('3 of 71 tests failed.', 'VERIFIED[' + red.id + ': exit=1, failed=3]') + '\n' + red.block + '\n')).toEqual([])
+    // A count with nothing before it is still read.
+    expect(countProblem(red, '4 tests failed.')).toMatchObject({ expected: 4, observed: 3 })
+  })
+
   it('leaves a count alone when the run has no summary, or summarises the other kind', () => {
     expect(countProblem(run('pnpm test', 'ok'), 'The suite ran 72 passing tests.')).toBeNull()
     expect(countProblem(tests, '12 files were checked.')).toBeNull()
