@@ -1,18 +1,149 @@
 name: ci
-on: [push, pull_request]
+
+# Evidence first, then the review, then the review held to the evidence:
+#
+#   evidence ──┬── review (pull requests: a model reads the bundle and writes ai-review.md)
+#   governance ┘
+#
+# `evidence` and `governance` run in parallel and are the two to make required
+# status checks (Settings > Rules > Rulesets > Require status checks). `review`
+# waits only on `evidence` - the evidence it reads - and is not required: a
+# pull request from a fork, or a repository with no ANTHROPIC_API_KEY, has no
+# model to run, and that must not block a merge the suite allows.
+
+# Pull requests, and the default branch once merged. Not every push to every
+# branch: with a pull request open, that ran everything twice.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push makes the older run's evidence about a commit nobody will
+# review. Stop it rather than pay for its review.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  # The project's commands run once, here, and their output is the evidence.
+  # `npm run evidence` runs the suite and exits 1 when it fails, so it is the
+  # test step, not a second one: nothing else in this workflow runs `npm test`.
+  evidence:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
-      - run: npm install
-      - run: npm test
-      - run: npm run lint
-      # The review the change's author wrote, held to its own artifact blocks -
-      # findings become annotations on its lines. A change with no review.md is
-      # `misconfigured`, not a pass. It runs the evidence-layer installed above,
-      # so this job and a laptop give the same verdict.
+        with:
+          # The pull request's head, not the merge commit GitHub makes for it:
+          # the bundle names the commit a reviewer reads.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # The base branch, for the diff the bundle describes.
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Gather
+        env:
+          BASE: origin/${{ github.base_ref || github.event.repository.default_branch }}
+        run: |
+          git diff "$BASE...HEAD" > change.diff
+          npm run evidence -- --base "$BASE"
+      # Uploaded and summarised whether or not the suite passed: a failing run
+      # is evidence too, and the summary is the human reviewer's copy.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidence
+          path: |
+            evidence.local.md
+            change.diff
+          if-no-files-found: error
+          retention-days: 7
+      - if: always()
+        run: cat evidence.local.md >> "$GITHUB_STEP_SUMMARY"
+
+  # Is anything actually running what the decision records say is enforced?
+  # Reads the repository, not the code's behaviour, so it needs no evidence
+  # and waits for none.
+  governance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
       - uses: AndrewBogdanovTSS/evidence-layer@v0.15.0
         with:
-          claims: review.md
+          claims: ''
           governance: 'true'
+
+  # The model reads what CI ran instead of running it: no shell, so no test
+  # re-run and no exploring, only the bundle, the diff and the files. Its
+  # claims are copied from the bundle's Suggested claims, and every block it
+  # cites is then held to the bundle `evidence` uploaded - not to anything in
+  # this job the model could have written. A claim that does not hold is marked
+  # UNVERIFIED by `--fix` before the review is posted, so a retry costs no tokens
+  # and the review never says more than the evidence does.
+  review:
+    needs: evidence
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    env:
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: evidence
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The runtime gate's hooks are for a session that gathers; this one
+          # does not, and the checks below do the gate's job without a retry.
+          settings: '{"disableAllHooks": true}'
+          prompt: |
+            Review the change in change.diff. evidence.local.md is what CI ran
+            at this commit - do not try to run anything.
+            Write ai-review.md: your findings about the diff, then every claim
+            about what ran as a **Claim**/**Grounding** pair copied from the
+            bundle's Suggested claims with its artifact block, unedited. Claim
+            nothing about a run the bundle does not show; tag anything else you
+            assert INFERRED, with its steps, or UNVERIFIED.
+          # A small model is enough to copy two lines; REVIEW_MODEL overrides it.
+          claude_args: |
+            --model ${{ vars.REVIEW_MODEL || 'claude-haiku-5-5' }}
+            --max-turns 8
+            --allowedTools Read,Glob,Grep,Write
+            --disallowedTools Bash,WebFetch,WebSearch
+      - name: Mark what the evidence does not back UNVERIFIED
+        run: npx evidence-layer claims ai-review.md --bundle evidence.local.md --sha "$HEAD_SHA" --fix
+      - uses: AndrewBogdanovTSS/evidence-layer@v0.15.0
+        with:
+          claims: ai-review.md
+          bundle: evidence.local.md
+          sha: ${{ github.event.pull_request.head.sha }}
+      - name: Post the review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR" --body-file ai-review.md

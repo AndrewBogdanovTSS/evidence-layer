@@ -22,10 +22,10 @@ describe('reachability, against a plain npm project this package has never seen'
   it('reads the fixture\'s own invariants, not any cached or hardcoded ones', () => {
     const invariants = readInvariants(join(FIXTURE, 'docs', 'decisions'))
     expect(invariants).toHaveLength(2)
-    expect(invariants[0]!.command).toBe('npm test')
+    expect(invariants[0]!.command).toBe('npm run evidence')
   })
 
-  it('resolves `npm test` as reachable via the fixture\'s own CI workflow and npm shorthand', () => {
+  it('resolves `npm run evidence` as reachable via the fixture\'s own CI workflow', () => {
     const [testInvariant] = checkReachability(FIXTURE)
     expect(testInvariant!.level).toBe('pass')
   })

@@ -127,6 +127,19 @@ describe('examples/plain-node-project, end to end', () => {
     expect(check()).toEqual({ status: 1, codes: expect.arrayContaining(['bundle/edited']) })
   })
 
+  it('has a workflow that runs the suite once, inside the gather, and holds the review to the bundle it uploaded', () => {
+    // Comments say why; only what the runner reads is held here.
+    const workflow = readFileSync(join(EXAMPLE, '.github', 'workflows', 'ci.yml'), 'utf8').replace(/^\s*#.*\n/gm, '')
+    const job = (name: string) => new RegExp('^  ' + name + ':\\n([\\s\\S]*?)(?=^  [a-z-]+:\\n|(?![\\s\\S]))', 'm').exec(workflow)?.[1] ?? ''
+    expect(workflow).not.toMatch(/npm (?:run )?test\b/)
+    expect(job('evidence')).toMatch(/npm run evidence -- --base/)
+    expect(job('evidence')).toMatch(/upload-artifact[\s\S]*evidence\.local\.md/)
+    expect(job('governance')).not.toContain('needs:')
+    expect(job('review')).toMatch(/needs: evidence/)
+    expect(job('review')).toMatch(/--disallowedTools Bash/)
+    expect(job('review')).toMatch(/bundle: evidence\.local\.md/)
+  })
+
   it('runs the hook commands its .claude and .codex files hold, the way each host runs them', () => {
     const dir = standaloneCopy()
     const command = (file: string) =>

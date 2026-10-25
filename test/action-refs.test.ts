@@ -56,7 +56,8 @@ describe('action refs', () => {
   it('in this repository, every ref names the version package.json has', () => {
     const { name, version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { name: string; version: string }
     const refs = findActionRefs(root, name)
-    expect(refs.map((r) => r.file)).toEqual(ACTION_REF_FILES)
+    // Each file shows at least one; the example's workflow uses the action in two jobs.
+    expect([...new Set(refs.map((r) => r.file))]).toEqual(ACTION_REF_FILES)
     expect(refs.every((r) => r.version === version)).toBe(true)
   })
 })

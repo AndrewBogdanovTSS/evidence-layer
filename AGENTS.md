@@ -40,6 +40,10 @@ rewrites those in the release commit, so only a bump by hand has to.
 `examples/plain-node-project/` is a template here, not a repository: git, and
 so its hooks and its seal, answer for this checkout. `npm run standalone` in it
 makes the copy where they work, and `test/example.test.ts` runs on that copy.
+Its workflow does not run here either - GitHub reads only the top level - so
+the `example-evidence` and `example-review` jobs in `.github/workflows/ci.yml`
+run its gather-then-verify handoff on such a copy. A change to how the
+example's workflow hands the bundle over changes those jobs too.
 
 ## Rules the tests enforce
 

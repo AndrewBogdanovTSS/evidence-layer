@@ -92,8 +92,8 @@ run manufactures confidence out of nothing.
 pnpm check:governance --repo examples/plain-node-project
 ```
 
-Two invariants in the example project read as enforced. One names `npm test`,
-which is reachable from the CI workflow. The other is "enforced by a human",
+Two invariants in the example project read as enforced. One names `npm run
+evidence`, which is reachable from the CI workflow. The other is "enforced by a human",
 which names no runnable command, so its enforcement cannot be checked - and it
 is reported that way rather than passed.
 

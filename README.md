@@ -211,7 +211,9 @@ The last step belongs in CI rather than on the machine that wrote the change -
 [the GitHub Action](#in-ci-the-github-action) is one step. Every check here can
 be run by whoever wrote the diff, which makes a passing local run a
 self-report - and anyone who skipped the gathering step skips the verifying
-step just as easily. Same commands, different party. Between the two, the
+step just as easily. Same commands, different party - and for the evidence to
+be the other party's too, the gathering goes in CI as well, ahead of the review
+([below](#in-ci-the-github-action)). Between the two, the
 [runtime gate](#in-an-agents-session-the-runtime-gate) runs them when the agent
 says it is done.
 
@@ -505,6 +507,18 @@ names any other. Its outputs are
 and a step with nothing to check, a missing review or an unusable package is
 `misconfigured`, never a pass.
 
+For the evidence to be CI's rather than the author's, gather in CI. The
+gather exits 1 when a step failed, bundle written regardless, so it can be the
+job's test run rather than a second one; upload the bundle, and the review -
+written by a model in a later job, or by a person reading the uploaded bundle -
+is held to it with `bundle:`, which runs `claims --bundle`. Without that, a
+check in another job proves only that each tag names a block in the review
+itself, which a block typed by hand under an invented id satisfies; `--seal`
+proves more, but only in the checkout that gathered.
+[`examples/plain-node-project/.github/workflows/ci.yml`](examples/plain-node-project/.github/workflows/ci.yml)
+is the layout: gather, then review, then verify
+([DEC-0011](docs/decisions/0011-ci-evidence-crosses-jobs-as-a-bundle.md)).
+
 Outside the action, `--format github` on `claims`, `receipt` and `governance`
 does the same in any `run:` step. A review is text written by someone this
 package does not trust, so it is never handed to the runner as a command: the
@@ -601,11 +615,13 @@ its own unconnected `package.json` - that
 `readInvariants`, `reachableCommands`, `lintClaims`, `checkReceipt` and
 `renderSummary` against, and [`test/example.test.ts`](test/example.test.ts)
 runs its whole loop on a standalone copy - gather with counts, a review of the
-suggested claims passing `claims --seal`, and the same review failing once the
-code changes. Clone it, run the layer against it, and see the checks fail on
-purpose: [`examples/plain-node-project/README.md`](examples/plain-node-project/README.md)
+suggested claims passing `claims --seal` and, where there is no seal,
+`claims --bundle`, the same review failing once the code changes, and the
+gather failing when the suite does. Clone it, run the layer against it, and see
+the checks fail on purpose: [`examples/plain-node-project/README.md`](examples/plain-node-project/README.md)
 is the guided version, and the project is set up the way one using this
-package should be - evidence script, CI action, runtime-gate hooks.
+package should be - evidence script, a CI workflow that gathers before anyone
+reviews, runtime-gate hooks.
 
 Inside this checkout it is a template, not a repository: git answers from
 evidence-layer's top level, so its hooks would check evidence-layer's
@@ -629,7 +645,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **545 tests** across **40 files**, and that sentence is checked
+The suite is **546 tests** across **40 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
@@ -647,7 +663,10 @@ CI runs the suite on Node 22 and 24 and, in a separate job with no package
 manager and no install, takes the `dist/` the build job produced and runs it on
 bare `node` - 22.0.0, the oldest `engines` allows, as well as 22 and 24. If that
 job passes, "zero runtime dependencies" is a checked fact for everything the
-smoke script loads, rather than a sentence on this page.
+smoke script loads, rather than a sentence on this page. Two more jobs run the
+example project's CI handoff, which GitHub would not run from inside this
+repository: one gathers in a standalone copy and uploads the bundle, the other
+downloads it and holds a review to it with the action's `bundle:` input.
 
 ## What this does not do
 

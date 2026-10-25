@@ -331,7 +331,7 @@ decorative rule from a live one.
 pnpm check:all                            # this repo: every invariant reachable
 pnpm check:all --only reachability        # just the trigger graph, in a second
 
-# the fixture: one invariant enforced by `npm test`, one "enforced by a human"
+# the fixture: one invariant enforced by `npm run evidence`, one "enforced by a human"
 npx evidence-layer governance --repo examples/plain-node-project --decisions examples/plain-node-project/docs/decisions
 ```
 
@@ -573,6 +573,7 @@ The table is checked against `src/core/codes.ts` by `check:docs`, both ways.
 | `.githooks/pre-push`, after `pnpm hooks:install` | `check:all --fast --enforce` |
 | the GitHub Action, `uses: ./` in the same workflow | `claims` over a fixture review, with this commit's build |
 | the GitHub Action, in a job with nothing installed | the same action fetching the published package through `npx`, on a review that passes and one that fails |
+| `example-evidence`, then `example-review`, in the same workflow | the example project's handoff on a standalone copy: gathered on one runner, the bundle carried as an artifact, the review held to it with `bundle:` on another |
 
 The workflow is not merely a place to run the commands. It settles a conflict of
 interest: every check here can be run by whoever wrote the change, which makes a
