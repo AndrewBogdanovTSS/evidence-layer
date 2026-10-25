@@ -73,6 +73,14 @@ describe('the counts a claim states', () => {
     expect(countProblem(tests, '3 failures were reported.')).toMatchObject({ expected: 3, observed: 0 })
   })
 
+  it('reads a count spelled out as the same count', () => {
+    expect(countProblem(tests, 'Two tests were skipped and zero failed.')).toBeNull()
+    expect(countProblem(tests, 'The suite ran four passing tests.')).toMatchObject({ expected: 4, observed: 71 })
+    expect(countProblem(tests, 'Three tests were skipped.')?.detail).toContain('says "Three tests were skipped"')
+    // "a" and "no" count nothing; the outcome rules speak to "no failing tests".
+    expect(countProblem(tests, 'A test was skipped, and no failures were reported.')).toBeNull()
+  })
+
   it('reads "N files" on a lint run as the files it checked, or all it was given', () => {
     const lint = run('pnpm lint', LINT)
     expect(countProblem(lint, 'Lint checked 7 files.')).toBeNull()

@@ -26,6 +26,7 @@ It exists twice over.
    | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | the suite, then the GitHub Action over the change's `review.md` and the decision records |
    | [`.claude/settings.json`](.claude/settings.json), [`.codex/hooks.json`](.codex/hooks.json) | the runtime gate, written by `evidence-layer init claude` and `init codex` |
    | [`scripts/standalone.mjs`](scripts/standalone.mjs) | `npm run standalone`: copies this project out as a repository of its own - see below. Not part of the setup; the copy leaves it behind |
+   | [`docs/decisions/0001-example.md`](docs/decisions/0001-example.md) | two invariants, one enforced by a command and one by "a human" |
 
    The setup is for a project that is its own repository, and inside
    evidence-layer's checkout this one is not. git answers every question from
@@ -35,7 +36,6 @@ It exists twice over.
    there - and a sealed run would fingerprint the whole checkout. So the
    runtime gate and the seal are shown in a copy (step 0); every other step
    runs from here.
-   | [`docs/decisions/0001-example.md`](docs/decisions/0001-example.md) | two invariants, one enforced by a command and one by "a human" |
 
 ## The tour
 
@@ -134,7 +134,61 @@ ran - and the claim says four where the artifact says three. The tag carries a
 predicate, `passed>=4`, so the number is no longer only in the sentence where a
 script cannot reach it.
 
-### 6. Is anything actually running the checks?
+### 6. The wrong number, with no predicate to catch it
+
+```bash
+npx evidence-layer claims examples/plain-node-project/reviews/count-mismatch.md
+```
+
+Exit 1, `claims/count-mismatch` twice. The same mistake as step 5, with the
+predicates left out - and the sentence is still held to the run. "Four passing
+tests" and "2 tests were skipped" are read off the words and compared with the
+work summary's `passed=3 skipped=0`. A number spelled out is the same number.
+Only a count a word ties to the run is read: "adds 3 tests" is about the
+change, and is left alone.
+
+### 7. The wrong kind of run
+
+```bash
+npx evidence-layer claims examples/plain-node-project/reviews/kind-mismatch.md
+```
+
+Exit 1, `claims/kind-mismatch`. "Lint reports no violations" cites a test run
+that passed - real block, right id, exit 0. A test run says nothing about lint,
+so the claim fails whatever that run showed, and since no lint run was gathered
+the fix says so rather than offering one.
+
+### 8. Exit 0 is not the same as "it passed"
+
+```bash
+npx evidence-layer claims examples/plain-node-project/reviews/outcome-mismatch.md
+```
+
+Exit 1, `claims/outcome-mismatch` three times, over three real runs of this
+project's suite: one with a failing test, one the time limit killed (`exit: 124
+(timeout)`), and one where every test was skipped - exit 0, `passed=0`. A
+success claim over any of them fails. Beside each sits the claim the same run
+does back - "1 failing test", "did not complete", "ran 0 tests to completion" -
+and those pass. The skipped run is the one to look at twice: its exit code is
+the one a passing suite has.
+
+### 9. Let the checker apply the fix that needs no judgement
+
+```bash
+npx evidence-layer claims examples/plain-node-project/reviews/fix-me.md
+cp examples/plain-node-project/reviews/fix-me.md review-copy.md
+npx evidence-layer claims review-copy.md --fix
+```
+
+The first prints three errors - a wrong count, the wrong kind of run, a
+predicate key that does not exist - each with a `fix:` read off the run: the
+claim it does back, or the grounding line with its own predicates. `--fix`
+writes to the file, hence the copy: it marks every claim an error failed
+UNVERIFIED, checks again, and exits 0. It never rewrites a sentence or a
+predicate to fit its run, so the cheapest way past a finding says less, never
+more. Delete `review-copy.md` afterwards.
+
+### 10. Is anything actually running the checks?
 
 ```bash
 npx evidence-layer governance --repo examples/plain-node-project --decisions examples/plain-node-project/docs/decisions
@@ -152,7 +206,7 @@ case was found by building this fixture, not assumed - a scanner that only knew
 `npm run <name>` reported the script as unreached in the most common project
 layout there is.
 
-### 7. The same findings, for a program
+### 11. The same findings, for a program
 
 ```bash
 npx evidence-layer claims examples/plain-node-project/reviews/bad-claims.md --format json
@@ -164,7 +218,7 @@ npx evidence-layer claims examples/plain-node-project/reviews/bad-claims.md --fo
 review's line, which is what the action in this project's workflow does. The
 exit code is the same in every format.
 
-### 8. Render a run for CI
+### 12. Render a run for CI
 
 ```bash
 npx evidence-layer governance --repo examples/plain-node-project --decisions examples/plain-node-project/docs/decisions > run.txt
@@ -190,7 +244,7 @@ fail. Try any of these:
 - Change `passed>=3` to `passed>=4` in `good-claims.md`'s tag. The block is
   real and the run passed; the number in the claim is wrong, and it says so.
 - Add a fifth `**Claim**:` to `good-claims.md` with no `**Grounding**:` line.
-- Delete `- run: npm test` from `.github/workflows/ci.yml` and re-run step 6.
+- Delete `- run: npm test` from `.github/workflows/ci.yml` and re-run step 10.
   The invariant that was passing becomes an error, because nothing reaches the
   command it names any more.
 

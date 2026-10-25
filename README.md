@@ -250,9 +250,18 @@ mechanically:
   predicate. A number is read only where a word ties it to the run - "71
   passing tests", "ran 71 tests", "7 files were linted", "3 skipped" - so
   "adds 3 tests" and "touches 12 files" are left alone, and so is a sentence
-  about what used to be true ("fixes the 2 failing tests"). "Ran N tests" may
-  be the passed count or the total; a count of a kind the run does not
-  summarise is left alone.
+  about what used to be true ("fixes the 2 failing tests"). A number spelled
+  out, zero to twenty, is the same number: "four passing tests" over
+  `passed=3` fails like "4 passing tests" does. "Ran N tests" may be the
+  passed count or the total; a count of a kind the run does not summarise is
+  left alone.
+
+Each of these rules has a fixture that fails it on purpose, over real runs of
+the example project's suite -
+[`outcome-mismatch.md`](examples/plain-node-project/reviews/outcome-mismatch.md)
+(a failing run, a timed-out one, one where every test was skipped),
+[`kind-mismatch.md`](examples/plain-node-project/reviews/kind-mismatch.md) and
+[`count-mismatch.md`](examples/plain-node-project/reviews/count-mismatch.md).
 
 Those rules read the claim's wording, which is deliberately narrow and only in
 English. A claim can also say outright which numbers it rests on, as
@@ -291,6 +300,8 @@ back; a receipt whose quote is wrong is offered the file's real first line:
 UNVERIFIED, in the file, and checks it again. It never rewrites a sentence or a
 predicate to fit its run - that would make a claim pass by changing what it
 says - so it is the one fix applied for the writer rather than offered.
+[`fix-me.md`](examples/plain-node-project/reviews/fix-me.md) is a review to
+try it on, a copy of it rather than the file itself.
 
 For a review posted as a pull request comment, `generateClaimSkeleton` and
 `generateSampleSkeleton` take `{ fold: true }`: each artifact block, and the
@@ -606,7 +617,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **523 tests** across **39 files**, and that sentence is checked
+The suite is **530 tests** across **39 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

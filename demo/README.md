@@ -117,7 +117,7 @@ holds the trailer to the diff.
 
 | Ref | What it is |
 |---|---|
-| `demo/ladder-bad` | `ladder/shop/receipt.js` adds `formatDiscount`, which is `formatPrice` from `ladder/shop/price.js` with its parameter renamed, under a trailer claiming `Ladder-Rung: 2 reuse formatPrice`. Half true: it does call `formatPrice` - and also copies it |
+| `demo/ladder-bad` | `demo/ladder/shop/receipt.js` adds `formatDiscount`, which is `formatPrice` from `demo/ladder/shop/price.js` with its parameter renamed, under a trailer claiming `Ladder-Rung: 2 reuse formatPrice`. Half true: it does call `formatPrice` - and also copies it |
 | `demo/ladder-refactor` | the next commit: the copy removed, `formatPrice` called instead, same trailer - now true |
 
 The first fails twice - the rung claim is refuted, and the clone check finds
