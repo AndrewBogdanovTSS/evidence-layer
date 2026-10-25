@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -166,6 +166,29 @@ describe('sourceFingerprint moves for every change git can see, and names it', (
     mkdirSync(join(dir, 'build'))
     writeFileSync(join(dir, 'build/out.js'), 'generated\n')
     expect(fp(dir).treeId).toBe(before)
+  })
+
+  // An edit that keeps a file's size, made in the second git last wrote the
+  // index, matches every stat field Linux git compares - it reads timestamps
+  // to the second. git rereads such a file only because its entry is not
+  // older than the index ("racily clean"). A throwaway copy of the index
+  // stamped with the moment it was copied is newer than that entry once the
+  // copy falls in the next second, and the edit reads as no change: the seal
+  // called changed code fresh, intermittently, in example.test.ts on Linux CI.
+  // So the timing is made to happen rather than faked with utimes: commit and
+  // edit inside one second, fingerprint in the next. Where git compares
+  // sub-second times (git for Windows) it holds either way.
+  it('moves for a same-size edit made in the second the index was written', () => {
+    const waitUntil = (ready: () => boolean) => {
+      while (!ready()) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5)
+    }
+    waitUntil(() => Date.now() % 1000 < 100)
+    const dir = repo({ 'src/a.js': 'n + 1\n' })
+    const before = fp(dir).treeId
+    writeFileSync(join(dir, 'src/a.js'), 'n + 2\n')
+    const second = Math.floor(statSync(join(dir, '.git', 'index')).mtimeMs / 1000)
+    waitUntil(() => Math.floor(Date.now() / 1000) > second)
+    expect(fp(dir).treeId).not.toBe(before)
   })
 
   it('makes a sealed run stale for a rename, naming both paths', () => {

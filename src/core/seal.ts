@@ -51,6 +51,8 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -188,7 +190,20 @@ export function sourceFingerprint(repo: string, excluded: string[] = [], root = 
   const dir = mkdtempSync(join(tmpdir(), 'evidence-layer-index-'))
   const tmpIndex = join(dir, 'index')
   try {
-    if (indexPath && existsSync(resolve(root, indexPath))) copyFileSync(resolve(root, indexPath), tmpIndex)
+    if (indexPath && existsSync(resolve(root, indexPath))) {
+      const source = resolve(root, indexPath)
+      copyFileSync(source, tmpIndex)
+      // The copy keeps the index's own timestamp. git trusts an entry whose
+      // stat data matches only when the entry is older than the index; one
+      // from the index's own second is "racily clean" and its file is reread.
+      // A copy stamped with the moment it was made is newer than every entry,
+      // so a same-size edit made in that second - what an agent does when it
+      // edits straight after a commit or a gather - read as no change, and the
+      // seal called stale code fresh. Rounded down to the second: an earlier
+      // stamp only marks more entries racy, which costs a reread, never a miss.
+      const second = Math.floor(statSync(source).mtimeMs / 1000)
+      utimesSync(tmpIndex, second, second)
+    }
     const env = { GIT_INDEX_FILE: tmpIndex }
     const add = git(
       ['add', '-A', '--', '.', ...largeUntracked.map((f) => ':(exclude,literal)' + f.path)],
