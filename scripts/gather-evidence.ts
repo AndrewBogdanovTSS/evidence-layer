@@ -24,9 +24,14 @@
  * suite can name its count as a predicate - the same adapter a project on
  * pytest or JUnit swaps for its own.
  *
- * Exit codes: 0 bundle written - 1 refs unresolvable or the guard failed - 2 bad usage.
+ * A step that failed still gets its block - a failing run is evidence - and
+ * then the script exits 1, so a CI job whose gather is its test run fails the
+ * way the test run would have.
+ *
+ * Exit codes: 0 bundle written, every step that ran passed - 1 a step failed
+ * (the bundle is still written), or refs unresolvable or the guard failed - 2 bad usage.
  */
-import { EXIT, gatherEvidence, help, parseArgs, usage } from '../src/index'
+import { EXIT, gatherEvidence, help, parseArgs, stepFailed, usage } from '../src/index'
 import { summariseVitest } from '../src/adapters/test-reports'
 
 const HELP = `
@@ -44,7 +49,8 @@ blocks and a ready-to-paste claim skeleton.
   --audit  also run \`pnpm audit\` - needs network, and can change with no code
            change, so it is not planned by default
 
-exit 0 = bundle written, 1 = could not gather, 2 = bad usage
+exit 0 = bundle written and every step passed, 1 = a step failed (the bundle
+is still written) or could not gather, 2 = bad usage
 `
 
 /** This repository has no linter to run; the typechecker is what stands in its place. */
@@ -64,8 +70,9 @@ async function main(): Promise<void> {
   const audit = args.audit === true
   if (!base) usage(HELP)
 
+  let failed: string[]
   try {
-    await gatherEvidence({
+    const result = await gatherEvidence({
       repo,
       base,
       head,
@@ -75,8 +82,13 @@ async function main(): Promise<void> {
       plan: { lintCommand: typecheckInsteadOfLint },
       summaries: { test: summariseVitest() },
     })
+    failed = result.steps.filter(stepFailed).map((s) => s.name)
   } catch (err) {
     console.error((err as Error).message)
+    process.exit(EXIT.failed)
+  }
+  if (failed.length > 0) {
+    console.error('failed: ' + failed.join(', ') + ' - the bundle records how')
     process.exit(EXIT.failed)
   }
   process.exit(EXIT.ok)

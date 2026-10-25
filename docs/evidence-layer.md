@@ -151,6 +151,14 @@ manager> run evidence` when there is an `evidence` script. A block that backs a
 suggested claim is printed once, under *Suggested claims* with that claim; its
 step's section points there.
 
+A step that fails still gets its block - a failing run is evidence - and the
+gather goes on. What it returns says how each one ended: `steps`, one entry per
+planned step with its exit code and stop reason or the reason it was skipped,
+and `stepFailed(step)` to read one. `pnpm evidence` and the example's
+`scripts/evidence.mjs` exit 1 when one failed, after writing the bundle, so a
+CI job can run the gather *instead of* its test step rather than as well as it:
+the job fails when the suite does, and the suite runs once.
+
 ### 4. `pnpm check:claims <review.md>` - is every claim backed?
 
 A review can label each claim VERIFIED, DOCUMENTED, INFERRED or UNVERIFIED. That

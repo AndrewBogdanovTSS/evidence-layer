@@ -98,6 +98,15 @@ describe('examples/plain-node-project, end to end', () => {
     expect(stale.findings.find((f) => f.code === 'seal/stale')?.detail).toContain('index.js')
   })
 
+  it('fails the gather when the suite fails, with the bundle still written - so CI can gather instead of running npm test', () => {
+    const dir = standaloneCopy()
+    writeFileSync(join(dir, 'index.js'), readFileSync(join(dir, 'index.js'), 'utf8').replace('n + 1', 'n + 2'))
+    const failing = spawnSync(process.execPath, ['scripts/evidence.mjs', '--base', 'HEAD'], { cwd: dir, encoding: 'utf8' })
+    expect(failing.status).toBe(1)
+    expect(failing.stderr).toContain('failed: test')
+    expect(readFileSync(join(dir, 'evidence.local.md'), 'utf8')).toContain('[SUMMARY tests: passed=0 failed=3')
+  })
+
   it('runs the hook commands its .claude and .codex files hold, the way each host runs them', () => {
     const dir = standaloneCopy()
     const command = (file: string) =>

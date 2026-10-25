@@ -48,11 +48,17 @@
  * `adapters/test-reports` for JUnit XML, pytest and vitest. Appended after
  * the tool has finished, by the gatherer and not by the tool, which is what
  * `parseWorkSummary` relies on when it reads only the last line.
+ *
+ * A failing step does not make the gather fail: a run that failed is evidence,
+ * and the bundle is written either way. What a gather does say is how every
+ * step ended - `GatherResult.steps`, and `stepFailed` to read one - so that a
+ * caller whose gather *is* the test run, as CI's should be, can fail its job
+ * on it instead of running the suite a second time just to get an exit code.
  */
 import { existsSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { WORK_SUMMARY_KEYS, artifactId, classifyCommand, formatArtifact, formatWorkSummary } from './artifact'
-import type { WorkKind, WorkSummary } from './artifact'
+import type { StopReason, WorkKind, WorkSummary } from './artifact'
 import { generateClaimSkeleton, generateSampleSkeleton } from './skeleton'
 import type { SkeletonArtifact } from './skeleton'
 import { gatherCommandFor } from './gather-command'
@@ -252,6 +258,23 @@ export interface GatherOptions {
   timeoutMs?: number | Partial<Record<string, number>>
 }
 
+/**
+ * How one planned step ended, or why it never started. The diff and the
+ * working tree are not steps: neither passes or fails, so neither is here.
+ */
+export type StepOutcome =
+  | { name: string; command: string; skipReason: string }
+  | { name: string; command: string; id: string; exitCode: number; stopped?: StopReason }
+
+/**
+ * Whether a step ran and did not succeed: a non-zero exit, or stopped before
+ * it reported a result. A skipped step did not fail - the bundle says it was
+ * skipped, and a claim about it has nothing to cite.
+ */
+export function stepFailed(step: StepOutcome): boolean {
+  return 'exitCode' in step && (step.exitCode !== 0 || step.stopped !== undefined)
+}
+
 export interface GatherResult {
   headSha: string
   baseSha: string
@@ -263,6 +286,8 @@ export interface GatherResult {
   changedFiles: string[]
   /** The commits' part of `changedFiles` alone - what the diff block and the sample quotes describe. */
   committedFiles: string[]
+  /** Every planned step in the order it ran, the dependency audit (`audit`) last when it was asked for. */
+  steps: StepOutcome[]
   outPath: string
   /** Whether `git status` reported nothing beyond the reviewed commit itself. */
   treeClean: boolean
@@ -409,10 +434,12 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   const plan: PlanOptions = { ...opts.plan, hasLockfile }
 
   let testOutput: string | undefined
+  const steps: StepOutcome[] = []
   for (const step of planStepsDefault(changedFiles, skip, plan)) {
     parts.push('## ' + step.name, '')
     if (step.skipReason) {
       parts.push('_Not run: ' + step.skipReason + '._', '')
+      steps.push({ name: step.name, command: step.command, skipReason: step.skipReason })
       continue
     }
     const startedAt = Date.now()
@@ -431,6 +458,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     }
     const id = artifactId(res.command, headSha, res.output)
     runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
+    steps.push({ name: step.name, command: res.command, id, exitCode: res.exitCode, ...(res.stopped && { stopped: res.stopped }) })
     const artifact: SkeletonArtifact = { command: res.command, output: res.output, exitCode: res.exitCode, id, commit: headSha, stopped: res.stopped }
     parts.push(blockOrPointer(artifact), '')
     if (noSummary) parts.push('_No work summary: ' + noSummary + '._', '')
@@ -454,6 +482,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     observe('dependency audit')
     const id = artifactId(res.command, headSha, res.output)
     runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
+    steps.push({ name: 'audit', command: res.command, id, exitCode: res.exitCode, ...(res.stopped && { stopped: res.stopped }) })
     const artifact: SkeletonArtifact = { command: res.command, output: res.output, exitCode: res.exitCode, id, commit: headSha, stopped: res.stopped }
     parts.push(
       '## dependency audit',
@@ -528,6 +557,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     baseSha,
     changedFiles,
     committedFiles: committed,
+    steps,
     outPath: out,
     treeClean,
     sealed: runId !== undefined,

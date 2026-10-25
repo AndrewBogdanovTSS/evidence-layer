@@ -14,7 +14,12 @@
 // lint script is a placeholder that checks nothing and exits 0 - gathered, it
 // would hand the skeleton a "lint reports no violations" claim about no lint
 // at all, so it is skipped too rather than cited.
-import { gatherEvidence } from 'evidence-layer'
+//
+// A failing test still gets its block - a failing run is evidence - and then
+// the script exits 1. That is what lets CI run this instead of `npm test`
+// rather than as well as it: the job fails when the suite does, and the suite
+// runs once.
+import { gatherEvidence, stepFailed } from 'evidence-layer'
 import { summariseNodeTest } from 'evidence-layer/adapters/test-reports'
 
 const arg = (name) => {
@@ -22,10 +27,16 @@ const arg = (name) => {
   return i === -1 ? undefined : process.argv[i + 1]
 }
 
-await gatherEvidence({
+const result = await gatherEvidence({
   repo: process.cwd(),
   base: arg('base') ?? 'origin/main',
   skip: ['lint', 'typecheck', 'lockfile'],
   plan: { testCommand: () => 'npm test' },
   summaries: { test: summariseNodeTest() },
 })
+
+const failed = result.steps.filter(stepFailed).map((s) => s.name)
+if (failed.length > 0) {
+  console.error('failed: ' + failed.join(', ') + ' - the bundle records how')
+  process.exitCode = 1
+}
