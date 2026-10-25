@@ -8,26 +8,28 @@
  * assertions written once and trusted forever; this gives them a clock.
  *
  * Three outcomes, never two. A claim this script cannot evaluate (because the
- * build it would read is not on disk) is reported `unverifiable`, which is not
- * a pass.
+ * build it would read is not on disk, or the suite run it reads printed no
+ * summary) is reported `unverifiable`, which is not a pass.
  *
  * Exit codes: 0 clean - 1 at least one error - 3 flaky - 2 bad usage.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CODES, exitCodeFor, help, parseArgs, report, run } from '../src/index'
+import { CODES, exitCodeFor, help, parseArgs, report, run, usage } from '../src/index'
 import type { Finding } from '../src/index'
 import { parseTestCount } from '../src/adapters/node-default'
 import { ACTION_REF_FILES, findActionRefs } from './action-refs'
 
 const HELP = `
-pnpm check:docs [--repo <path>] [--fast]
+pnpm check:docs [--repo <path>] [--fast] [--suite-output <file>]
 
 Checks every claim README.md makes about this package against the package.
 
-  --repo   repository root (default: the one this script lives in)
-  --fast   skip the test-count claim, which has to run the suite to check it
+  --repo           repository root (default: the one this script lives in)
+  --fast           skip the test-count claim, which has to run the suite to check it
+  --suite-output   read the test count from what a suite run already printed,
+                   saved to <file>, instead of running the suite again
 `
 
 const TEST_COUNT_CLAIM = 'the test count on the page is the size of the suite'
@@ -148,8 +150,33 @@ function checkCommands(readme: string, repo: string, pkg: Pkg): Finding {
   }
 }
 
+/**
+ * What a suite run printed, and how it ended, for the detail line when no
+ * summary can be read from it.
+ *
+ * `check:all` runs the whole suite anyway, as a check of its own, and hands
+ * what it printed over through `--suite-output`: the same vitest at the same
+ * commit prints the same summary line, so running it again here only doubled
+ * the slowest step of the pre-push sequence. Run alone, this script still runs
+ * the suite itself - a count read from a file nobody refreshed would be a
+ * claim about some earlier commit.
+ */
+function suiteOutput(repo: string, file: string | undefined): { output: string; ended: string } {
+  if (file === undefined) {
+    const result = run('pnpm test:unit', { cwd: repo, timeoutMs: 600_000 })
+    return { output: result.output, ended: 'it exited ' + result.exitCode }
+  }
+  try {
+    return { output: readFileSync(file, 'utf8'), ended: 'its output was read from ' + file }
+  } catch (error) {
+    // A file that is not there is not a suite that printed nothing worth
+    // counting: empty output, no summary in it, `unverifiable` like any other.
+    return { output: '', ended: 'could not read ' + file + ': ' + (error instanceof Error ? error.message : String(error)) }
+  }
+}
+
 /** The flagship: the number in the prose against the number the runner reports. */
-function checkTestCount(readme: string, repo: string): Finding[] {
+function checkTestCount(readme: string, repo: string, suiteOutputFile: string | undefined): Finding[] {
   const statedTests = /\*\*(\d+) tests\*\*/.exec(readme)?.[1]
   const statedFiles = /across \*\*(\d+) files\*\*/.exec(readme)?.[1]
   if (!statedTests) {
@@ -163,14 +190,14 @@ function checkTestCount(readme: string, repo: string): Finding[] {
     ]
   }
 
-  const result = run('pnpm test:unit', { cwd: repo, timeoutMs: 600_000 })
-  const count = parseTestCount(result.output)
+  const suite = suiteOutput(repo, suiteOutputFile)
+  const count = parseTestCount(suite.output)
   if (count === null) {
     return [
       {
         level: 'unverifiable',
         claim: TEST_COUNT_CLAIM,
-        detail: 'the runner printed no summary line this script recognises - it exited ' + result.exitCode,
+        detail: 'the runner printed no summary line this script recognises - ' + suite.ended,
         file: 'README.md',
       },
     ]
@@ -178,7 +205,7 @@ function checkTestCount(readme: string, repo: string): Finding[] {
 
   const findings = [compare(TEST_COUNT_CLAIM, statedTests, String(count))]
   // The same two forms as the test line: `39 passed (39)`, or `1 failed | 38 passed (39)`.
-  const files = /Test Files\s+\d+ [a-z][^\n(]*\((\d+)\)/.exec(result.output)?.[1]
+  const files = /Test Files\s+\d+ [a-z][^\n(]*\((\d+)\)/.exec(suite.output)?.[1]
   if (statedFiles && files) {
     findings.push(compare('the test-file count on the page is the shape of the suite', statedFiles, files))
   }
@@ -311,9 +338,13 @@ function checkCodeTable(repo: string): Finding[] {
 function main(): void {
   const args = parseArgs(process.argv.slice(2))
   if (args.help) help(HELP)
+  // A bare `--suite-output` names no file; quietly running the suite instead
+  // would hide that whoever passed it is not getting what they asked for.
+  if (args['suite-output'] === true) usage(HELP)
 
   const here = fileURLToPath(new URL('.', import.meta.url))
   const repo = typeof args.repo === 'string' ? args.repo : join(here, '..')
+  const suiteOutputFile = typeof args['suite-output'] === 'string' ? args['suite-output'] : undefined
   const readme = readFileSync(join(repo, 'README.md'), 'utf8')
   const pkg = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')) as Pkg
 
@@ -339,7 +370,7 @@ function main(): void {
             file: 'README.md',
           },
         ]
-      : checkTestCount(readme, repo)),
+      : checkTestCount(readme, repo, suiteOutputFile)),
   )
 
   report('README claims, checked against the package', findings)
