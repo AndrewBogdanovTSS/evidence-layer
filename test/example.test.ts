@@ -122,8 +122,12 @@ describe('examples/plain-node-project, end to end', () => {
       return { status: res.status, codes: (JSON.parse(res.stdout) as { findings: { code: string }[] }).findings.map((f) => f.code) }
     }
     expect(check()).toEqual({ status: 0, codes: expect.arrayContaining(['claims/verified', 'bundle/provenance']) })
-    // One line of the block's output changed: still a well-formed block, no longer the gatherer's.
-    writeFileSync(join(job, 'review.md'), suggested.replace('# tests 3', '# tests 4'))
+    // A line added to the block's output: still a well-formed block, no longer the gatherer's.
+    // Not an edit to the counts - Node 22 prints them as TAP and Node 24 does not, and an edit
+    // that matches nothing leaves the review as it was.
+    const edited = suggested.replace('$ npm test\n', '$ npm test\nall 3 tests pass\n')
+    expect(edited).not.toBe(suggested)
+    writeFileSync(join(job, 'review.md'), edited)
     expect(check()).toEqual({ status: 1, codes: expect.arrayContaining(['bundle/edited']) })
   })
 
