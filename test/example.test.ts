@@ -202,7 +202,10 @@ describe('npm run ci:local', () => {
     expect(red.status).toBe(1)
     expect(summary(red.stdout)).toContain('evidence    required  fail')
     expect(summary(red.stdout)).toContain('review      optional  skipped - it needs evidence')
-  })
+    // Two full runs of the workflow's jobs on a fresh copy - a dozen processes. 1.6 s here
+    // under the whole suite, and past vitest's 5 s once on a loaded runner: the gate tests'
+    // budget, not the default.
+  }, 30_000)
 
   // POSIX only - the stand-in is a shell script.
   it.skipIf(process.platform === 'win32')('asks the model exactly what the workflow asks it, and fails a model step that wrote no review', () => {
@@ -226,7 +229,7 @@ describe('npm run ci:local', () => {
       '--allowedTools', 'Read,Glob,Grep,Write', '--disallowedTools', 'Bash,WebFetch,WebSearch',
       '--settings', '{"disableAllHooks": true}',
     ])
-  })
+  }, 30_000)
 
   it('refuses a workflow whose review step it cannot read, rather than asking the model something else', () => {
     const dir = pullRequest()
