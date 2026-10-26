@@ -71,6 +71,11 @@ function resolveCli() {
         'the installed evidence-layer ' + (manifest.version ?? '') + ' cannot write GitHub annotations - upgrade it to 0.7.0 or later',
       )
     }
+    // The same rule for `--bundle`: an older package would ignore the flag,
+    // check nothing against the bundle, and pass.
+    if (input('bundle') && !manifest.evidenceLayer?.claimsAgainst?.includes('bundle')) {
+      misconfigured('the installed evidence-layer ' + (manifest.version ?? '') + ' cannot check claims against a bundle - upgrade it')
+    }
     const bin = join(dirname(installed), manifest.bin?.['evidence-layer'] ?? 'dist/bin/evidence-layer.mjs')
     return { command: process.execPath, prefix: [bin], source: 'evidence-layer ' + manifest.version + ', installed in the project' }
   }
@@ -109,8 +114,13 @@ function spawnCli(cli, args) {
 }
 
 const strict = input('strict') === 'true'
+// Passed as their own arguments, never spliced into one: a path is not a flag.
+const against = [
+  ...(input('bundle') ? ['--bundle', input('bundle')] : []),
+  ...(input('sha') ? ['--sha', input('sha')] : []),
+]
 const runs = [
-  ...list(input('claims')).map((path) => ['claims', path, '--format', 'github', ...(strict ? ['--strict'] : [])]),
+  ...list(input('claims')).map((path) => ['claims', path, ...against, '--format', 'github', ...(strict ? ['--strict'] : [])]),
   ...list(input('receipt')).map((path) => ['receipt', path, '--format', 'github', ...(strict ? ['--strict'] : [])]),
   ...(input('governance') === 'true' ? [['governance', '--enforce', '--no-journal', '--format', 'github']] : []),
 ]

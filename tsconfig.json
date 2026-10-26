@@ -16,5 +16,5 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "bin/**/*.ts", "test/**/*.ts", "tsdown.config.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "bin/**/*.ts", "scripts/**/*.ts", "demo/**/*.ts", "test/**/*.ts", "tsdown.config.ts", "vitest.config.ts"]
 }

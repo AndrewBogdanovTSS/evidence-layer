@@ -34,7 +34,7 @@ import {
   run,
 } from '../src/index'
 import type { Finding, Report, ReportFinding, RunResult } from '../src/index'
-import { setupLadder } from '../demo/ladder.mjs'
+import { setupLadder } from '../demo/ladder'
 
 const HELP = `
 pnpm check:all [--enforce] [--fast] [--only <check>] [--repo <path>] [--no-json]
@@ -135,7 +135,7 @@ function checkFixtures(repo: string): Finding[] {
 
 /**
  * The ladder demo's two commits, rebuilt on top of HEAD and checked. They are
- * not files but refs (see `demo/ladder.mjs`), so they are recreated first -
+ * not files but refs (see `demo/ladder.ts`), so they are recreated first -
  * idempotently, outside `refs/heads/`, touching neither the working tree nor
  * the index. A clone where git refuses that gets `unverifiable`, not a pass.
  *

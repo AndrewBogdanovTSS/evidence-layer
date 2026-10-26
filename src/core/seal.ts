@@ -58,7 +58,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { classifyCommand, fencedLineNumbers, findArtifactBlocks } from './artifact'
-import type { FencedBlock, StopReason } from './artifact'
+import type { ArtifactBlock, FencedBlock, StopReason } from './artifact'
 import { findClaims } from './claims'
 import type { CodedFinding } from './codes'
 import { isRecord } from './json'
@@ -358,26 +358,14 @@ const RUN_ID_RE = /^[0-9TZ]+-[0-9a-f]{6}$/
 
 /**
  * The seal for a bundle: every addressed block in it, hashed canonically.
- * Two different blocks under one short id make this throw, naming both
- * commands - a map entry silently replaced is an artifact silently lost.
+ * Throws where `hashBlocks` does.
  */
 export function buildSeal(input: PublishInput, runId: string): Seal {
-  const lines = input.bundle.split(/\r?\n/)
   const byId = new Map(input.artifacts.map((a) => [a.id, a]))
   const artifacts: Record<string, SealedArtifact> = {}
-  for (const block of findArtifactBlocks(lines)) {
-    if (!block.id) continue
-    const blockSha256 = sha256(canonicalBlock(lines, block))
-    const existing = artifacts[block.id]
-    if (existing) {
-      if (existing.blockSha256 === blockSha256) continue
-      throw new Error(
-        'two different artifacts share the id ' + block.id + ': `' + existing.command + '` and `' + block.command +
-          '` - the short id collided; gather again',
-      )
-    }
-    const source = byId.get(block.id)
-    artifacts[block.id] = {
+  for (const [id, { block, blockSha256 }] of hashBlocks(input.bundle)) {
+    const source = byId.get(id)
+    artifacts[id] = {
       command: block.command,
       ...(block.commit !== undefined && { commit: block.commit }),
       exitCode: block.exitCode,
@@ -398,6 +386,31 @@ export function buildSeal(input: PublishInput, runId: string): Seal {
     ...(input.gatherCommand !== undefined && { gatherCommand: input.gatherCommand }),
     ...(input.base !== undefined && { base: input.base }),
   }
+}
+
+/**
+ * Every addressed block in a bundle, by id, with its canonical hash - what a
+ * seal records, and what `claims --bundle` compares a review's blocks with.
+ * Two different blocks under one short id throw, naming both commands: a map
+ * entry silently replaced is an artifact silently lost.
+ */
+export function hashBlocks(bundle: string): Map<string, { block: ArtifactBlock; blockSha256: string }> {
+  const lines = bundle.split(/\r?\n/)
+  const hashed = new Map<string, { block: ArtifactBlock; blockSha256: string }>()
+  for (const block of findArtifactBlocks(lines)) {
+    if (!block.id) continue
+    const blockSha256 = sha256(canonicalBlock(lines, block))
+    const existing = hashed.get(block.id)
+    if (existing) {
+      if (existing.blockSha256 === blockSha256) continue
+      throw new Error(
+        'two different artifacts share the id ' + block.id + ': `' + existing.block.command + '` and `' + block.command +
+          '` - the short id collided; gather again',
+      )
+    }
+    hashed.set(block.id, { block, blockSha256 })
+  }
+  return hashed
 }
 
 /**
@@ -496,30 +509,21 @@ export function readCurrentRun(repo: string, state = stateDir(repo)): CurrentRun
  * block are left to `lintClaims`, which already reports them.
  */
 export function checkProvenance(markdown: string, file: string, run: Run): CodedFinding[] {
-  const lines = markdown.split(/\r?\n/)
-  const blocks = findArtifactBlocks(lines)
   const findings: CodedFinding[] = []
-  const seen = new Set<string>()
-  for (const claim of findClaims(lines, fencedLineNumbers(lines))) {
-    const id = claim.gradeId
-    if (!id || seen.has(id)) continue
-    seen.add(id)
-    const cited = blocks.filter((b) => b.id === id)
-    if (cited.length === 0) continue
-    const where = { file, line: claim.line + 1 }
-    const sealed = run.seal.artifacts[id]
-    if (!sealed) {
+  for (const cited of compareCited(markdown, file, run.seal.artifacts)) {
+    const { id, where } = cited
+    if (cited.missing) {
       findings.push({
         level: 'error',
         code: 'seal/not-gathered',
         claim: 'artifact ' + id + ' came from the gatherer',
-        detail: notGatheredDetail(run, id, cited[0]!.command),
-        fix: notGatheredFix(run, cited[0]!.command),
+        detail: notGatheredDetail(run, id, cited.command),
+        fix: notGatheredFix(run, cited.command),
         ...where,
       })
       continue
     }
-    const edited = cited.find((b) => sha256(canonicalBlock(lines, b)) !== sealed.blockSha256)
+    const edited = cited.edited
     findings.push(
       edited
         ? {
@@ -542,6 +546,40 @@ export function checkProvenance(markdown: string, file: string, run: Run): Coded
     )
   }
   return findings
+}
+
+/** One cited id, held to a set of known blocks: absent from it, or the first of its blocks that differs. */
+export interface CitedComparison {
+  id: string
+  /** The command on the first block in the review carrying this id. */
+  command: string
+  where: { file: string; line: number }
+  missing: boolean
+  edited?: ArtifactBlock
+}
+
+/**
+ * The walk both provenance checks share: every id an addressed VERIFIED claim
+ * cites, once, and how its blocks compare with `known`. A claim whose id
+ * resolves to no block in the review is left out - `lintClaims` reports it.
+ */
+export function compareCited(markdown: string, file: string, known: Record<string, { blockSha256: string }>): CitedComparison[] {
+  const lines = markdown.split(/\r?\n/)
+  const blocks = findArtifactBlocks(lines)
+  const out: CitedComparison[] = []
+  const seen = new Set<string>()
+  for (const claim of findClaims(lines, fencedLineNumbers(lines))) {
+    const id = claim.gradeId
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    const cited = blocks.filter((b) => b.id === id)
+    if (cited.length === 0) continue
+    const where = { file, line: claim.line + 1 }
+    const entry = known[id]
+    const edited = entry ? cited.find((b) => sha256(canonicalBlock(lines, b)) !== entry.blockSha256) : undefined
+    out.push({ id, command: cited[0]!.command, where, missing: !entry, ...(edited && { edited }) })
+  }
+  return out
 }
 
 /**

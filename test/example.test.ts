@@ -98,6 +98,52 @@ describe('examples/plain-node-project, end to end', () => {
     expect(stale.findings.find((f) => f.code === 'seal/stale')?.detail).toContain('index.js')
   })
 
+  it('fails the gather when the suite fails, with the bundle still written - so CI can gather instead of running npm test', () => {
+    const dir = standaloneCopy()
+    writeFileSync(join(dir, 'index.js'), readFileSync(join(dir, 'index.js'), 'utf8').replace('n + 1', 'n + 2'))
+    const failing = spawnSync(process.execPath, ['scripts/evidence.mjs', '--base', 'HEAD'], { cwd: dir, encoding: 'utf8' })
+    expect(failing.status).toBe(1)
+    expect(failing.stderr).toContain('failed: test')
+    expect(readFileSync(join(dir, 'evidence.local.md'), 'utf8')).toContain('[SUMMARY tests: passed=0 failed=3')
+  })
+
+  it('checks a review written where there is no seal against the bundle the gather wrote', () => {
+    const dir = standaloneCopy()
+    const gathered = spawnSync(process.execPath, ['scripts/evidence.mjs', '--base', 'HEAD'], { cwd: dir, encoding: 'utf8' })
+    expect(gathered.status, gathered.stderr).toBe(0)
+    const suggested = /## Suggested claims\n([\s\S]*?)(?:\n## |$)/.exec(readFileSync(join(dir, 'evidence.local.md'), 'utf8'))![1]!
+
+    // The review job: no checkout, no seal - the review and the bundle the gather job uploaded.
+    const job = mkdtempSync(join(tmpdir(), 'el-example-review-'))
+    writeFileSync(join(job, 'evidence.local.md'), readFileSync(join(dir, 'evidence.local.md')))
+    writeFileSync(join(job, 'review.md'), suggested)
+    const check = () => {
+      const res = spawnSync(process.execPath, [BIN, 'claims', 'review.md', '--bundle', 'evidence.local.md', '--format', 'json'], { cwd: job, encoding: 'utf8' })
+      return { status: res.status, codes: (JSON.parse(res.stdout) as { findings: { code: string }[] }).findings.map((f) => f.code) }
+    }
+    expect(check()).toEqual({ status: 0, codes: expect.arrayContaining(['claims/verified', 'bundle/provenance']) })
+    // A line added to the block's output: still a well-formed block, no longer the gatherer's.
+    // Not an edit to the counts - Node 22 prints them as TAP and Node 24 does not, and an edit
+    // that matches nothing leaves the review as it was.
+    const edited = suggested.replace('$ npm test\n', '$ npm test\nall 3 tests pass\n')
+    expect(edited).not.toBe(suggested)
+    writeFileSync(join(job, 'review.md'), edited)
+    expect(check()).toEqual({ status: 1, codes: expect.arrayContaining(['bundle/edited']) })
+  })
+
+  it('has a workflow that runs the suite once, inside the gather, and holds the review to the bundle it uploaded', () => {
+    // Comments say why; only what the runner reads is held here.
+    const workflow = readFileSync(join(EXAMPLE, '.github', 'workflows', 'ci.yml'), 'utf8').replace(/^\s*#.*\n/gm, '')
+    const job = (name: string) => new RegExp('^  ' + name + ':\\n([\\s\\S]*?)(?=^  [a-z-]+:\\n|(?![\\s\\S]))', 'm').exec(workflow)?.[1] ?? ''
+    expect(workflow).not.toMatch(/npm (?:run )?test\b/)
+    expect(job('evidence')).toMatch(/npm run evidence -- --base/)
+    expect(job('evidence')).toMatch(/upload-artifact[\s\S]*evidence\.local\.md/)
+    expect(job('governance')).not.toContain('needs:')
+    expect(job('review')).toMatch(/needs: evidence/)
+    expect(job('review')).toMatch(/--disallowedTools Bash/)
+    expect(job('review')).toMatch(/bundle: evidence\.local\.md/)
+  })
+
   it('runs the hook commands its .claude and .codex files hold, the way each host runs them', () => {
     const dir = standaloneCopy()
     const command = (file: string) =>
@@ -118,5 +164,79 @@ describe('examples/plain-node-project, end to end', () => {
       expect(res.status, res.stderr).toBe(0)
       expect(JSON.parse(res.stdout).hookSpecificOutput.additionalContext).toContain('**Claim**')
     }
+  })
+})
+
+// Each test here keeps the real model out of reach: --review-skeleton, a run
+// that stops before the review job, or a stand-in `claude` first on PATH.
+describe('npm run ci:local', () => {
+  /** A standalone copy with one commit on a branch off main - a pull request's shape. */
+  function pullRequest(): string {
+    const dir = standaloneCopy()
+    sh(dir, 'branch', '-m', 'main')
+    sh(dir, 'switch', '-qc', 'change')
+    writeFileSync(join(dir, 'index.js'), readFileSync(join(dir, 'index.js'), 'utf8') + '\n')
+    sh(dir, 'commit', '-qam', 'a change')
+    return dir
+  }
+  const ciLocal = (dir: string, args: string[], env: Record<string, string> = {}) =>
+    spawnSync(process.execPath, ['scripts/ci-local.mjs', ...args], { cwd: dir, encoding: 'utf8', env: { ...process.env, ...env } })
+  const summary = (out: string) => out.slice(out.indexOf('=== what CI would report'))
+
+  it('refuses inside evidence-layer\'s checkout, where git would answer for the wrong repository', () => {
+    const res = spawnSync(process.execPath, ['scripts/ci-local.mjs', '--review-skeleton'], { cwd: EXAMPLE, encoding: 'utf8' })
+    expect(res.status).toBe(2)
+    expect(res.stderr).toContain('npm run standalone')
+  })
+
+  it('runs the jobs as CI does: a passing change passes them, a failing suite fails evidence and skips the review', () => {
+    const dir = pullRequest()
+    const clean = ciLocal(dir, ['--review-skeleton'])
+    expect(clean.status, clean.stdout + clean.stderr).toBe(0)
+    expect(summary(clean.stdout)).toMatch(/evidence {4}required {2}pass\n {2}governance {2}required {2}pass\n {2}review {6}optional {2}pass/)
+    expect(clean.stdout).toContain('VERIFIED[tests-')
+
+    writeFileSync(join(dir, 'index.js'), readFileSync(join(dir, 'index.js'), 'utf8').replace('n + 1', 'n + 2'))
+    sh(dir, 'commit', '-qam', 'broken')
+    const red = ciLocal(dir, ['--review-skeleton'])
+    expect(red.status).toBe(1)
+    expect(summary(red.stdout)).toContain('evidence    required  fail')
+    expect(summary(red.stdout)).toContain('review      optional  skipped - it needs evidence')
+    // Two full runs of the workflow's jobs on a fresh copy - a dozen processes. 1.6 s here
+    // under the whole suite, and past vitest's 5 s once on a loaded runner: the gate tests'
+    // budget, not the default.
+  }, 30_000)
+
+  // POSIX only - the stand-in is a shell script.
+  it.skipIf(process.platform === 'win32')('asks the model exactly what the workflow asks it, and fails a model step that wrote no review', () => {
+    const dir = pullRequest()
+    const bin = mkdtempSync(join(tmpdir(), 'el-fake-claude-'))
+    const log = join(bin, 'claude.log')
+    // Records its arguments, one per NUL, and writes no review - so a review left by an earlier run must not count.
+    writeFileSync(join(bin, 'claude'), '#!/bin/sh\nprintf \'%s\\0\' "$@" > "$CLAUDE_LOG"\n', { mode: 0o755 })
+    expect(ciLocal(dir, ['--review-skeleton']).status).toBe(0)
+    expect(existsSync(join(dir, 'ai-review.md'))).toBe(true)
+
+    const res = ciLocal(dir, [], { PATH: bin + ':' + process.env.PATH, CLAUDE_LOG: log, REVIEW_MODEL: 'claude-sonnet-5-5' })
+    expect(res.status).toBe(1)
+    expect(summary(res.stdout)).toContain('review      optional  fail - the model wrote no ai-review.md')
+    const asked = readFileSync(log, 'utf8').split('\0').slice(0, -1)
+    const workflow = readFileSync(join(dir, '.github', 'workflows', 'ci.yml'), 'utf8')
+    expect(asked[0]).toBe('-p')
+    expect(workflow.replace(/\s+/g, ' ')).toContain(asked[1]!.replace(/\s+/g, ' '))
+    expect(asked.slice(2)).toEqual([
+      '--model', 'claude-sonnet-5-5', '--max-turns', '8',
+      '--allowedTools', 'Read,Glob,Grep,Write', '--disallowedTools', 'Bash,WebFetch,WebSearch',
+      '--settings', '{"disableAllHooks": true}',
+    ])
+  }, 30_000)
+
+  it('refuses a workflow whose review step it cannot read, rather than asking the model something else', () => {
+    const dir = pullRequest()
+    const path = join(dir, '.github', 'workflows', 'ci.yml')
+    writeFileSync(path, readFileSync(path, 'utf8').replace('anthropics/claude-code-action@v1', 'someone/other-action@v1'))
+    const res = ciLocal(dir, ['--review-skeleton'])
+    expect(res.status).toBe(2)
+    expect(res.stderr).toContain('no `uses: anthropics/claude-code-action` step')
   })
 })

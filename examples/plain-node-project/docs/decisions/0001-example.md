@@ -3,7 +3,7 @@ id: EXAMPLE-0001
 status: accepted
 review_by: 2099-01-01
 invariants:
-  - The counter never returns a value equal to its input; enforced by `npm test`.
+  - The counter never returns a value equal to its input; enforced by `npm run evidence`.
   - Every release is announced in the changelog; enforced by a human.
 ---
 

@@ -37,8 +37,8 @@ if (named !== undefined && existsSync(named) && readdirSync(named).length > 0) {
 }
 const dir = named === undefined ? mkdtempSync(join(tmpdir(), 'widget-counter-')) : resolve(named)
 
-// What one working copy wrote, not the project: its installed packages and its last bundle.
-const LEFT_BEHIND = new Set(['node_modules', 'evidence.local.md', join('scripts', 'standalone.mjs')])
+// What one working copy wrote, not the project: its installed packages, its last bundle, diff and review.
+const LEFT_BEHIND = new Set(['node_modules', 'evidence.local.md', 'change.diff', 'ai-review.md', join('scripts', 'standalone.mjs')])
 cpSync(project, dir, { recursive: true, filter: (src) => !LEFT_BEHIND.has(relative(project, src)) })
 
 // `file:../..` meant "the checkout above me"; from the copy, that is this path.

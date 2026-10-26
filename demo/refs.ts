@@ -20,8 +20,8 @@
  * PowerShell as often as from a POSIX shell, and `sh` is not on the path of a
  * default Windows install. One implementation, no drift.
  *
- * `node demo/refs.mjs setup` - idempotent. `reset` removes both refs and
- * nothing else. Neither touches `master`. Both also run `demo/ladder.mjs`, so
+ * `pnpm demo:setup` - idempotent. `pnpm demo:reset` removes both refs and
+ * nothing else. Neither touches `master`. Both also run `demo/ladder.ts`, so
  * one setup prepares every demo in this directory.
  *
  * Exit codes: 0 done - 1 the pinned commits are not in this clone - 2 bad usage.
@@ -29,7 +29,7 @@
 import { spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { resetLadder, setupLadder } from './ladder.mjs'
+import { resetLadder, setupLadder } from './ladder'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -46,13 +46,13 @@ const REMOTE = '572a258a2871f88d84eb6836d4e4cf96618f3de9'
 const LOCAL_REF = 'refs/heads/demo-target'
 const REMOTE_REF = 'refs/remotes/origin/demo-target'
 
-const git = (...args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' })
-const out = (...args) => git(...args).stdout.trim()
+const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+const out = (...args: string[]): string => git(...args).stdout.trim()
 
 function setup() {
   for (const sha of [STALE, REMOTE]) {
     if (out('cat-file', '-t', sha) !== 'commit') {
-      console.error('demo/refs.mjs: ' + sha + ' is not a commit in this clone.')
+      console.error('demo/refs.ts: ' + sha + ' is not a commit in this clone.')
       console.error('The history moved under the fixtures. See demo/README.md.')
       process.exit(1)
     }
@@ -87,6 +87,6 @@ const command = process.argv[2]
 if (command === 'setup') setup()
 else if (command === 'reset') reset()
 else {
-  console.error('usage: node demo/refs.mjs setup|reset')
+  console.error('usage: pnpm demo:setup | pnpm demo:reset')
   process.exit(2)
 }

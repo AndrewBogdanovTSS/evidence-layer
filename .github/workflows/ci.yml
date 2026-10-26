@@ -139,6 +139,64 @@ jobs:
           echo "good=$GOOD bad=$BAD bad exit-code=$BAD_EXIT"
           test "$GOOD" = success && test "$BAD" = failure && test "$BAD_EXIT" = 1
 
+  # The example project's workflow cannot run from inside this repository -
+  # GitHub reads workflows only at the top level - so its handoff runs here, on
+  # a standalone copy made from this commit's build: gather on one runner, the
+  # bundle carried as an artifact, the review held to it on another. The review
+  # is the bundle's own suggested claims, which is what the example's model is
+  # asked to copy - no model runs here, and the handoff is what is tested.
+  example-evidence:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Gather in a standalone copy, failing as its CI would
+        run: |
+          node examples/plain-node-project/scripts/standalone.mjs "$RUNNER_TEMP/widget-counter"
+          cd "$RUNNER_TEMP/widget-counter"
+          npm run evidence -- --base HEAD
+          awk '/^## Suggested claims$/ { on = 1; next } /^## / { on = 0 } on' evidence.local.md > review.md
+          cp evidence.local.md review.md "$GITHUB_WORKSPACE/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: example-evidence
+          path: |
+            evidence.local.md
+            review.md
+          if-no-files-found: error
+          retention-days: 1
+
+  example-review:
+    needs: example-evidence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/download-artifact@v4
+        with:
+          name: example-evidence
+          path: example/
+      - name: The review, held to the bundle another job gathered
+        uses: ./
+        with:
+          claims: example/review.md
+          bundle: example/evidence.local.md
+
   # Separate job, one Node version: these check the repository, not the code's
   # behaviour on a given runtime, so running them three times says nothing new.
   governance:

@@ -151,6 +151,14 @@ manager> run evidence` when there is an `evidence` script. A block that backs a
 suggested claim is printed once, under *Suggested claims* with that claim; its
 step's section points there.
 
+A step that fails still gets its block - a failing run is evidence - and the
+gather goes on. What it returns says how each one ended: `steps`, one entry per
+planned step with its exit code and stop reason or the reason it was skipped,
+and `stepFailed(step)` to read one. `pnpm evidence` and the example's
+`scripts/evidence.mjs` exit 1 when one failed, after writing the bundle, so a
+CI job can run the gather *instead of* its test step rather than as well as it:
+the job fails when the suite does, and the suite runs once.
+
 ### 4. `pnpm check:claims <review.md>` - is every claim backed?
 
 A review can label each claim VERIFIED, DOCUMENTED, INFERRED or UNVERIFIED. That
@@ -242,6 +250,19 @@ Read `bad-claims.md` and `good-claims.md` side by side. The repaired one is
 longer, hedges more and sounds less confident - and it is the only one of the
 two that could be proved wrong.
 
+`--seal` holds every cited block to the run this checkout gathered, and so
+works only where the gather ran. `--bundle <file>` holds it to a bundle file
+instead - in CI, the one a gather job uploaded, wherever the review was then
+written: every cited block must be, canonically, the one the bundle carries
+under its id. Without one of the two, `claims` cannot tell a gathered block
+from one typed by hand under an invented id: the id hashes the full output and
+the block shows a trimmed one, so the id cannot be recomputed from it. A
+bundle is as trustworthy as where it came from - CI's own artifact, not one
+committed beside the review - and carries no fingerprint of the source, so
+pass `--sha` with the commit under review; without it, the review's receipt
+and then the bundle's own `- Head:` line name the commit. A bundle file that
+is not there is bad usage, exit 2, never a pass.
+
 Referencing an artifact is not supposed to cost more than writing a bare tag -
 see step 3 below. `pnpm evidence` computes every id and writes the
 `**Claim**` / `**Grounding**: VERIFIED[id: predicates]` pair already filled
@@ -310,7 +331,7 @@ decorative rule from a live one.
 pnpm check:all                            # this repo: every invariant reachable
 pnpm check:all --only reachability        # just the trigger graph, in a second
 
-# the fixture: one invariant enforced by `npm test`, one "enforced by a human"
+# the fixture: one invariant enforced by `npm run evidence`, one "enforced by a human"
 npx evidence-layer governance --repo examples/plain-node-project --decisions examples/plain-node-project/docs/decisions
 ```
 
@@ -521,6 +542,10 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `seal/stale` | the code changed after the evidence was gathered |
 | `seal/partial-coverage` | what was hashed is unchanged, but part of the tree could not be hashed |
 | `seal/fresh` | the code is what it was when the evidence was gathered |
+| `bundle/broken` | the bundle to check against cannot be read as an evidence bundle |
+| `bundle/not-gathered` | the bundle has no artifact with this id - naming the bundle's id for the same command, when it has one |
+| `bundle/edited` | the cited block differs from the one in the bundle |
+| `bundle/provenance` | the cited block is the one in the bundle |
 | `governance/no-invariants` | no decision record declares an invariant |
 | `governance/no-command` | an invariant names no runnable command |
 | `governance/unknown-script` | an invariant names a script package.json does not have |
@@ -548,6 +573,7 @@ The table is checked against `src/core/codes.ts` by `check:docs`, both ways.
 | `.githooks/pre-push`, after `pnpm hooks:install` | `check:all --fast --enforce` |
 | the GitHub Action, `uses: ./` in the same workflow | `claims` over a fixture review, with this commit's build |
 | the GitHub Action, in a job with nothing installed | the same action fetching the published package through `npx`, on a review that passes and one that fails |
+| `example-evidence`, then `example-review`, in the same workflow | the example project's handoff on a standalone copy: gathered on one runner, the bundle carried as an artifact, the review held to it with `bundle:` on another |
 
 The workflow is not merely a place to run the commands. It settles a conflict of
 interest: every check here can be run by whoever wrote the change, which makes a
