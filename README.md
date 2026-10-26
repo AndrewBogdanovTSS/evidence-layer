@@ -649,7 +649,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **550 tests** across **40 files**, and that sentence is checked
+The suite is **552 tests** across **41 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
@@ -660,6 +660,7 @@ pnpm check:docs     # do the claims on this page still hold?
 pnpm check:deps     # is every dependency this package declares actually used?
 pnpm check:ladder   # did this commit climb the decision ladder it says it did? (CI: every new commit)
 pnpm check:all      # every check, plus: does anything run them?
+pnpm ci:local       # CI's jobs on this machine, reported as CI would - what it cannot run is `unverifiable`
 pnpm journal:report # what the checks have found here, over time
 ```
 

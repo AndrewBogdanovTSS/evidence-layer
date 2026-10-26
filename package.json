@@ -78,6 +78,7 @@
     "check:governance": "tsx bin/evidence-layer.ts governance",
     "check:ladder": "tsx scripts/check-ladder.ts",
     "check:all": "tsx scripts/governance.ts",
+    "ci:local": "tsx scripts/ci-local.ts",
     "ci:summary": "tsx bin/evidence-layer.ts ci-summary",
     "evidence": "tsx scripts/gather-evidence.ts",
     "journal:report": "tsx bin/evidence-layer.ts journal report",
