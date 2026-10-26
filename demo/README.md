@@ -124,7 +124,7 @@ The first fails twice - the rung claim is refuted, and the clone check finds
 the copy whatever the trailer says. The second passes both. `pnpm check:all`
 holds each to its exit code and to those two findings, since a checker that
 crashed exits 1 too and must not pass for one that caught the copy. The commits are
-built from `ladder/commits/` by `ladder.mjs`; their sources end in `.txt` so
+built from `ladder/commits/` by `ladder.ts`; their sources end in `.txt` so
 that nothing scanning this repository's JavaScript mistakes the deliberate copy
 for real code.
 
@@ -150,7 +150,7 @@ find out until it mattered.
 
 ## When the history moves
 
-The receipt fixtures name specific commits, and so does `demo/refs.mjs`. If
+The receipt fixtures name specific commits, and so does `demo/refs.ts`. If
 one of them no longer resolves, `pnpm demo:setup` says so and stops, and the
 checker reports the mismatch rather than passing quietly - which is the
 behaviour you want, and also mildly inconvenient.

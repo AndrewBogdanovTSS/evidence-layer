@@ -88,6 +88,15 @@ reads the review step out of the workflow) must still read it -
   Match the density and voice of the file you are in.
 - The honest path must be cheaper than the convenient one. A feature that makes
   a correct review cost more than an unbacked one does not ship in that form.
+- Code is TypeScript, and `pnpm typecheck` covers all of it - `src/`, `bin/`,
+  `scripts/`, `demo/`, `test/` - with repository tooling run by `tsx`. Four
+  places stay plain JavaScript, because of where they run: `scripts/smoke.mjs`
+  (CI runs it on bare Node 22.0.0 with nothing installed - that is what proves
+  there are no runtime dependencies), `action/run.mjs` (GitHub runs the action
+  from the repository with no install or build), `plugins/*/scripts/*.mjs`
+  (Claude Code runs it with `node` in a user's project) and
+  `examples/plain-node-project/` (the portability fixture is a project with no
+  TypeScript on purpose).
 
 ## Commits
 

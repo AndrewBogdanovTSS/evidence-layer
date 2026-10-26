@@ -12,7 +12,7 @@
  * that is not a fact about the package: its numbers are illustrative, and the
  * drawing says so.
  *
- * `node scripts/diagram.mjs` (or `pnpm diagram`) is the whole contract.
+ * `pnpm diagram` (`tsx scripts/diagram.ts`) is the whole contract.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -50,10 +50,14 @@ const THEMES = {
     frame: '#d1d9e0',
   },
 }
-const COL = 260
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+/** The one shape both themes share; `frame` is the edge a pale card needs and a dark one does not. */
+type Theme = (typeof THEMES)[keyof typeof THEMES]
+type Direction = 'r' | 'l' | 'u' | 'd'
 
-function render(theme) {
+const COL = 260
+const esc = (s: string): string => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+function render(theme: Theme): string {
   const { C } = theme
   const PHASES = [
     { n: 1, title: 'GATHER', sub: 'before the review is written', color: C.blue },
@@ -61,12 +65,12 @@ function render(theme) {
     { n: 3, title: 'VERIFY', sub: 'at the agent\'s stop, then in CI', color: C.green },
     { n: 4, title: 'OVER TIME', sub: 'the clock', color: C.violet },
   ].map((p, i) => ({ ...p, tint: theme.tints[i] }))
-  const o = []
-  const t = (x, y, s, { size = 13, font = SANS, fill = C.text, weight = 400, anchor = 'start', italic = false } = {}) =>
+  const o: string[] = []
+  const t = (x: number, y: number, s: string, { size = 13, font = SANS, fill = C.text, weight = 400, anchor = 'start', italic = false }: { size?: number; font?: string; fill?: string; weight?: number; anchor?: string; italic?: boolean } = {}) =>
     o.push(`<text x="${x}" y="${y}" font-family="${font}" font-size="${size}" font-weight="${weight}" fill="${fill}" text-anchor="${anchor}"${italic ? ' font-style="italic"' : ''}>${esc(s)}</text>`)
-  const card = (x, y, w, h, { fill = C.card, stroke = theme.edge, strokeOpacity = theme.edgeOpacity, r = 10 } = {}) =>
+  const card = (x: number, y: number, w: number, h: number, { fill = C.card, stroke = theme.edge, strokeOpacity = theme.edgeOpacity, r = 10 }: { fill?: string; stroke?: string; strokeOpacity?: number; r?: number } = {}) =>
     o.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="${fill}" fill-opacity="${theme.cardOpacity}" stroke="${stroke}" stroke-opacity="${strokeOpacity}" stroke-width="1.2"/>`)
-  const pill = (x, y, label, color, { size = 10.5, font = MONO, w } = {}) => {
+  const pill = (x: number, y: number, label: string, color: string, { size = 10.5, font = MONO, w }: { size?: number; font?: string; w?: number } = {}): number => {
     const width = w ?? Math.round(label.length * size * 0.62 + 16)
     o.push(`<rect x="${x}" y="${y}" width="${width}" height="20" rx="10" fill="${color}" fill-opacity="0.16" stroke="${color}" stroke-opacity="0.75" stroke-width="1"/>`)
     t(x + width / 2, y + 14, label, { size, font, fill: color, anchor: 'middle' })
@@ -74,7 +78,7 @@ function render(theme) {
   }
   const HEAD_L = 9
   const HEAD_W = 5
-  const head = (x, y, dir, color) => {
+  const head = (x: number, y: number, dir: Direction, color: string) => {
     const pts = {
       r: [[x - HEAD_L, y - HEAD_W], [x, y], [x - HEAD_L, y + HEAD_W]],
       l: [[x + HEAD_L, y - HEAD_W], [x, y], [x + HEAD_L, y + HEAD_W]],
@@ -83,16 +87,16 @@ function render(theme) {
     }[dir]
     o.push(`<polygon points="${pts.map((p) => p.join(',')).join(' ')}" fill="${color}"/>`)
   }
-  const stroke = (d, color, dash) =>
+  const stroke = (d: string, color: string, dash = false) =>
     o.push(`<path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"${dash ? ' stroke-dasharray="6 4"' : ''}/>`)
   // Vertical arrow, tip at (x, y2).
-  const vArrow = (x, y1, y2, color) => {
+  const vArrow = (x: number, y1: number, y2: number, color: string) => {
     const dir = y2 > y1 ? 1 : -1
     stroke(`M${x},${y1} V${y2 - dir * HEAD_L}`, color)
     head(x, y2, dir > 0 ? 'd' : 'u', color)
   }
   // Horizontal - vertical - horizontal elbow through column x = xm, tip at (x2, y2).
-  const elbow = (x1, y1, xm, y2, x2, color, { dash = false } = {}) => {
+  const elbow = (x1: number, y1: number, xm: number, y2: number, x2: number, color: string, { dash = false }: { dash?: boolean } = {}) => {
     const r = 6
     const out = xm > x1 ? 1 : -1
     const into = x2 > xm ? 1 : -1
@@ -105,27 +109,27 @@ function render(theme) {
   }
 
   // Icons, drawn around a centre point.
-  const tick = (cx, cy, color = C.green) => {
+  const tick = (cx: number, cy: number, color: string = C.green) => {
     o.push(`<circle cx="${cx}" cy="${cy}" r="7" fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="1.2"/>`)
     o.push(`<path d="M${cx - 3.5},${cy} l2.5,2.6 l4.6,-5" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`)
   }
-  const cross = (cx, cy, color = C.red) => {
+  const cross = (cx: number, cy: number, color: string = C.red) => {
     o.push(`<circle cx="${cx}" cy="${cy}" r="7" fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="1.2"/>`)
     o.push(`<path d="M${cx - 3},${cy - 3} l6,6 M${cx + 3},${cy - 3} l-6,6" stroke="${color}" stroke-width="1.6" stroke-linecap="round"/>`)
   }
-  const iconBranch = (cx, cy, c) => o.push(`<g fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"><circle cx="${cx - 6}" cy="${cy - 9}" r="3"/><circle cx="${cx - 6}" cy="${cy + 9}" r="3"/><circle cx="${cx + 7}" cy="${cy - 4}" r="3"/><path d="M${cx - 6},${cy - 6} v12 M${cx + 7},${cy - 1} c0,6 -13,4 -13,8"/></g>`)
-  const iconGear = (cx, cy, c) => {
+  const iconBranch = (cx: number, cy: number, c: string) => o.push(`<g fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"><circle cx="${cx - 6}" cy="${cy - 9}" r="3"/><circle cx="${cx - 6}" cy="${cy + 9}" r="3"/><circle cx="${cx + 7}" cy="${cy - 4}" r="3"/><path d="M${cx - 6},${cy - 6} v12 M${cx + 7},${cy - 1} c0,6 -13,4 -13,8"/></g>`)
+  const iconGear = (cx: number, cy: number, c: string) => {
     const spokes = Array.from({ length: 8 }, (_, i) => {
       const a = (i * Math.PI) / 4
       return `M${(cx + Math.cos(a) * 8).toFixed(1)},${(cy + Math.sin(a) * 8).toFixed(1)} L${(cx + Math.cos(a) * 12).toFixed(1)},${(cy + Math.sin(a) * 12).toFixed(1)}`
     }).join(' ')
     o.push(`<g fill="none" stroke="${c}" stroke-width="2.4" stroke-linecap="round"><circle cx="${cx}" cy="${cy}" r="7.5"/><path d="${spokes}"/></g><circle cx="${cx}" cy="${cy}" r="2.6" fill="${c}"/>`)
   }
-  const iconDoc = (cx, cy, c) => o.push(`<g fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"><path d="M${cx - 9},${cy - 12} h12 l6,6 v18 h-18 z M${cx + 3},${cy - 12} v6 h6"/><path d="M${cx - 5},${cy} h10 M${cx - 5},${cy + 5} h10" stroke-linecap="round"/></g>`)
-  const iconRobot = (cx, cy, c) => o.push(`<g fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><rect x="${cx - 15}" y="${cy - 9}" width="30" height="22" rx="7"/><path d="M${cx},${cy - 9} v-6"/><path d="M${cx - 18},${cy + 2} v-4 M${cx + 18},${cy + 2} v-4"/></g><circle cx="${cx}" cy="${cy - 17}" r="2.6" fill="${c}"/><circle cx="${cx - 6}" cy="${cy + 1}" r="2.6" fill="${c}"/><circle cx="${cx + 6}" cy="${cy + 1}" r="2.6" fill="${c}"/>`)
-  const iconPerson = (cx, cy, c) => o.push(`<g fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><circle cx="${cx}" cy="${cy - 7}" r="7"/><path d="M${cx - 13},${cy + 14} c0,-9 6,-13 13,-13 s13,4 13,13"/></g>`)
-  const iconShield = (cx, cy, c) => o.push(`<path d="M${cx},${cy - 13} l11,4 v8 c0,8 -5,12 -11,14 c-6,-2 -11,-6 -11,-14 v-8 z" fill="${c}" fill-opacity="0.16" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"/><path d="M${cx - 5},${cy} l3.5,3.5 l6.5,-7" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`)
-  const iconCommit = (cx, cy, c) => o.push(`<g fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"><circle cx="${cx}" cy="${cy}" r="5"/><path d="M${cx - 13},${cy} h8 M${cx + 5},${cy} h8"/></g>`)
+  const iconDoc = (cx: number, cy: number, c: string) => o.push(`<g fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"><path d="M${cx - 9},${cy - 12} h12 l6,6 v18 h-18 z M${cx + 3},${cy - 12} v6 h6"/><path d="M${cx - 5},${cy} h10 M${cx - 5},${cy + 5} h10" stroke-linecap="round"/></g>`)
+  const iconRobot = (cx: number, cy: number, c: string) => o.push(`<g fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><rect x="${cx - 15}" y="${cy - 9}" width="30" height="22" rx="7"/><path d="M${cx},${cy - 9} v-6"/><path d="M${cx - 18},${cy + 2} v-4 M${cx + 18},${cy + 2} v-4"/></g><circle cx="${cx}" cy="${cy - 17}" r="2.6" fill="${c}"/><circle cx="${cx - 6}" cy="${cy + 1}" r="2.6" fill="${c}"/><circle cx="${cx + 6}" cy="${cy + 1}" r="2.6" fill="${c}"/>`)
+  const iconPerson = (cx: number, cy: number, c: string) => o.push(`<g fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><circle cx="${cx}" cy="${cy - 7}" r="7"/><path d="M${cx - 13},${cy + 14} c0,-9 6,-13 13,-13 s13,4 13,13"/></g>`)
+  const iconShield = (cx: number, cy: number, c: string) => o.push(`<path d="M${cx},${cy - 13} l11,4 v8 c0,8 -5,12 -11,14 c-6,-2 -11,-6 -11,-14 v-8 z" fill="${c}" fill-opacity="0.16" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"/><path d="M${cx - 5},${cy} l3.5,3.5 l6.5,-7" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`)
+  const iconCommit = (cx: number, cy: number, c: string) => o.push(`<g fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"><circle cx="${cx}" cy="${cy}" r="5"/><path d="M${cx - 13},${cy} h8 M${cx + 5},${cy} h8"/></g>`)
 
   o.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="How evidence-layer works, in four phases: gather evidence at the commit before the review is written, write the review by keeping the addressed artifact blocks, verify claims, the sealed run and the Access Receipt when the agent stops and again in CI, and count findings, gate decisions and misses over time in the journal.">`)
   o.push('<defs>')
@@ -237,7 +241,8 @@ function render(theme) {
   t(810, 286, 'journal report', { size: 12.5, font: MONO, weight: 700, fill: C.violet })
   t(810, 302, 'per check · illustrative numbers', { size: 10, fill: C.muted })
   // Per-check stacked bars, the shape `journal report` prints: real, false, untagged.
-  ;[['claims', [6, 2, 3]], ['receipt', [4, 1, 2]]].forEach(([name, d], i) => {
+  const bars: [string, number[]][] = [['claims', [6, 2, 3]], ['receipt', [4, 1, 2]]]
+  bars.forEach(([name, d], i) => {
     const y = 314 + i * 20
     t(810, y + 10, name, { size: 11, font: MONO })
     let x = 870

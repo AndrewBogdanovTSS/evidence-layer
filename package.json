@@ -85,10 +85,10 @@
     "journal:tag": "tsx bin/evidence-layer.ts journal tag",
     "hooks:install": "git config core.hooksPath .githooks",
     "smoke": "node scripts/smoke.mjs",
-    "demo:setup": "node demo/refs.mjs setup",
-    "demo:reset": "node demo/refs.mjs reset",
+    "demo:setup": "tsx demo/refs.ts setup",
+    "demo:reset": "tsx demo/refs.ts reset",
     "release": "tsx scripts/release.ts",
-    "diagram": "node scripts/diagram.mjs"
+    "diagram": "tsx scripts/diagram.ts"
   },
   "publishConfig": {
     "access": "public",

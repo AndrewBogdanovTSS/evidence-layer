@@ -26,8 +26,8 @@
  * own JavaScript - the clone check included - mistakes the demo's deliberate
  * copy for real code.
  *
- * `node demo/ladder.mjs setup|reset`. Exit codes: 0 done - 1 git refused -
- * 2 bad usage. `demo/refs.mjs` calls the same two functions for
+ * `pnpm exec tsx demo/ladder.ts setup|reset`. Exit codes: 0 done - 1 git refused -
+ * 2 bad usage. `demo/refs.ts` calls the same two functions for
  * `pnpm demo:setup` / `demo:reset`.
  */
 import { spawnSync } from 'node:child_process'
@@ -62,7 +62,7 @@ const IDENTITY = {
   GIT_COMMITTER_DATE: '2026-10-03T00:00:00Z',
 }
 
-function git(args, { env = {}, input } = {}) {
+function git(args: string[], { env = {}, input }: { env?: Record<string, string>; input?: string } = {}): string {
   const res = spawnSync('git', args, { cwd: root, encoding: 'utf8', input, env: { ...process.env, ...env } })
   if (res.status !== 0) {
     throw new Error('git ' + args.join(' ') + ' failed: ' + (res.stderr || res.stdout).trim())
@@ -71,13 +71,13 @@ function git(args, { env = {}, input } = {}) {
 }
 
 /** `.gitattributes` pins LF; a Windows checkout of the fixture must not smuggle CRLF into a blob. */
-const read = (path) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
+const read = (path: string): string => readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
 
 /** Builds both commits and points the refs at them. Idempotent. Returns `{ ref, sha }[]`. */
-export function setupLadder() {
+export function setupLadder(): { ref: string; sha: string }[] {
   const scratch = mkdtempSync(join(tmpdir(), 'ladder-'))
   const env = { GIT_INDEX_FILE: join(scratch, 'index') }
-  const built = []
+  const built: { ref: string; sha: string }[] = []
   try {
     let parent = git(['rev-parse', 'HEAD'])
     for (const fixture of FIXTURES) {
@@ -100,7 +100,7 @@ export function setupLadder() {
 }
 
 /** Removes both refs and nothing else. The commits become unreachable and git collects them in time. */
-export function resetLadder() {
+export function resetLadder(): void {
   for (const { ref } of FIXTURES) spawnSync('git', ['update-ref', '-d', ref], { cwd: root })
 }
 
@@ -113,7 +113,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       resetLadder()
       console.log('ladder refs removed')
     } else {
-      console.error('usage: node demo/ladder.mjs setup|reset')
+      console.error('usage: pnpm exec tsx demo/ladder.ts setup|reset')
       process.exit(2)
     }
   } catch (error) {
