@@ -80,7 +80,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - uses: AndrewBogdanovTSS/evidence-layer@v0.16.0
+      - uses: AndrewBogdanovTSS/evidence-layer@v0.17.0
         with:
           claims: ''
           governance: 'true'
@@ -137,7 +137,7 @@ jobs:
             --disallowedTools Bash,WebFetch,WebSearch
       - name: Mark what the evidence does not back UNVERIFIED
         run: npx evidence-layer claims ai-review.md --bundle evidence.local.md --sha "$HEAD_SHA" --fix
-      - uses: AndrewBogdanovTSS/evidence-layer@v0.16.0
+      - uses: AndrewBogdanovTSS/evidence-layer@v0.17.0
         with:
           claims: ai-review.md
           bundle: evidence.local.md
