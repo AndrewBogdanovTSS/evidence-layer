@@ -181,6 +181,11 @@ const PATH_LIKE_RE = /[/\\]|\.[A-Za-z0-9]+$/
 const SEGMENT_SEPARATORS = new Set(['&&', '||', ';', '|'])
 // Programs whose first argument is the script that actually runs.
 const INTERPRETERS = new Set(['node', 'python', 'python3', 'ruby', 'php', 'bun', 'deno'])
+// What hands a segment on to the program that does the work: `pnpm run test`,
+// `npx vitest`, `python -m pytest`.
+const LAUNCHERS = new Set([...INTERPRETERS, 'pnpm', 'pnpx', 'npm', 'npx', 'yarn', 'bunx', 'run', 'exec', 'dlx'])
+// A test runner, or a package script named after one (`test:unit`).
+const TEST_RUNNER_RE = /^(?:test|vitest|jest|mocha|pytest|rspec|phpunit)(?::\S+)?$/i
 
 /** `vendor/bin/phpunit` -> `phpunit`, `node_modules/nuxt/bin/nuxt.mjs` -> `nuxt`. */
 function programName(token: string): string {
@@ -198,29 +203,49 @@ function programName(token: string): string {
  * A program named by its path (`vendor/bin/phpunit`), and the script an
  * interpreter runs (`node node_modules/eslint/bin/eslint.js`), are what runs,
  * so they keep their base name.
+ *
+ * Once a segment reaches a test runner, the rest of that segment is the
+ * runner's arguments, path-like or not: `pnpm test eslint` filters to the
+ * `eslint/` directory and `pnpm test -t lint` to tests named lint, and both
+ * read as lint runs - whose rules then rejected every success claim on their
+ * test summary. Only a test runner's: after any other program a path-free word
+ * is how the kind is told - `nuxt typecheck`, `git diff`, `install
+ * --frozen-lockfile`.
  */
 function invocationText(command: string): string {
   const words: string[] = []
   let programNext = true
   let scriptNext = false
+  // Still reading the segment's program and what launches it, flags included.
+  let runnerNext = true
+  let runnerArguments = false
+  const read = (word: string) => {
+    if (runnerArguments) return
+    words.push(word)
+    if (!runnerNext) return
+    if (TEST_RUNNER_RE.test(word)) runnerArguments = true
+    else if (!LAUNCHERS.has(word) && !word.startsWith('-')) runnerNext = false
+  }
   for (const token of command.match(/'[^']*'|"(?:[^"\\]|\\.)*"|\S+/g) ?? []) {
     if (SEGMENT_SEPARATORS.has(token)) {
       words.push(token)
       programNext = true
       scriptNext = false
+      runnerNext = true
+      runnerArguments = false
     }
     else if (QUOTED_TOKEN_RE.test(token) || ENV_ASSIGNMENT_RE.test(token)) {
       scriptNext = false
     }
     else if (programNext || (scriptNext && PATH_LIKE_RE.test(token))) {
       const name = programName(token)
-      words.push(name)
+      read(name)
       scriptNext = programNext && INTERPRETERS.has(name)
       programNext = false
     }
     else {
       scriptNext = false
-      if (!PATH_LIKE_RE.test(token)) words.push(token)
+      if (!PATH_LIKE_RE.test(token)) read(token)
     }
   }
   return words.join(' ')

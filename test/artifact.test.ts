@@ -68,6 +68,33 @@ describe('classifyCommand', () => {
   ])('ignores paths, quoted strings and env assignments: %s -> %s', (command, kind) => {
     expect(classifyCommand(command)).toBe(kind)
   })
+
+  // A test runner's arguments are what it runs, not what kind of run it is: a
+  // vitest filter naming the `eslint/` directory without a slash made a test run
+  // `lint`, and claims then rejected every success claim on its test summary.
+  it.each([
+    [
+      'pnpm test .agents/skills/skills.test.ts domains/commerce/composables/useProductCardMedia/tests/index.test.ts eslint/rules/no-brand-abbreviation.test.ts eslint/rules/no-composables-in-utils.test.ts eslint/rules/no-relative-cross-boundary-import.test.ts scripts/agent-guard/tests/index.test.ts scripts/governance-check/tests/lib.test.ts --no-watch',
+      'tests',
+    ],
+    ['pnpm test eslint', 'tests'],
+    ['pnpm run test eslint rules', 'tests'],
+    ['pnpm test -t lint', 'tests'],
+    ['pnpm test -t typecheck', 'tests'],
+    ['vitest run eslint', 'tests'],
+    ['npx vitest lint', 'tests'],
+    ['pnpm vitest run --project eslint', 'tests'],
+    ['npm test -- eslint', 'tests'],
+    ['node node_modules/vitest/vitest.mjs run lint', 'tests'],
+    ['python -m pytest -k lint', 'tests'],
+    // Only the runner's own arguments: another program on the line still counts.
+    ['pnpm lint && pnpm test eslint', 'lint'],
+    ['pnpm eslint test', 'lint'],
+    ['pnpm lint', 'lint'],
+    ['pnpm run lint', 'lint'],
+  ])("reads a test runner's arguments as arguments: %s -> %s", (command, kind) => {
+    expect(classifyCommand(command)).toBe(kind)
+  })
 })
 
 describe('artifactId', () => {
