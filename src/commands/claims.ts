@@ -23,7 +23,7 @@ import type { CodedFinding } from '../index'
 
 const HELP = `
 evidence-layer claims <review.md> [--sha <expected-head>] [--seal] [--bundle <file>] [--repo <path>]
-                                  [--fix] [--strict] [--format text|json|github]
+                                  [--fix] [--strict] [--format text|json|github|azure]
 
 Lints a review for grounding tags and their required backing.
 
@@ -42,7 +42,8 @@ Lints a review for grounding tags and their required backing.
   --strict  treat warnings and unverifiable findings as failures
   --format  json prints one report document - every finding with its code -
             instead of the text; github adds annotations and a job summary to
-            the text, for a GitHub Actions step. The exit code is the same
+            the text, for a GitHub Actions step; azure adds logged issues and a
+            run summary, for an Azure Pipelines step. The exit code is the same
 
 exit 0 = every claim is backed, 1 = at least one is not, 2 = bad usage
 `
@@ -100,7 +101,7 @@ export function run(argv: string[]): void {
       findings = check(markdown)
     }
     // Off stdout for json, which must stay one document. Never the review's own
-    // text: under `--format github` the runner reads stderr for commands too.
+    // text: under `--format github` or `azure` the runner reads stderr for commands too.
     const say = format === 'json' ? console.error : console.log
     for (const d of downgraded) say('marked UNVERIFIED: ' + path + ':' + d.line + ' (' + d.code + ')')
     if (downgraded.length === 0) say('nothing to mark UNVERIFIED in ' + path)

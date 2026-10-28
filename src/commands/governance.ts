@@ -42,7 +42,7 @@ import type { CodedFinding } from '../index'
 
 const HELP = `
 evidence-layer governance [--repo <path>] [--decisions <dir>] [--enforce] [--no-json] [--no-journal]
-                          [--format text|json|github]
+                          [--format text|json|github|azure]
 
 Checks that the invariants your decision records declare are actually wired to
 something that runs, that no governance exception has quietly expired, and
@@ -55,8 +55,9 @@ every Missed-By: commit trailer into <repo>/journal.jsonl, once each.
   --enforce     exit 1 when any finding is an error (default: warn only)
   --no-json     suppress the machine-readable report block
   --format      json prints only the report document (no text, no delimiters);
-                github adds annotations and a job summary to the text. The exit
-                code is the same either way
+                github adds annotations and a job summary to the text, azure
+                logged issues and a run summary. The exit code is the same
+                either way
   --no-journal  do not record Missed-By trailers - leave the tree untouched
 
 exit 0 = clean or warn-only, 1 = --enforce and an error, 3 = flaky, 2 = bad usage
@@ -92,7 +93,7 @@ export function run(argv: string[]): void {
 
   const mode = args.enforce === true ? 'enforce' : 'warn'
   printFindings(format, 'Governance in ' + repo, findings, mode, 'governance')
-  if (format !== 'json' && args['no-json'] !== true) emitReport(findings, mode)
+  if (format !== 'json' && args['no-json'] !== true) emitReport(findings, mode, format)
 
   process.exit(mode === 'enforce' ? exitCodeFor(findings) : 0)
 }

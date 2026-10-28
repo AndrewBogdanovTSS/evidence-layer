@@ -15,6 +15,7 @@
  */
 import { appendFileSync } from 'node:fs'
 import { annotations, renderFindingsSummary, stopToken } from './annotations'
+import { azureIssues, azureSummary, defang, defangFinding, defangJson } from './azure-logging'
 import { report as printText, summarise } from './cli'
 import type { Finding, Format } from './cli'
 
@@ -92,10 +93,14 @@ export function buildReport(findings: Finding[], mode: string, check?: string): 
  * Indented, not minified - a human running this locally has to be able to read
  * it too, and `extractReport` parses it back with `JSON.parse`, which does not
  * care about the whitespace in between.
+ *
+ * Under `azure` the block is defanged: its findings quote the repository, and
+ * the agent would obey a `##vso[` inside a JSON string (see `./azure-logging`).
  */
-export function emitReport(findings: Finding[], mode: string): void {
+export function emitReport(findings: Finding[], mode: string, format: Format = 'text'): void {
+  const json = JSON.stringify(buildReport(findings, mode), null, 2)
   console.log(JSON_BEGIN)
-  console.log(JSON.stringify(buildReport(findings, mode), null, 2))
+  console.log(format === 'azure' ? defangJson(json) : json)
   console.log(JSON_END)
 }
 
@@ -117,6 +122,11 @@ export function printJsonReport(findings: Finding[], mode: string, check: string
  * The text report runs under `::stop-commands::`: it quotes the review, and a
  * review line that happens to read `::add-mask::...` must be printed, not run
  * (see `./annotations`).
+ *
+ * `azure` is the same shape for an Azure Pipelines step: issues logged first,
+ * the text report, then the summary attached to the run when the agent says
+ * where its temporary files go. Azure cannot pause commands, so the report
+ * prints defanged findings instead (see `./azure-logging`).
  */
 export function printFindings(
   format: Format,
@@ -127,6 +137,13 @@ export function printFindings(
 ): void {
   if (format === 'json') return printJsonReport(findings, mode, check)
   if (format === 'text') return printText(title, findings)
+  if (format === 'azure') {
+    for (const line of azureIssues(findings)) console.log(line)
+    printText(defang(title), findings.map(defangFinding))
+    const attach = azureSummary(renderFindingsSummary(title, findings), check)
+    if (attach) console.log(attach)
+    return
+  }
   for (const line of annotations(findings)) console.log(line)
   const token = stopToken()
   console.log('::stop-commands::' + token)

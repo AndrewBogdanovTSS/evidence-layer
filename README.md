@@ -153,8 +153,9 @@ npx evidence-layer journal tag <id> real     # mark a finding real or false
 | `init claude`, `init codex` | nothing; it writes the gate's hooks into the project's agent configuration |
 
 `claims`, `receipt` and `governance` print text by default, `--format json`
-for a program and `--format github` for a GitHub Actions step - see [Exit codes
-are a contract](#exit-codes-are-a-contract).
+for a program, `--format github` for a GitHub Actions step and `--format azure`
+for an Azure Pipelines step - see [Exit codes are a
+contract](#exit-codes-are-a-contract).
 
 A receipt quotes each cited file in a table - one row per file, the first
 non-blank line in a code span, `|` escaped as `\|`:
@@ -530,6 +531,32 @@ annotations are escaped as the runner reads them, and the report that quotes
 the review runs under `::stop-commands::` with a token chosen per run
 ([DEC-0007](docs/decisions/0007-github-action.md)).
 
+## In CI: Azure Pipelines
+
+There is no task to install: a script step runs the evidence-layer the project
+installed, with `--format azure`.
+
+```yaml
+- script: pnpm exec evidence-layer claims review.md --bundle evidence.local.md --sha $(System.PullRequest.SourceCommitId) --format azure
+  displayName: The review, held to the bundle
+```
+
+Every finding that is not a pass becomes a `task.logissue` on the step - an
+error, or a warning whose message opens with `unverifiable` or `flaky` - with
+its file, line and [code](docs/evidence-layer.md#machine-readable-output), and
+on an agent the summary is attached to the run with `task.uploadsummary`. The
+exit code is the text mode's, and the step's result follows from it.
+
+The agent obeys a `##vso[` anywhere in a line, not only at its start, and has
+nothing like `::stop-commands::`, so under `--format azure` every piece of
+review text the package prints - the report, the issues, `governance`'s JSON
+block - is defanged: a zero-width space between the two `#`s, which a reader
+does not see and the agent does not match, and `#` inside the JSON block,
+which parses back to the same text
+([DEC-0012](docs/decisions/0012-azure-pipelines-output.md)). `--format text`
+and `--format json` print the review as written: in an Azure step, use
+`azure`.
+
 ## Supported hosts
 
 | Host | Adapter | Protocol checked against |
@@ -566,7 +593,8 @@ render ANSI perfectly well.
 For a program rather than a person, `claims`, `receipt` and `governance` take
 `--format json`: stdout is one JSON report and nothing else, and the exit code
 is the same. `--format github` is the text plus one annotation per finding and
-a job summary, for a GitHub Actions step. Each finding carries a `code` - `claims/predicate-unmet`,
+a job summary, for a GitHub Actions step; `--format azure` is the text plus one
+logged issue per finding and a run summary, for an Azure Pipelines step. Each finding carries a `code` - `claims/predicate-unmet`,
 `receipt/wrong-base`, `seal/stale` - naming the rule that produced it. The
 sentences will be reworded; a released code keeps its meaning. Every code is
 listed in [`docs/evidence-layer.md`](docs/evidence-layer.md#machine-readable-output).
@@ -649,7 +677,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **567 tests** across **41 files**, and that sentence is checked
+The suite is **576 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

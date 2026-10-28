@@ -20,6 +20,7 @@
  *   - `decision-hygiene`   is the decision behind a bypass itself still current
  *   - `ci-summary`         rendering the governance report for a CI job summary
  *   - `annotations`        findings as GitHub Actions annotations, review text kept from the runner
+ *   - `azure-logging`      findings as Azure Pipelines issues, review text kept from the agent
  *   - `skeleton`           pre-filled claims and sample quotes, so honest stays cheap
  *   - `gather`             running the expensive checks before a review is written
  *   - `gather-command`     what a project calls its gatherer, so "gather again" can say how
@@ -47,6 +48,7 @@ export * from './core/exceptions'
 export * from './core/decision-hygiene'
 export * from './core/ci-summary'
 export * from './core/annotations'
+export * from './core/azure-logging'
 export * from './core/skeleton'
 export * from './core/gather'
 export * from './core/gather-command'

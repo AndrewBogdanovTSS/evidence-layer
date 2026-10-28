@@ -10,7 +10,7 @@ import { EXIT, checkReceipt, exitCodeFor, formatOf, help, parseArgs, parseReceip
 
 const HELP = `
 evidence-layer receipt <review.md> [--repo <path>] [--sha <expected-head>] [--strict]
-                                   [--format text|json|github]
+                                   [--format text|json|github|azure]
 
 Checks the Access Receipt at the top of a review against the repository.
 
@@ -20,7 +20,8 @@ Checks the Access Receipt at the top of a review against the repository.
   --strict  treat warnings and unverifiable results as failures
   --format  json prints one report document - every finding with its code -
             instead of the text; github adds annotations and a job summary to
-            the text, for a GitHub Actions step. The exit code is the same
+            the text, for a GitHub Actions step; azure adds logged issues and a
+            run summary, for an Azure Pipelines step. The exit code is the same
 
 exit 0 = the receipt holds, 1 = it does not, 2 = bad usage
 `
