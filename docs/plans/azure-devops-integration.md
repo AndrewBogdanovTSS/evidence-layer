@@ -1,6 +1,6 @@
 # Azure DevOps integration - plan
 
-Status: draft, 2026-10-28. Target consumer: Canvas (`VF-AppDelivery / Experience Engineering /
+Status: phases 1-3 built (PRs #8, #9, #10); Canvas phases redesigned 2026-10-29. Target consumer: Canvas (`VF-AppDelivery / Experience Engineering /
 canvas-storefront`, default branch `develop`).
 
 The goal: what GitHub CI and the two `ci:local` scripts do for this repository and its example,
@@ -54,20 +54,41 @@ gathered, and a developer can run the same jobs locally before pushing and get t
 
 ### 1.5 Canvas today
 
-- Hosted on Azure DevOps Repos; PRs there. **No Azure Pipelines YAML in the repository.** CI is the
-  Netlify build: `netlify-plugin-governance` (runs `pnpm governance:check`, warn-only unless
-  `GOVERNANCE_ENFORCE=true`, plus the enforced `suppressions-ratchet`), axe, Chromatic, Lighthouse,
-  performance. Local: simple-git-hooks (`pre-commit` lint-staged, `pre-push` governance warn-only).
-- An external "Azure AI review plugin" reads the build log between
-  `---GOVERNANCE-CHECK-JSON-BEGIN/END---` delimiters (contract in `scripts/governance-check/README.md`).
-- Its own Canvas-specific layer over `evidence-layer@0.17.0` (DEC-0005 there): `review-evidence`
-  (scoped lint, brand typecheck matrix from `env/layers.ts`, sibling-spec tests - never the full
-  suite; `--pr` resolves base/head over Azure REST with `AZURE_DEVOPS_PAT`), `verify-review`,
-  `governance:check` (own trigger graph: simple-git-hooks + `netlify.toml` + Netlify plugins).
-- Node `24.14.1`, pnpm `11.9.0`, `.npmrc.ci` (private registry auth in CI).
-- The gap: the evidence a review cites is gathered by whoever writes the review, on their machine.
-  Nothing independent gathers it at the PR head, so `claims --bundle` has no CI bundle to hold a
-  review to - the DEC-0011 handoff does not exist on Azure.
+Read 2026-10-29 from Azure DevOps (`VF-AppDelivery / Experience Engineering`) over REST.
+
+- **Canvas carries no pipeline YAML; its CI is central.** Every pipeline that validates a
+  `canvas-storefront` pull request lives in the `engineering-pipelines` repository and reaches
+  Canvas through a branch policy:
+
+  | Definition | Pipeline (`engineering-pipelines`) | Policy on `develop` | What it does |
+  |---|---|---|---|
+  | 607 Linting and Coverage | `ci-cd/linting-coverage.yml` | build validation, required | `pnpm build`, `lint:ci`, `test:cov` in the repo's dependency image |
+  | 675 SonarQube Scan | `ci-cd/sonarqube-scan.yml` | build validation, required | Sonar |
+  | 4090 PR Status Bridge | `netlify-pr-status-bridge/centralized-pipeline.yml` | build validation, required | posts each Netlify site's build as a PR status (genre `continuous-integration`), each a required status policy |
+  | 4397 AI PR Review | `pr-ai-review/centralized-pipeline.yml` | build validation, optional | the model review, below |
+
+  Templates come from `vf_cloud_core/vf-cicd-ado-pipeline-templates` at `refs/heads/main`; agents
+  are the self-hosted pool `adoagent-vmss-eastus2-sharedsvc-appdelivery-ubuntu-2204`.
+- **The AI review** is one job, `KimiReview`, serving many repositories. It loads the model and
+  Azure DevOps secrets from Key Vault, clones the target repository at the PR, composes
+  `REVIEW-GUIDELINES.md` (shared guidance, then the repo's own, then a fallback), filters the diff,
+  writes `kimi_review_evidence.json` - refs, SHAs, the reviewed and excluded file lists, which is
+  git evidence only, no command output - runs Kimi (`kimi-k2.5` over an OpenAI-compatible
+  endpoint), posts the review with a pipeline-made Access Receipt, cleans up its older threads and
+  syncs a reviewer vote. Its one per-repo extension point is the repo's `REVIEW-GUIDELINES.md`,
+  rubric text plus a ```` ```yaml kimi-review ```` block of exclusions.
+- **What nothing uses yet:** the reviewer does not read an evidence-layer bundle, does not run
+  `review-evidence`, and does not read Canvas's `---GOVERNANCE-CHECK-JSON-BEGIN---` block - the
+  "Azure AI review plugin" that `scripts/governance-check/README.md` says consumes it is not this
+  pipeline.
+- **Governance** runs in the Netlify build (`netlify-plugin-governance`: `pnpm governance:check`,
+  warn-only unless `GOVERNANCE_ENFORCE=true`, plus the enforced `suppressions-ratchet`) and in the
+  `pre-push` hook, warn-only.
+- **Canvas's own layer** over `evidence-layer@0.17.0` (DEC-0005 there): `review-evidence` (scoped
+  lint, brand typecheck matrix, sibling-spec tests - never the full suite), `verify-review`,
+  `governance:check` (its own trigger graph: simple-git-hooks, `netlify.toml`, Netlify plugins).
+- **The gap:** the evidence a review cites is gathered by whoever writes the review, on their
+  machine, and the CI review never sees it.
 
 ## 2. What differs on Azure DevOps (to confirm in phase 0)
 
@@ -179,86 +200,160 @@ second distribution channel without npm's provenance - DEC-0007's reasoning, Lad
   summary command. `scripts/ci-local.ts` `LOCAL_JOBS` gains its counterpart - `test/ci-local.test.ts`
   fails until it does.
 
-### Phase 4 - Canvas pipeline: evidence and governance (Canvas repo)
+### The Canvas design: one central review pipeline, extended per repository
 
-Start in warn-only, the way the Netlify governance plugin started.
+Decided with the owner on 2026-10-29: the review stays the central `AI PR Review` pipeline, which
+starts reading evidence; the Netlify governance plugin is deprecated in favour of a governance job
+in that pipeline; and the pipeline is centralized but extendable - a repository extends the
+standard configuration and overrides the parts it needs.
 
-- Bump `evidence-layer` to 0.18.0 (standing `minimumReleaseAgeExclude` applies); update DEC-0005's
-  version line.
-- `azure-pipelines/evidence.yml`, triggers `pr: [develop, release/*]` (`autoCancel: true`) and
-  `trigger: [develop]`:
-  - **evidence**: `UseNode@1` 24.14.1, `corepack enable` (pnpm 11.9.0), `npmAuthenticate@0` with
-    `.npmrc.ci`, `Cache@2` for the pnpm store, `pnpm install --frozen-lockfile`;
-    checkout `SourceCommitId`; `git diff origin/<target>...HEAD > change.diff`;
-    `pnpm review-evidence --base <target SHA> --head <SourceCommitId>`; publish
-    `review-evidence.local.md` + `change.diff` with `condition: always()`; upload the bundle as the
-    summary; post status `evidence-layer/evidence`.
-    Check first that `review-evidence` exits 1 when a step failed after writing the bundle (the
-    DEC-0011 rule); if it does not, that is the first Canvas change, so the gather is the test step.
-    Generous `timeoutInMinutes` - the brand typecheck matrix is the slow part.
-  - **governance** (parallel, `fetchDepth: 0` for `--record-misses`): `pnpm governance:check
-    --warn-only` with the JSON block kept intact in the log (the AI review plugin reads it), the
-    enforced `suppressions-ratchet`, `check:ladder` equivalent if Canvas adopts the trailer; post
-    status `evidence-layer/governance`.
-- Branch policy: pipeline as optional build validation; statuses visible but not required yet.
-- Canvas `scripts/governance-check/lib.ts` `buildTriggerGraph` adds the pipeline YAML as roots
-  (or uses phase 2's reader if it is exported), so Canvas DEC invariants can name the pipeline.
-- After a sprint clean: require both statuses, flip `--enforce`, and decide whether the Netlify
-  governance plugin stays as a second gate or is removed (a Canvas decision record).
+**One pipeline, one status per job.** The central pipeline remains the single build validation on
+each repository (optional, as 4397 is today). Each of its jobs posts its own pull request status,
+genre `ai-review`, as the PR Status Bridge already does for Netlify sites; the repository's
+status policies decide which are required. For Canvas: `ai-review/evidence` and
+`ai-review/governance` required, `ai-review/review` optional - a failed model call must not block a
+merge the suite allows. (This is option A of section 2, settled; it does not depend on how a
+"partially succeeded" run is judged.)
 
-### Phase 5 - Canvas review job (Canvas repo, optional status)
+**Jobs, and where the secrets are.** A job that runs the pull request's code never holds the model
+key or the Azure DevOps PAT; a job that holds them never runs the pull request's code. The PR
+author controls that code - a test can print an environment variable as easily as it can fail.
 
-- **review**: `dependsOn: evidence`, condition PR, not draft, evidence succeeded. Download the
-  artifact into a separate directory; install a pinned `@anthropic-ai/claude-code`; `claude -p`
-  with the example's prompt adapted to Canvas (cite `review-evidence.local.md` blocks; Risk Matrix
-  and Access Receipt rules stay Canvas's), `--allowedTools Read,Glob,Grep,Write`,
-  `--disallowedTools Bash,WebFetch,WebSearch`, `{"disableAllHooks": true}` (the agent-guard and
-  runtime-gate hooks are for an interactive session), model from a pipeline variable.
-- Then `pnpm exec evidence-layer claims ai-review.md --bundle <artifact> --sha <head> --fix`, the
-  same without `--fix` and `--format azure`, then `pnpm verify-review` (Canvas's receipt/sample
-  rules), then post the thread with `System.AccessToken` (reuse the `post-pr-comment` skill's REST
-  shape in a script, not the skill itself) and status `evidence-layer/review`.
-- Steps that print review text run with `target: commands: restricted`.
+| Job | Runs PR code | Secrets | Does |
+|---|---|---|---|
+| `evidence` | yes | npm registry only | clones the PR head, runs the repo's gather command, publishes the bundle and `change.diff`; posts `ai-review/evidence` |
+| `governance` | yes | none | runs the repo's governance command (`--format azure`); posts `ai-review/governance` |
+| `review` | **no** | model key | downloads the bundle; the model reads it, the diff and the files, and writes `ai-review.md` whose run claims are copied from the bundle's Suggested claims; publishes it - posts nothing |
+| `verify` | yes | none | `evidence-layer claims ai-review.md --bundle --sha --fix`, then the check with `--format azure`, then the repo's own verify command (Canvas: `pnpm verify-review`); publishes the review as checked; posts `ai-review/review` |
+| `publish` | **no** | Azure DevOps PAT | posts the checked review, cleans up older threads, syncs the reviewer vote - today's tail of `KimiReview`, unchanged |
 
-### Phase 6 - Canvas `pnpm ci:local`
+`evidence` and `governance` run side by side; `review` waits for `evidence`, `verify` for `review`,
+`publish` for `verify`. Today's `#ai-skip`, preflight diff filter, submodule handling and
+large-PR chunking stay where they are, in front of `review`.
 
-- `scripts/ci-local/index.ts` (TypeScript via tsx - Canvas has no plain-JS constraint) with
-  `LOCAL_JOBS` / `NOT_REPRODUCED` exactly as `scripts/ci-local.ts` here:
-  - local: evidence (`review-evidence` against `origin/develop`), governance, review
-    (`--review-skeleton` / `--review <file>` / model, the model step read from
-    `azure-pipelines/evidence.yml`, not copied);
-  - `unverifiable`, never a pass: the Netlify build and its plugins (axe, Chromatic, Lighthouse,
-    performance need a deploy preview), the PR status/thread posts, the hosted agent's OS when the
-    developer is on Windows.
-- Windows is the common case at Canvas: spawn `pnpm` with a shell only on win32 and refuse a base
-  ref containing cmd.exe metacharacters, as the example does.
-- `scripts/ci-local/tests/index.test.ts` holds both lists to the pipeline's jobs.
-- `package.json` `ci:local`; README for the folder (add-readme style); mention in `AGENTS.md`.
+**The extension: a configuration file in the repository, read from the target branch.**
+`.azuredevops/ai-review.yml` overrides central defaults key by key - the layering
+`REVIEW-GUIDELINES.md` already has (shared, then the repository's, then a fallback):
 
-### Phase 7 - docs and decisions
+```yaml
+# Read by engineering-pipelines/pr-ai-review/centralized-pipeline.yml, from the target branch.
+evidence:
+  image: canvas-storefront/dependency-install   # optional: run in the repo's dependency image, as 607 does
+  gather: pnpm review-evidence --base "$BASE_SHA" --head "$HEAD_SHA"
+  bundle: review-evidence.local.md
+governance:
+  run: pnpm governance:check --enforce --format azure
+verify:
+  run: pnpm verify-review --review ai-review.md --sha "$HEAD_SHA"
+review:
+  guidelines: REVIEW-GUIDELINES.md              # as today
+```
 
-- Here: DEC-0012 (phase 1), README "Azure Pipelines" section, release notes v0.18.0.
-- Canvas: a decision record (add-decision skill) "CI gathers review evidence on Azure Pipelines",
-  invariants "enforced by `pnpm review-evidence`" / "`pnpm governance:check`" - now reachable
-  from the pipeline via phase 2/4's trigger graph.
+- **From the target branch, not the PR.** A pull request that edits the file cannot change what
+  gathers its own evidence or checks its own review; the change takes effect once merged, after
+  review - the rule GitHub's `pull_request_target` exists for. The pipeline reads it with
+  `git show origin/<target>:.azuredevops/ai-review.yml`.
+- **A repository without the file** gets today's review: no evidence job, no bundle, the git-only
+  `kimi_review_evidence.json`. Adoption is per repository, not a flag day.
+- **Inside the central pipeline the jobs are templates** in `vf-cicd-ado-pipeline-templates`
+  (`pr-ai-review/jobs/evidence.yml` and so on) with `stepList` parameters (`beforeGather`,
+  `afterVerify`), so the per-repo stub mode (`example-usage.yml`, `extends:` the template) gets the
+  same jobs and can override steps, while the centralized mode overrides through the file.
+- **Governance sees it.** `.azuredevops/` is one of the directories evidence-layer's governance
+  reads (DEC-0013), so "enforced by `pnpm review-evidence`" in a Canvas decision record is reached
+  through this file - with the pass saying that a pipeline elsewhere runs it, which no file shows.
+
+### Phase 4 - the central pipeline reads evidence (`engineering-pipelines`, `vf-cicd-ado-pipeline-templates`)
+
+- Split `KimiReview` into the five jobs above. Move the Key Vault step into `review` and `publish`
+  only; `evidence`, `governance` and `verify` get no secret.
+- Read `.azuredevops/ai-review.yml` from the target branch; when it is absent, run today's flow
+  unchanged.
+- `evidence`: PR head (the pipeline's existing `resolve-pr-context.mjs` already resolves it), full
+  history, the repo's gather in its dependency image as 607 runs `pnpm build` (`.npmrc` secure
+  file, jFrog image). Publish the bundle and `change.diff` under `condition: always()`; attach the
+  bundle as the run summary.
+- `review`: the Kimi prompt gains the bundle - findings about the diff as now, plus every claim
+  about what ran copied as a **Claim**/**Grounding** pair from the bundle's Suggested claims, the
+  example's prompt. The Risk Matrix, Executive Summary and the rest stay. The model writes the
+  review to a file; it posts nothing.
+- `verify`: `npx evidence-layer@<the version the repo pins>` - read from its `package.json`, an
+  exact version, never `latest` - then the repo's verify command. A review whose claims the bundle
+  does not back is marked UNVERIFIED by `--fix` before anyone reads it, so a retry costs no
+  tokens.
+- Statuses: `azure-pr.mjs`'s shape (phase 3) - pending at a job's start, its outcome under
+  `condition: always()`, on the iteration whose head is the commit built.
+- Start on a canary repository, or on Canvas with every new status optional.
+
+### Phase 5 - Canvas adopts it (`canvas-storefront`)
+
+- Bump `evidence-layer` to the release carrying phases 1-3 (0.18.0); DEC-0005's version line.
+- Check `review-evidence` exits 1 when a step failed, after writing the bundle (DEC-0011's rule for
+  a gather that is the test step); fix it first if not.
+- Add `.azuredevops/ai-review.yml` as above.
+- `scripts/governance-check/lib.ts`: the trigger graph gains `.azuredevops/*.yml` as roots, so
+  Canvas invariants can name the central pipeline's commands. Better, since the Netlify roots are
+  going: reuse evidence-layer's `traceTriggers` (DEC-0013) and add simple-git-hooks support there,
+  deleting Canvas's copy (Ladder-Rung 2) - one trigger graph, not two.
+- Status policies on `develop`, `release/*`: `ai-review/evidence` and `ai-review/governance`
+  optional for a sprint, then required.
+- Correct `scripts/governance-check/README.md`: no AI review plugin reads the JSON block today.
+
+### Phase 6 - deprecate the Netlify governance plugin (`canvas-storefront`)
+
+- Once `ai-review/governance` is required: remove `netlify-plugin-governance` from `netlify.toml`
+  and `netlify/plugins/`, and its roots from the trigger graph. `suppressions-ratchet` moves into
+  the governance job as its own command, still enforced.
+- `pre-push` keeps `governance:check --warn-only`: the local, fast signal.
+- A Canvas decision record (add-decision skill) supersedes the Netlify trigger: invariants
+  "enforced by `pnpm governance:check`" are reached through `.azuredevops/ai-review.yml`.
+
+### Phase 7 - Canvas `pnpm ci:local`
+
+- `scripts/ci-local/index.ts`, `LOCAL_JOBS` / `NOT_REPRODUCED` as `scripts/ci-local.ts` here, run
+  from `.azuredevops/ai-review.yml` - the file the central pipeline reads, so the local run and CI
+  cannot drift:
+  - local: `evidence` (the gather against `origin/develop`), `governance`, `verify`;
+  - `review`: `--review-skeleton` (the bundle's suggested claims), `--review <file>`, or the model.
+    The prompt is the central pipeline's, so the model mode reads it from `engineering-pipelines`
+    at `main` - a local clone, or REST with `AZURE_DEVOPS_PAT` - and is `unverifiable` when neither
+    is reachable, never a stand-in prompt. Kimi needs its endpoint and key; without them, the
+    skeleton and file modes still run every check;
+  - `unverifiable`, never a pass: 607, Sonar, the Netlify builds, the status and thread posts.
+- Windows is the common case at Canvas: `pnpm` through a shell only on win32, with refused
+  metacharacters, as the example does.
+- `scripts/ci-local/tests/index.test.ts` holds the job lists to the configuration file's keys.
+
+### Phase 8 - docs and decisions
+
+- Here: release notes for 0.18.0 (DEC-0012, DEC-0013, the example's Azure pipeline).
+- `engineering-pipelines`: the `pr-ai-review` README gains the jobs, the secrets split and the
+  configuration file.
+- Canvas: the decision record of phase 6; AGENTS.md and the `review-pr` skill point at the CI bundle.
 
 ## 4. Risks
 
-- **Log injection** is the security-critical part: Azure has no `stop-commands`. Phase 0 must show
-  what the agent obeys before phase 1 picks a neutralisation; `restricted` mode is defence in
-  depth, not the fix.
-- **Token cost**: the review runs on every non-draft PR push; `autoCancel` and the evidence gate
-  limit it; small model by default.
-- **Pipeline time**: the brand typecheck matrix on hosted agents may be slow; cache the pnpm store
-  and `.nuxt` generation where safe, or move typecheck to its own job.
-- **Two governance gates** (Netlify + pipeline) can disagree on enforcement mode during the
-  transition; keep one source of the mode (a pipeline variable mirrored to `GOVERNANCE_ENFORCE`).
+- **Secrets beside PR code.** The current `KimiReview` job loads the PAT and the model key into the
+  job that clones the PR. It does not run the PR's code today; the evidence job will, so the split
+  in phase 4 comes before any gather, not after.
+- **Duplicate work with 607.** `evidence` runs lint, a typecheck matrix and scoped tests that 607
+  partly runs too. Once both are stable, 607's validation script can become the gather (the suite
+  once, inside the gather, as the example does) - a later change, and 607's owners' call.
+- **Log injection.** Settled in the package (DEC-0012): under `--format azure` review text is
+  defanged, since the agent obeys `##vso[` anywhere in a line. Output the pipeline prints itself
+  (`--fix`'s lines, the gather) is the repository's own, as in any CI.
+- **The configuration file is code.** Read from the target branch, it is reviewed before it runs;
+  the pipeline must never fall back to the PR's copy.
+- **Token cost.** The review already runs on every PR update; the bundle adds input tokens, and a
+  red `evidence` skips the model entirely.
 
 ## 5. Open questions for the owner
 
-1. Can Canvas use Azure Pipelines at all (pool, parallel jobs, permissions)? Everything in phases
-   4-6 depends on it.
-2. Option A (per-job PR statuses) or B (two pipelines)?
-3. Keep the Netlify governance plugin once the pipeline enforces?
-4. Does the AI review plugin keep reading the build log, or is the pipeline's review job its
-   replacement?
+1. Who owns `engineering-pipelines` and `vf-cicd-ado-pipeline-templates`, and do phase 4's changes
+   go through them, or through a new pipeline beside 4397 first?
+2. Is the job split acceptable to that owner - the secret-free `evidence` / `governance` / `verify`
+   jobs, the Key Vault step only in `review` and `publish`?
+3. Should `evidence` start separate from 607 (duplicate work, no change to 607), or should 607
+   produce the bundle from the start?
+4. Locally, is Kimi reachable for developers (endpoint and key), or is the local review the skeleton
+   and file modes plus `claude -p` as a stand-in model?
