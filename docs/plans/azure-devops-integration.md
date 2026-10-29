@@ -96,7 +96,7 @@ checks each against the docs and a throwaway pipeline before anything is built o
 | Base ref | `github.base_ref` | `$(System.PullRequest.TargetBranch)` (`refs/heads/develop`) -> `origin/develop` |
 | Push range for `check:ladder` | `github.event.before` | No "before" SHA. Tip alone, or the last successful build's `sourceVersion` via REST; PR range is `origin/<target>..SourceCommitId`. |
 | Draft PRs | `pull_request.draft` | `System.PullRequest.IsDraft` (verify it exists for the agent version in use) |
-| Cancel superseded runs | `concurrency` | `pr: autoCancel: true` (default for PR validation - verify) |
+| Cancel superseded runs | `concurrency` | Azure Repos ignores a YAML `pr:` trigger, `autoCancel` included: a pull request runs a pipeline only through a build validation policy, so what happens to a superseded run is the policy's behaviour, not the YAML's (`pr: autoCancel` applies to GitHub and Bitbucket repositories) |
 | Required vs optional | per job (status check) | per **pipeline** (build validation policy) or per **status name** (PR Status API + "status check" policy) |
 | Posting the review | `gh pr comment` | REST `POST .../pullRequests/{id}/threads` with `$(System.AccessToken)`; the build service identity needs "Contribute to pull requests" |
 | Secrets on fork PRs | withheld | withheld by default; a project without forks is not constrained by it |
@@ -127,7 +127,7 @@ minor release (0.18.0) with `docs/releases/v0.18.0.md`, because it adds a format
    `##vso[task.setvariable]` mid-line, the same under `target: commands: restricted`, a
    `task.uploadsummary`, and the escapes above. Record what the agent obeyed. This decides how
    phase 1 neutralises review text.
-3. Check `System.PullRequest.IsDraft`, `SourceCommitId`, `autoCancel`, default `fetchDepth`, and
+3. Check `System.PullRequest.IsDraft`, `SourceCommitId`, how a build validation policy treats a superseded run, default `fetchDepth`, and
    whether "partially succeeded" passes a build-validation policy.
 4. Confirm the build service can post PR statuses and threads (option A), and where
    `ANTHROPIC_API_KEY` will live (variable group / Key Vault).

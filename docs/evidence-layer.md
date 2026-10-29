@@ -322,8 +322,9 @@ follows the trigger graph - the git hook and the CI workflow, expanded through
 the scripts they call - to find out whether anything reaches them. An invariant
 nothing reaches is a finding.
 
-The triggers are git hooks in `.githooks/`, GitHub workflows, and Azure
-Pipelines files - `azure-pipelines*.yml` at the root and any YAML under
+The triggers are git hooks - in `.githooks/`, or declared for simple-git-hooks
+in `package.json`, `.simple-git-hooks.json` or `simple-git-hooks.json` - GitHub
+workflows, and Azure Pipelines files - `azure-pipelines*.yml` at the root and any YAML under
 `.azure-pipelines/`, `azure-pipelines/`, `.azuredevops/` or `.pipelines/`, with
 the local templates they include. A pass names the file that reached the
 command; an Azure file runs only once a pipeline in Azure DevOps points at it,
