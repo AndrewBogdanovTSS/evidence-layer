@@ -93,9 +93,12 @@ function yamlFilesUnder(dir: string): string[] {
  * Every trigger file the repository carries, and the Azure templates its
  * pipelines name that could not be read here.
  *
- * Triggers are the git hooks in `.githooks/`, the GitHub workflows, and the
- * Azure Pipelines files - the places in a repository where something executes
- * without a human choosing to. An Azure file can pull steps from another with
+ * Triggers are the git hooks in `.githooks/` or declared for simple-git-hooks,
+ * the GitHub workflows, and the Azure Pipelines files - the places in a
+ * repository where something executes without a human choosing to.
+ * simple-git-hooks reads its hooks from `package.json` or a JSON file of its
+ * own; its `.js` and `.cjs` forms are code, which this does not run, so a
+ * project that uses one has hooks this cannot see. An Azure file can pull steps from another with
  * `template:`; a local one is read as part of the pipeline, while one from
  * another repository (`x.yml@tools`), one whose path is computed (`${{ }}`) or
  * one that is not there is listed as unread - its steps could reach anything.
@@ -108,6 +111,23 @@ export function triggerSources(repo: string): { sources: TriggerSource[]; unread
   const hooksDir = join(repo, '.githooks')
   if (existsSync(hooksDir)) {
     for (const f of readdirSync(hooksDir)) sources.push({ path: '.githooks/' + f, text: readFileSync(join(hooksDir, f), 'utf8'), azure: false })
+  }
+  // simple-git-hooks: each hook is one command, keyed by the hook's name. A
+  // configuration it cannot parse is skipped as nothing, the way a missing
+  // `.githooks/` is - simple-git-hooks itself would install nothing from it.
+  for (const [file, field] of [['package.json', 'simple-git-hooks'], ['.simple-git-hooks.json', ''], ['simple-git-hooks.json', '']] as const) {
+    if (!existsSync(join(repo, file))) continue
+    let hooks: unknown
+    try {
+      const parsed = JSON.parse(readFileSync(join(repo, file), 'utf8')) as Record<string, unknown>
+      hooks = field ? parsed[field] : parsed
+    } catch {
+      continue
+    }
+    if (typeof hooks !== 'object' || hooks === null) continue
+    for (const [hook, command] of Object.entries(hooks)) {
+      if (typeof command === 'string') sources.push({ path: file + (field ? '#' + field : '') + ' ' + hook, text: command, azure: false })
+    }
   }
   const wfDir = join(repo, '.github', 'workflows')
   if (existsSync(wfDir)) {

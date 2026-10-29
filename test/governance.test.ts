@@ -15,12 +15,14 @@ function makeRepo(opts: {
   scriptFiles?: Record<string, string>
   /** Any other files, by repo-relative path - Azure Pipelines files and their templates. */
   files?: Record<string, string>
+  /** Fields of package.json beside `scripts`. */
+  pkg?: Record<string, unknown>
 }): void {
   for (const [path, body] of Object.entries(opts.files ?? {})) {
     mkdirSync(dirname(join(repo, path)), { recursive: true })
     writeFileSync(join(repo, path), body)
   }
-  writeFileSync(join(repo, 'package.json'), JSON.stringify({ scripts: opts.scripts ?? {} }))
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ ...opts.pkg, scripts: opts.scripts ?? {} }))
 
   if (opts.hook) {
     mkdirSync(join(repo, '.githooks'), { recursive: true })
@@ -240,5 +242,24 @@ describe('Azure Pipelines files as triggers', () => {
       files: { 'azure-pipelines.yml': 'extends:\n  template: base.yml@templates\nsteps:\n  - script: pnpm check:docs\n' },
     })
     expect(checkReachability(repo)[0]?.level).toBe('pass')
+  })
+})
+
+describe('simple-git-hooks as triggers', () => {
+  const scripts = { 'check:docs': 'tsx scripts/docs.ts', lint: 'eslint .' }
+
+  it('reads the hooks package.json declares for it, and names the hook a pass rests on', () => {
+    makeRepo({
+      scripts,
+      pkg: { 'simple-git-hooks': { 'pre-commit': 'pnpm lint', 'pre-push': 'pnpm check:docs --warn-only' } },
+      invariants: ['README claims hold; enforced by `pnpm check:docs`.'],
+    })
+    expect([...reachableCommands(repo)].sort()).toEqual(['check:docs', 'lint'])
+    expect(checkReachability(repo)[0]?.detail).toContain('`package.json#simple-git-hooks pre-push`')
+  })
+
+  it('reads its own JSON files, and passes over a configuration it cannot parse', () => {
+    makeRepo({ scripts, files: { '.simple-git-hooks.json': '{ "pre-push": "pnpm check:docs" }', 'simple-git-hooks.json': '{ not json' } })
+    expect([...reachableCommands(repo)]).toEqual(['check:docs'])
   })
 })
