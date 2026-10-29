@@ -16,9 +16,9 @@ enforce_owner: Andrii Bohdanov
 
 `governance` holds a decision record's "enforced by `pnpm X`" to something
 that runs `X` without a person choosing to: a git hook or a GitHub workflow.
-A project on Azure DevOps - Canvas, which is moving its review evidence into
-Azure Pipelines ([`azure-devops-integration.md`](../plans/azure-devops-integration.md))
-- has its CI in pipeline YAML the check never read, so every invariant only a
+A project on Azure DevOps moving its review evidence into Azure Pipelines
+([`azure-devops-integration.md`](../plans/azure-devops-integration.md)) has
+its CI in pipeline YAML the check never read, so every invariant only a
 pipeline enforces would be `governance/unreached`, an error, and the honest
 fix would be to stop saying it.
 
