@@ -15,8 +15,8 @@ enforce_owner: Andrii Bohdanov
 
 ## Context
 
-Canvas, this package's first outside consumer, lives on Azure DevOps. Moving
-its review evidence into CI there
+Projects using this package live on Azure DevOps as well as GitHub. Moving a
+project's review evidence into CI there
 ([`azure-devops-integration.md`](../plans/azure-devops-integration.md)) starts
 where DEC-0007 started on GitHub: findings a reader sees on the run, not in the
 middle of a log.
