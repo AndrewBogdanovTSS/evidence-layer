@@ -1,0 +1,166 @@
+# Evidence first, then the review, then the review held to the evidence - the
+# layout of .github/workflows/ci.yml, for Azure Pipelines:
+#
+#   evidence ──┬── review (pull requests: a model reads the bundle and writes ai-review.md)
+#   governance ┘
+#
+# Azure Repos runs a pipeline on a pull request only through a build
+# validation branch policy - a `pr:` trigger in this file is ignored there -
+# and that policy is required or optional for the whole pipeline. GitHub makes
+# that choice per job, and it matters: `review` must not block a merge the
+# suite allows. So each job posts its own pull request status
+# (scripts/azure-pr.mjs), a status policy requires `evidence-layer/evidence`
+# and `evidence-layer/governance`, and the build validation stays optional.
+# The README says how to set that up.
+
+# The default branch once merged. Pull requests come through the policy.
+trigger:
+  branches:
+    include: [main]
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+  # The project's commands run once, here, and their output is the evidence.
+  # `npm run evidence` runs the suite and exits 1 when it fails, so it is the
+  # test step, not a second one: nothing else in this pipeline runs `npm test`.
+  - job: evidence
+    timeoutInMinutes: 15
+    steps:
+      - checkout: self
+        # The base branch, for the diff the bundle describes.
+        fetchDepth: 0
+      - task: UseNode@1
+        inputs:
+          version: '24.x'
+      # A status about an earlier push must not stand for this one while it runs.
+      - bash: node scripts/azure-pr.mjs status evidence pending
+        displayName: Mark evidence pending on the pull request
+        continueOnError: true
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      # The pull request's head, not the merge commit Azure builds for it: the
+      # bundle names the commit a reviewer reads.
+      - bash: |
+          git checkout --quiet --detach "${SYSTEM_PULLREQUEST_SOURCECOMMITID:-$BUILD_SOURCEVERSION}"
+          npm ci
+        displayName: The commit under review, installed
+      - bash: |
+          base=origin/main
+          [ -z "$SYSTEM_PULLREQUEST_TARGETBRANCH" ] || base="origin/${SYSTEM_PULLREQUEST_TARGETBRANCH#refs/heads/}"
+          git diff "$base...HEAD" > change.diff
+          npm run evidence -- --base "$base"
+        displayName: Gather
+      # Published and summarised whether or not the suite passed: a failing run
+      # is evidence too, and the summary is the human reviewer's copy.
+      - bash: |
+          mkdir -p "$BUILD_ARTIFACTSTAGINGDIRECTORY/evidence"
+          cp evidence.local.md change.diff "$BUILD_ARTIFACTSTAGINGDIRECTORY/evidence/"
+          echo "##vso[task.uploadsummary]$SYSTEM_DEFAULTWORKINGDIRECTORY/evidence.local.md"
+        displayName: The bundle, for the review job and the summary
+        condition: always()
+      - publish: $(Build.ArtifactStagingDirectory)/evidence
+        artifact: evidence
+        condition: always()
+      - bash: node scripts/azure-pr.mjs status evidence "$AGENT_JOBSTATUS"
+        displayName: Post the evidence status
+        condition: always()
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+  # Is anything actually running what the decision records say is enforced?
+  # Reads the repository, not the code's behaviour, so it needs no evidence
+  # and waits for none.
+  - job: governance
+    timeoutInMinutes: 5
+    steps:
+      - checkout: self
+      - task: UseNode@1
+        inputs:
+          version: '24.x'
+      - bash: node scripts/azure-pr.mjs status governance pending
+        displayName: Mark governance pending on the pull request
+        continueOnError: true
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      - bash: |
+          npm ci
+          npx evidence-layer governance --enforce --no-journal --format azure
+        displayName: Governance
+      - bash: node scripts/azure-pr.mjs status governance "$AGENT_JOBSTATUS"
+        displayName: Post the governance status
+        condition: always()
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+  # The model reads what CI ran instead of running it: no shell, so no test
+  # re-run and no exploring, only the bundle, the diff and the files. Its
+  # claims are copied from the bundle's Suggested claims, and every block it
+  # cites is then held to the bundle `evidence` published - not to anything in
+  # this job the model could have written. A claim that does not hold is marked
+  # UNVERIFIED by `--fix` before the review is posted, so a retry costs no
+  # tokens and the review never says more than the evidence does.
+  #
+  # `IsDraft` is empty where Azure does not set it, and a draft is then reviewed.
+  - job: review
+    dependsOn: evidence
+    condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'), ne(variables['System.PullRequest.IsDraft'], 'true'))
+    timeoutInMinutes: 15
+    steps:
+      - checkout: self
+      - task: UseNode@1
+        inputs:
+          version: '24.x'
+      - bash: node scripts/azure-pr.mjs status review pending
+        displayName: Mark the review pending on the pull request
+        continueOnError: true
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      # Pinned like every other dependency: a model step that changes under a
+      # pipeline nobody edited is a review nobody can reproduce.
+      - bash: |
+          git checkout --quiet --detach "$SYSTEM_PULLREQUEST_SOURCECOMMITID"
+          npm ci
+          npm install --global @anthropic-ai/claude-code@2.1.277
+        displayName: The commit under review, installed, and Claude Code
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: evidence
+          targetPath: $(System.DefaultWorkingDirectory)
+      # The runtime gate's hooks are for a session that gathers; this one does
+      # not, and the checks below do the gate's job without a retry. A small
+      # model is enough to copy two lines; a REVIEW_MODEL pipeline variable
+      # overrides it.
+      - bash: |
+          claude -p "$PROMPT" \
+            --model "${REVIEW_MODEL:-claude-haiku-5-5}" \
+            --max-turns 8 \
+            --allowedTools Read,Glob,Grep,Write \
+            --disallowedTools Bash,WebFetch,WebSearch \
+            --settings '{"disableAllHooks": true}'
+        displayName: The model reviews from the bundle
+        env:
+          ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+          PROMPT: |
+            Review the change in change.diff. evidence.local.md is what CI ran
+            at this commit - do not try to run anything.
+            Write ai-review.md: your findings about the diff, then every claim
+            about what ran as a **Claim**/**Grounding** pair copied from the
+            bundle's Suggested claims with its artifact block, unedited. Claim
+            nothing about a run the bundle does not show; tag anything else you
+            assert INFERRED, with its steps, or UNVERIFIED.
+      - bash: npx evidence-layer claims ai-review.md --bundle evidence.local.md --sha "$SYSTEM_PULLREQUEST_SOURCECOMMITID" --fix
+        displayName: Mark what the evidence does not back UNVERIFIED
+      - bash: npx evidence-layer claims ai-review.md --bundle evidence.local.md --sha "$SYSTEM_PULLREQUEST_SOURCECOMMITID" --format azure
+        displayName: The review, held to the bundle
+      - bash: node scripts/azure-pr.mjs comment ai-review.md
+        displayName: Post the review
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      - bash: node scripts/azure-pr.mjs status review "$AGENT_JOBSTATUS"
+        displayName: Post the review status
+        condition: always()
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)

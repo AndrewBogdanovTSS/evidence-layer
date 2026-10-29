@@ -24,7 +24,8 @@ It exists twice over.
    | [`package.json`](package.json) | `evidence-layer` as a dev dependency (this checkout, via `file:../..`; in your project, the registry) and an `evidence` script |
    | [`scripts/evidence.mjs`](scripts/evidence.mjs) | gathers the evidence before a review is written: runs `npm test`, appends Node's test counts as a work summary, seals the run, and exits 1 when the suite failed |
    | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | gathers in CI - the suite runs once, inside the gather - and uploads the bundle; checks governance alongside; on a pull request, a model reviews from the bundle and its review is held to that bundle - see [below](#in-ci-gather-review-verify) |
-   | [`scripts/ci-local.mjs`](scripts/ci-local.mjs) | `npm run ci:local`: the workflow's jobs, run locally the way CI runs them - see [below](#before-you-push-npm-run-cilocal) |
+   | [`azure-pipelines.yml`](azure-pipelines.yml), [`scripts/azure-pr.mjs`](scripts/azure-pr.mjs) | the same jobs for Azure Pipelines, each posting the pull request status a branch policy can require - see [below](#in-azure-pipelines) |
+   | [`scripts/ci-local.mjs`](scripts/ci-local.mjs) | `npm run ci:local`: the workflow's jobs - or the Azure pipeline's - run locally the way CI runs them - see [below](#before-you-push-npm-run-cilocal) |
    | [`.claude/settings.json`](.claude/settings.json), [`.codex/hooks.json`](.codex/hooks.json) | the runtime gate, written by `evidence-layer init claude` and `init codex` |
    | [`scripts/standalone.mjs`](scripts/standalone.mjs) | `npm run standalone`: copies this project out as a repository of its own - see below. Not part of the setup; the copy leaves it behind |
    | [`docs/decisions/0001-example.md`](docs/decisions/0001-example.md) | two invariants, one enforced by a command and one by "a human" |
@@ -335,10 +336,11 @@ where CI gathers from the commit, and says so when the two differ.
 | `npm run ci:local -- --review-skeleton` | the review is the bundle's own suggested claims - what the model is asked to copy - so the whole pipeline runs with no model and no tokens |
 | `npm run ci:local -- --review notes.md` | the review is a file you wrote, checked as CI would check the model's |
 | `npm run ci:local -- --no-review` | the two required jobs only |
+| `npm run ci:local -- --pipeline azure` | any of the above, with the review step read from `azure-pipelines.yml` instead of the GitHub workflow - the default when the workflow is not there |
 
 It exits 0 when every job that ran passed, 1 when one failed, and 2 when it
 could not run - a bad option, no repository of its own, or a review step in the
-workflow it cannot read. A model step on an empty diff is skipped rather than
+pipeline it cannot read. A model step on an empty diff is skipped rather than
 paid for. What it leaves behind - `evidence.local.md`, `change.diff`,
 `ai-review.md` - is ignored by git, and the summary prints where the "artifact"
 copy is.
@@ -346,6 +348,42 @@ copy is.
 What it does not reproduce: a fresh checkout and `npm ci` (it uses your working
 tree and `node_modules`), the pull request comment (it prints the review
 instead), and required checks, which only the repository's settings make.
+
+### In Azure Pipelines
+
+[`azure-pipelines.yml`](azure-pipelines.yml) is the same three jobs for a
+project on Azure DevOps, with the same handoff: `evidence` publishes the
+bundle as a pipeline artifact, `review` downloads it and holds the model's
+review to it with `claims --bundle --format azure`, which logs every finding
+as an issue on the step.
+
+One thing has to be built differently. Azure Repos runs a pipeline on a pull
+request only through a build validation branch policy, and that policy is
+required or optional for the whole pipeline - so it cannot require
+`evidence` and `governance` without requiring `review`. Each job instead
+posts its own pull request status through
+[`scripts/azure-pr.mjs`](scripts/azure-pr.mjs) - pending when it starts, its
+outcome when it ends, on the pull request iteration whose head is the commit it
+built - and the branch policy requires the statuses:
+
+- Create a pipeline from `azure-pipelines.yml`.
+- On the target branch's policies, add **Build validation** for that pipeline,
+  marked **Optional**, so it runs on every pull request without its review
+  blocking one.
+- Add **Status checks** for `evidence-layer/evidence` and
+  `evidence-layer/governance`, marked **Required** (each appears once a run
+  has posted it). Leave `evidence-layer/review` optional.
+- Allow the project's build service to **Contribute to pull requests** on the
+  repository, so `System.AccessToken` can post statuses and the review.
+- For `review`, add an `ANTHROPIC_API_KEY` secret variable, and optionally a
+  `REVIEW_MODEL` variable (default `claude-haiku-5-5`).
+
+`npm run ci:local -- --pipeline azure` reads the model step out of
+`azure-pipelines.yml` - the words of its `claude -p` script, as the shell
+would split them, with `${REVIEW_MODEL:-claude-haiku-5-5}` taken from your
+environment - so the local review asks what the pipeline asks. It does not
+post statuses or the review, and a draft pull request is reviewed where Azure
+does not tell the pipeline it is one.
 
 ## Using it on your own project
 

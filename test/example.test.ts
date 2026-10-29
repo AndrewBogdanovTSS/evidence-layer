@@ -11,8 +11,10 @@
  * This is what `examples/plain-node-project/README.md` tells a reader to do,
  * so a step the README describes that stopped working fails here first.
  */
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -238,5 +240,147 @@ describe('npm run ci:local', () => {
     const res = ciLocal(dir, ['--review-skeleton'])
     expect(res.status).toBe(2)
     expect(res.stderr).toContain('no `uses: anthropics/claude-code-action` step')
+  })
+
+  it('runs the Azure pipeline\'s jobs with --pipeline azure, and refuses a pipeline it does not know', () => {
+    const dir = pullRequest()
+    const azure = ciLocal(dir, ['--pipeline', 'azure', '--review-skeleton'])
+    expect(azure.status, azure.stdout + azure.stderr).toBe(0)
+    expect(azure.stdout).toContain('ci:local - the jobs of azure-pipelines.yml')
+    expect(summary(azure.stdout)).toMatch(/evidence {4}required {2}pass\n {2}governance {2}required {2}pass\n {2}review {6}optional {2}pass/)
+    expect(ciLocal(dir, ['--pipeline', 'jenkins']).status).toBe(2)
+  }, 30_000)
+
+  // POSIX only - the stand-in is a shell script.
+  it.skipIf(process.platform === 'win32')('asks the model what the Azure step asks it, REVIEW_MODEL or the step\'s default', () => {
+    const dir = pullRequest()
+    const bin = mkdtempSync(join(tmpdir(), 'el-fake-claude-'))
+    const log = join(bin, 'claude.log')
+    writeFileSync(join(bin, 'claude'), '#!/bin/sh\nprintf \'%s\\0\' "$@" > "$CLAUDE_LOG"\n', { mode: 0o755 })
+    const asked = (env: Record<string, string>) => {
+      ciLocal(dir, ['--pipeline', 'azure'], { PATH: bin + ':' + process.env.PATH, CLAUDE_LOG: log, ...env })
+      return readFileSync(log, 'utf8').split('\0').slice(0, -1)
+    }
+    const pipeline = readFileSync(join(dir, 'azure-pipelines.yml'), 'utf8')
+    const withDefault = asked({ REVIEW_MODEL: '' })
+    expect(withDefault[0]).toBe('-p')
+    expect(pipeline.replace(/\s+/g, ' ')).toContain(withDefault[1]!.replace(/\s+/g, ' '))
+    expect(withDefault.slice(2)).toEqual([
+      '--model', 'claude-haiku-5-5', '--max-turns', '8',
+      '--allowedTools', 'Read,Glob,Grep,Write', '--disallowedTools', 'Bash,WebFetch,WebSearch',
+      '--settings', '{"disableAllHooks": true}',
+    ])
+    expect(asked({ REVIEW_MODEL: 'claude-sonnet-5-5' }).slice(2, 4)).toEqual(['--model', 'claude-sonnet-5-5'])
+  }, 30_000)
+
+  it('refuses an Azure model step it cannot evaluate, rather than asking the model something else', () => {
+    const dir = pullRequest()
+    const path = join(dir, 'azure-pipelines.yml')
+    writeFileSync(path, readFileSync(path, 'utf8').replace('"$PROMPT"', '"$(cat prompt.md)"'))
+    const res = ciLocal(dir, ['--pipeline', 'azure', '--review-skeleton'])
+    expect(res.status).toBe(2)
+    expect(res.stderr).toContain('which this does not evaluate')
+  })
+})
+
+describe('the Azure pipeline', () => {
+  it('runs the suite once, inside the gather, and holds the review to the bundle it published', () => {
+    // Comments say why; only what the agent reads is held here.
+    const pipeline = readFileSync(join(EXAMPLE, 'azure-pipelines.yml'), 'utf8').replace(/^\s*#.*\n/gm, '')
+    const job = (name: string) => new RegExp('^  - job: ' + name + '\\n([\\s\\S]*?)(?=^  - job: |(?![\\s\\S]))', 'm').exec(pipeline)?.[1] ?? ''
+    expect(pipeline).not.toMatch(/npm (?:run )?test\b/)
+    expect(job('evidence')).toMatch(/fetchDepth: 0/)
+    expect(job('evidence')).toMatch(/SYSTEM_PULLREQUEST_SOURCECOMMITID/)
+    expect(job('evidence')).toMatch(/npm run evidence -- --base/)
+    expect(job('evidence')).toMatch(/publish:[\s\S]*artifact: evidence\n\s*condition: always\(\)/)
+    expect(job('governance')).not.toContain('dependsOn')
+    expect(job('governance')).toMatch(/governance --enforce --no-journal --format azure/)
+    expect(job('review')).toMatch(/dependsOn: evidence/)
+    expect(job('review')).toMatch(/--disallowedTools Bash/)
+    expect(job('review')).toMatch(/claims ai-review\.md --bundle evidence\.local\.md [^\n]*--format azure/)
+    // Each job posts the status a branch policy can require, whatever the job's outcome.
+    for (const name of ['evidence', 'governance', 'review']) {
+      expect(job(name)).toMatch(new RegExp('azure-pr\\.mjs status ' + name + ' "\\$AGENT_JOBSTATUS"\\n[^\\n]*\\n\\s*condition: always\\(\\)'))
+    }
+  })
+})
+
+describe('scripts/azure-pr.mjs', () => {
+  const SCRIPT = join(EXAMPLE, 'scripts', 'azure-pr.mjs')
+
+  /** A stand-in for Azure DevOps that records what it was sent and answers the iterations the test gives it. */
+  async function azureDevOps(iterations: { id: number; sourceRefCommit: { commitId: string } }[]) {
+    const seen: { method: string; url: string; auth: string; body: unknown }[] = []
+    const server = createServer((req, res) => {
+      let body = ''
+      req.on('data', (d) => (body += d))
+      req.on('end', () => {
+        seen.push({ method: req.method!, url: req.url!, auth: req.headers.authorization ?? '', body: body ? JSON.parse(body) : undefined })
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify(req.method === 'GET' ? { value: iterations } : {}))
+      })
+    })
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+    const { port } = server.address() as AddressInfo
+    return { seen, url: 'http://127.0.0.1:' + port + '/org', close: () => server.close() }
+  }
+
+  function run(args: string[], env: Record<string, string>) {
+    return new Promise<{ code: number | null; out: string }>((done) => {
+      const child = spawn(process.execPath, [SCRIPT, ...args], { cwd: EXAMPLE, env: { ...process.env, ...env } })
+      let out = ''
+      child.stdout.on('data', (d) => (out += d))
+      child.stderr.on('data', (d) => (out += d))
+      child.on('close', (code) => done({ code, out }))
+    })
+  }
+
+  const build = (url: string) => ({
+    SYSTEM_PULLREQUEST_PULLREQUESTID: '42',
+    SYSTEM_PULLREQUEST_SOURCECOMMITID: 'abc123',
+    SYSTEM_ACCESSTOKEN: 'token-value',
+    SYSTEM_COLLECTIONURI: url,
+    SYSTEM_TEAMPROJECTID: 'project id',
+    BUILD_REPOSITORY_ID: 'repo',
+    BUILD_BUILDID: '7',
+  })
+
+  it('posts a job\'s status on the iteration whose head is the commit the run built', async () => {
+    const api = await azureDevOps([{ id: 1, sourceRefCommit: { commitId: 'old' } }, { id: 2, sourceRefCommit: { commitId: 'abc123' } }])
+    const res = await run(['status', 'evidence', 'SucceededWithIssues'], build(api.url))
+    api.close()
+    expect(res.code, res.out).toBe(0)
+    const post = api.seen.find((r) => r.method === 'POST')!
+    expect(post.url).toBe('/org/project%20id/_apis/git/repositories/repo/pullRequests/42/statuses?api-version=7.1')
+    expect(post.auth).toBe('Bearer token-value')
+    expect(post.body).toMatchObject({ state: 'succeeded', context: { genre: 'evidence-layer', name: 'evidence' }, iterationId: 2 })
+    expect(res.out).not.toContain('token-value')
+  })
+
+  it('posts the review as a new thread, and refuses an empty one', async () => {
+    const api = await azureDevOps([])
+    const dir = mkdtempSync(join(tmpdir(), 'el-azure-pr-'))
+    writeFileSync(join(dir, 'review.md'), '**Claim**: it works\n')
+    writeFileSync(join(dir, 'empty.md'), '\n')
+    const posted = await run(['comment', join(dir, 'review.md')], build(api.url))
+    const empty = await run(['comment', join(dir, 'empty.md')], build(api.url))
+    api.close()
+    expect(posted.code, posted.out).toBe(0)
+    expect(api.seen).toHaveLength(1)
+    expect(api.seen[0]!.url).toBe('/org/project%20id/_apis/git/repositories/repo/pullRequests/42/threads?api-version=7.1')
+    expect(api.seen[0]!.body).toMatchObject({ comments: [{ content: '**Claim**: it works\n' }] })
+    expect(empty.code).toBe(1)
+  })
+
+  it('posts nothing outside a pull request build, and says so', async () => {
+    const res = await run(['status', 'evidence', 'Failed'], { SYSTEM_PULLREQUEST_PULLREQUESTID: '' })
+    expect(res.code).toBe(0)
+    expect(res.out).toContain('not a pull request build')
+  })
+
+  it('refuses an unmapped token and a state the agent does not report', async () => {
+    const unmapped = await run(['status', 'evidence', 'Failed'], { ...build('http://127.0.0.1:9/'), SYSTEM_ACCESSTOKEN: '$(System.AccessToken)' })
+    expect(unmapped.code).toBe(2)
+    expect((await run(['status', 'evidence', 'constructor'], build('http://127.0.0.1:9/'))).code).toBe(2)
   })
 })

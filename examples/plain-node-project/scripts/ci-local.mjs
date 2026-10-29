@@ -5,21 +5,26 @@
 //   npm run ci:local -- --review-skeleton    # review = the bundle's suggested claims; no model
 //   npm run ci:local -- --review notes.md    # review = a file you wrote; no model
 //   npm run ci:local -- --no-review          # the two required jobs only
+//   npm run ci:local -- --pipeline azure     # azure-pipelines.yml's jobs, not the GitHub workflow's
 //
-// It runs the jobs of .github/workflows/ci.yml in the order and shape CI does:
+// It runs the jobs of .github/workflows/ci.yml - or, with `--pipeline azure`,
+// of azure-pipelines.yml; without the option, whichever of the two exists,
+// GitHub's when both do - in the order and shape CI does:
 // `evidence` and `governance` side by side, then - only once `evidence`
 // passed - `review`, whose checks read the bundle from a separate directory,
 // the way the review job reads the artifact the evidence job uploaded. So a
 // review that cites a block the gather did not write fails here as it would
 // there, and a broken suite stops the review before it costs a token.
 //
-// The review job's model step - its prompt, its `claude_args` and its
-// settings - is read out of the workflow, not written here a second time: a
-// copy would drift, and a local run that asks the model something CI does not
-// is a simulation of nothing. Anything in those inputs a local run cannot
-// evaluate (a secret, an expression other than `vars.NAME || 'default'`) is
-// refused rather than guessed. `vars.REVIEW_MODEL` is read from the
-// environment, as `REVIEW_MODEL=...`.
+// The review job's model step is read out of the pipeline, not written here a
+// second time: a copy would drift, and a local run that asks the model
+// something CI does not is a simulation of nothing. From the GitHub workflow,
+// that is the action's `prompt`, `claude_args` and `settings`; from the
+// Azure pipeline, the words of its `claude -p` script step, as the shell
+// would split them. Anything a local run cannot evaluate (a secret, a pipeline
+// expression, a shell expansion other than `$NAME` from the step's own env or
+// `${NAME:-default}`) is refused rather than guessed. The repository's
+// REVIEW_MODEL variable is read from the environment, as `REVIEW_MODEL=...`.
 //
 // What it deliberately does not do:
 //   - check out a clean copy or run `npm ci`. It runs on this working tree and
@@ -37,7 +42,7 @@
 // read anything in it.
 //
 // Exit codes: 0 every job that ran passed - 1 a job failed - 2 bad usage, or
-// the workflow could not be read.
+// the pipeline could not be read.
 import { execFileSync, spawn } from 'node:child_process'
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -46,7 +51,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const WORKFLOW = join(project, '.github', 'workflows', 'ci.yml')
+const PIPELINES = { github: '.github/workflows/ci.yml', azure: 'azure-pipelines.yml' }
 
 function usage(message) {
   console.error('ci:local: ' + message)
@@ -65,11 +70,15 @@ const value = (name) => {
   if (v === undefined || v.startsWith('--')) usage('--' + name + ' needs a value')
   return v
 }
-const known = new Set(['--base', '--review', '--review-skeleton', '--no-review'])
+const known = new Set(['--base', '--review', '--review-skeleton', '--no-review', '--pipeline'])
 for (const [i, a] of argv.entries()) {
   if (a.startsWith('--') && !known.has(a)) usage('unknown option ' + a)
-  if (!a.startsWith('--') && !['--base', '--review'].includes(argv[i - 1])) usage('unexpected argument ' + a)
+  if (!a.startsWith('--') && !['--base', '--review', '--pipeline'].includes(argv[i - 1])) usage('unexpected argument ' + a)
 }
+const asked = value('pipeline')
+if (asked !== undefined && !Object.hasOwn(PIPELINES, asked)) usage('--pipeline is github or azure, not ' + asked)
+const pipeline = asked ?? (existsSync(join(project, PIPELINES.github)) || !existsSync(join(project, PIPELINES.azure)) ? 'github' : 'azure')
+const PIPELINE = join(project, PIPELINES[pipeline])
 const reviewFile = value('review')
 const reviewMode = flag('no-review') ? 'none' : flag('review-skeleton') ? 'skeleton' : reviewFile ? 'file' : 'model'
 if ([flag('no-review'), flag('review-skeleton'), reviewFile !== undefined].filter(Boolean).length > 1) {
@@ -122,62 +131,146 @@ try {
 }
 
 // ---------------------------------------------------------------------------
-// The review job's model step, as the workflow writes it
+// The review job's model step, as the pipeline writes it
 
-/** The `with:` inputs of the `uses: anthropics/claude-code-action` step, and the review file the next check names. */
-function readReviewStep(text) {
+/** The lines of the YAML list item that starts at `at`, its `- ` blanked so its first key reads like the rest. */
+function stepAt(lines, at) {
+  const indent = lines[at].indexOf('-')
+  const step = [lines[at].slice(0, indent) + ' ' + lines[at].slice(indent + 1)]
+  for (let i = at + 1; i < lines.length; i++) {
+    const l = lines[i]
+    if (l.trim() !== '' && l.search(/\S/) <= indent) break
+    step.push(l)
+  }
+  return step
+}
+
+/** A `key: |` block in a step, its lines with their common indentation removed, or a one-line `key: 'value'`. */
+function valueOf(step, key) {
+  const i = step.findIndex((l) => new RegExp('^\\s*' + key + ':').test(l))
+  if (i === -1) return undefined
+  const keyIndent = step[i].search(/\S/)
+  const rest = step[i].slice(step[i].indexOf(':') + 1).trim()
+  if (rest !== '|') return rest.startsWith("'") && rest.endsWith("'") ? rest.slice(1, -1).replace(/''/g, "'") : rest
+  const body = []
+  for (const l of step.slice(i + 1)) {
+    if (l.trim() !== '' && l.search(/\S/) <= keyIndent) break
+    body.push(l)
+  }
+  const indent = Math.min(...body.filter((l) => l.trim() !== '').map((l) => l.search(/\S/)))
+  return body.map((l) => l.slice(indent)).join('\n').trim()
+}
+
+/** The GitHub workflow: the `uses: anthropics/claude-code-action` step's inputs, and the review file the next check names. */
+function readGithubReviewStep(text) {
   const lines = text.split(/\r?\n/)
   const at = lines.findIndex((l) => /^\s*- uses: anthropics\/claude-code-action@/.test(l))
   if (at === -1) return { broken: 'no `uses: anthropics/claude-code-action` step' }
-  const stepIndent = lines[at].indexOf('-')
-  const step = []
-  for (let i = at + 1; i < lines.length; i++) {
-    const l = lines[i]
-    if (l.trim() !== '' && l.search(/\S/) <= stepIndent) break
-    step.push(l)
-  }
-  /** A `key: |` block, its lines with their common indentation removed, or a one-line `key: 'value'`. */
-  const input = (key) => {
-    const i = step.findIndex((l) => new RegExp('^\\s*' + key + ':').test(l))
-    if (i === -1) return undefined
-    const keyIndent = step[i].search(/\S/)
-    const rest = step[i].slice(step[i].indexOf(':') + 1).trim()
-    if (rest !== '|') return rest.startsWith("'") && rest.endsWith("'") ? rest.slice(1, -1).replace(/''/g, "'") : rest
-    const body = []
-    for (const l of step.slice(i + 1)) {
-      if (l.trim() !== '' && l.search(/\S/) <= keyIndent) break
-      body.push(l)
-    }
-    const indent = Math.min(...body.filter((l) => l.trim() !== '').map((l) => l.search(/\S/)))
-    return body.map((l) => l.slice(indent)).join('\n').trim()
-  }
-  const prompt = input('prompt')
-  const args = input('claude_args')
-  if (!prompt || !args) return { broken: 'the claude-code-action step has no `prompt` or no `claude_args`' }
+  const step = stepAt(lines, at)
+  const inputs = { prompt: valueOf(step, 'prompt'), args: valueOf(step, 'claude_args'), settings: valueOf(step, 'settings') }
+  if (!inputs.prompt || !inputs.args) return { broken: 'the claude-code-action step has no `prompt` or no `claude_args`' }
   // The first `claims:` after the model step: the file the review job checks and posts.
-  const after = lines.slice(at + 1 + step.length).find((l) => /^\s*claims:\s*\S/.test(l))
+  const after = lines.slice(at + step.length).find((l) => /^\s*claims:\s*\S/.test(l))
   const review = after?.split(':')[1].trim()
   if (!review) return { broken: 'no `claims:` check after the claude-code-action step names the review file' }
-  return { prompt, args, settings: input('settings'), review }
+
+  for (const key of Object.keys(inputs)) {
+    if (inputs[key] === undefined) continue
+    // `${{ vars.NAME || 'default' }}` from the environment; anything else a local run cannot evaluate.
+    const done = inputs[key].replace(/\$\{\{\s*vars\.([A-Za-z_]\w*)\s*\|\|\s*'([^']*)'\s*\}\}/g, (_, name, fallback) => process.env[name] || fallback)
+    if (done.includes('${{')) return { broken: 'the step\'s ' + key + ' uses ' + done.slice(done.indexOf('${{')).split('}}')[0] + '}}, which only CI can evaluate' }
+    inputs[key] = done
+  }
+  if (/["']/.test(inputs.args)) return { broken: 'the step\'s claude_args quote a value, which this reads as separate words - unquote it' }
+  const argv = ['-p', inputs.prompt, ...inputs.args.split(/\s+/).filter(Boolean)]
+  if (inputs.settings !== undefined) argv.push('--settings', inputs.settings)
+  return { argv, review }
 }
 
-/** `${{ vars.NAME || 'default' }}` from the environment; anything else a local run cannot evaluate. */
-function evaluate(text) {
-  const done = text.replace(/\$\{\{\s*vars\.([A-Za-z_]\w*)\s*\|\|\s*'([^']*)'\s*\}\}/g, (_, name, fallback) => process.env[name] || fallback)
-  return done.includes('${{') ? { cannot: done.slice(done.indexOf('${{')).split('}}')[0] + '}}' } : { text: done }
+/**
+ * A command's words as sh would split and expand them, for the forms a model
+ * step needs and no others: single quotes, double quotes, `\` before a
+ * newline, and inside double quotes `$NAME` from the step's env or
+ * `${NAME:-default}` from the environment - how a pipeline variable reaches
+ * a script. Anything else sh would interpret is refused, never guessed.
+ */
+function shellWords(command, stepEnv) {
+  const expand = (text, at) => {
+    const fallback = /^\$\{([A-Za-z_]\w*):-([^}$`"'\\]*)\}/.exec(text.slice(at))
+    if (fallback) return { value: stepEnv(fallback[1]) ?? (process.env[fallback[1]] || fallback[2]), length: fallback[0].length }
+    const plain = /^\$([A-Za-z_]\w*)/.exec(text.slice(at))
+    const value = plain ? stepEnv(plain[1]) : undefined
+    if (value === undefined || value === null) return { cannot: plain ? '$' + plain[1] + ', which the step\'s env does not set' : text.slice(at, at + 2) }
+    return { value, length: plain[0].length }
+  }
+  const text = command.replace(/\\\r?\n/g, ' ')
+  if (text.trim().includes('\n')) return { cannot: 'more than one command' }
+  const words = []
+  let word = null
+  for (let i = 0; i < text.length; ) {
+    const c = text[i]
+    if (/\s/.test(c)) {
+      if (word !== null) words.push(word)
+      word = null
+      i++
+      continue
+    }
+    word ??= ''
+    if (c === "'") {
+      const end = text.indexOf("'", i + 1)
+      if (end === -1) return { cannot: 'an unclosed quote' }
+      word += text.slice(i + 1, end)
+      i = end + 1
+    } else if (c === '"') {
+      for (i++; i < text.length && text[i] !== '"'; ) {
+        if (text[i] === '\\' && /["\\$`]/.test(text[i + 1] ?? '')) {
+          word += text[i + 1]
+          i += 2
+        } else if (text[i] === '$') {
+          const e = expand(text, i)
+          if ('cannot' in e) return e
+          word += e.value
+          i += e.length
+        } else if (text[i] === '`') {
+          return { cannot: '`' }
+        } else word += text[i++]
+      }
+      if (text[i] !== '"') return { cannot: 'an unclosed quote' }
+      i++
+    } else if (/[$`\\;&|<>(){}[\]*?~#]/.test(c)) {
+      return { cannot: c === '$' ? 'an unquoted expansion' : c }
+    } else word += text[i++]
+  }
+  if (word !== null) words.push(word)
+  return { words }
 }
 
-if (!existsSync(WORKFLOW)) usage('no ' + WORKFLOW + ' - this runs the jobs that workflow defines')
-const reviewStep = readReviewStep(readFileSync(WORKFLOW, 'utf8'))
-if ('broken' in reviewStep) usage('cannot read the review job from ' + WORKFLOW + ': ' + reviewStep.broken)
-const modelInputs = {}
-for (const key of ['prompt', 'args', 'settings']) {
-  if (reviewStep[key] === undefined) continue
-  const result = evaluate(reviewStep[key])
-  if ('cannot' in result) usage('the review step\'s ' + key + ' uses ' + result.cannot + ', which only CI can evaluate')
-  modelInputs[key] = result.text
+/** The Azure pipeline: the `bash:` or `script:` step that runs `claude -p`, and the review file the next check names. */
+function readAzureReviewStep(text) {
+  const lines = text.split(/\r?\n/)
+  for (let at = 0; at < lines.length; at++) {
+    if (!/^\s*- (?:bash|script):\s*\|\s*$/.test(lines[at])) continue
+    const step = stepAt(lines, at)
+    const body = valueOf(step, 'bash') ?? valueOf(step, 'script') ?? ''
+    if (!/^claude\s+-p\s/.test(body)) continue
+    // The step's own env, as Azure hands it to the script: a value still holding a macro was never evaluated here.
+    const stepEnv = (name) => {
+      const value = valueOf(step, name)
+      if (value === undefined) return undefined
+      return /\$\(|\$\[|\$\{\{/.test(value) ? null : value
+    }
+    const parsed = shellWords(body, stepEnv)
+    if ('cannot' in parsed) return { broken: 'the `claude -p` step uses ' + parsed.cannot + ', which this does not evaluate' }
+    const review = lines.slice(at + step.length).map((l) => /evidence-layer claims (\S+)/.exec(l)?.[1]).find(Boolean)
+    if (!review) return { broken: 'no `evidence-layer claims` check after the `claude -p` step names the review file' }
+    return { argv: parsed.words.slice(1), review }
+  }
+  return { broken: 'no `bash:` step that runs `claude -p`' }
 }
-if (/["']/.test(modelInputs.args)) usage('the review step\'s claude_args quote a value, which this reads as separate words - unquote it')
+
+if (!existsSync(PIPELINE)) usage('no ' + PIPELINES[pipeline] + ' - this runs the jobs that pipeline defines')
+const reviewStep = (pipeline === 'github' ? readGithubReviewStep : readAzureReviewStep)(readFileSync(PIPELINE, 'utf8'))
+if ('broken' in reviewStep) usage('cannot read the review job from ' + PIPELINES[pipeline] + ': ' + reviewStep.broken)
 
 // ---------------------------------------------------------------------------
 // Running jobs
@@ -205,7 +298,7 @@ function section(title, output) {
 const results = []
 const record = (job, required, status, why) => results.push({ job, required, status, why })
 
-console.log('ci:local - the jobs of .github/workflows/ci.yml, at ' + head.slice(0, 10) + ' against ' + base)
+console.log('ci:local - the jobs of ' + PIPELINES[pipeline] + ', at ' + head.slice(0, 10) + ' against ' + base)
 if (dirty) console.log('the working tree has uncommitted changes: they are in this evidence, and would not be in CI\'s')
 console.log('running evidence and governance side by side, as CI does...')
 
@@ -259,9 +352,7 @@ else {
     wrote = reviewFile
   } else {
     console.log('\nrunning the review job\'s model step - this spends tokens, as it does in CI...')
-    const args = ['-p', modelInputs.prompt, ...modelInputs.args.split(/\s+/).filter(Boolean)]
-    if (modelInputs.settings !== undefined) args.push('--settings', modelInputs.settings)
-    const model = await run('claude', args)
+    const model = await run('claude', reviewStep.argv)
     section('review: the model', model.output)
     if (model.error?.code === 'ENOENT') skip('no `claude` on PATH - install Claude Code, or pass --review-skeleton or --review <file>')
     else if (model.code !== 0) record('review', false, 'fail', 'the model step exited ' + model.code)

@@ -55,7 +55,9 @@ run its gather-then-verify handoff on such a copy. A change to how the
 example's workflow hands the bundle over changes those jobs too, and
 the example's own `scripts/ci-local.mjs` (`npm run ci:local` there, which
 reads the review step out of the workflow) must still read it -
-`test/example.test.ts` holds it to that.
+`test/example.test.ts` holds it to that. The example's `azure-pipelines.yml`
+is held the same way, by `--pipeline azure`; no CI here runs it, so the suite
+is what notices it drifting.
 
 ## Rules the tests enforce
 
