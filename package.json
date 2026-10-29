@@ -50,7 +50,8 @@
     "outputFormats": [
       "text",
       "json",
-      "github"
+      "github",
+      "azure"
     ],
     "claimsAgainst": [
       "bundle"

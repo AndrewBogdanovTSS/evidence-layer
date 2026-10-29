@@ -179,17 +179,17 @@ export function exitCodeFor(findings: Finding[], strict = false): number {
   return EXIT.ok
 }
 
-export type Format = 'text' | 'json' | 'github'
+export type Format = 'text' | 'json' | 'github' | 'azure'
 
 /**
- * `--format text|json|github`, text by default. Anything else is bad usage, not a
+ * `--format text|json|github|azure`, text by default. Anything else is bad usage, not a
  * silent fall back to text: a caller that asked for JSON and got prose would
  * fail at its own `JSON.parse`, far from the cause.
  */
 export function formatOf(args: Args, helpText: string): Format {
   const format = args.format
   if (format === undefined || format === 'text') return 'text'
-  if (format === 'json' || format === 'github') return format
+  if (format === 'json' || format === 'github' || format === 'azure') return format
   return usage(helpText)
 }
 
