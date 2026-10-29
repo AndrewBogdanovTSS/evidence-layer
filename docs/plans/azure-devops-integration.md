@@ -174,10 +174,12 @@ second distribution channel without npm's provenance - DEC-0007's reasoning, Lad
   the environment; any other macro or `$[ ]` / `${{ }}` expression is refused, as today.
 - `test/example.test.ts` holds the Azure reader to the Azure file (same rule as for GitHub: the
   local run asks the model nothing CI does not).
-- This repository's CI: an `example-azure-format` job (or a step in `example-review`) runs the
-  handoff with `--format azure` and `TF_BUILD=True` and asserts the `logissue` lines and the
-  summary command. `scripts/ci-local.ts` `LOCAL_JOBS` gains its counterpart - `test/ci-local.test.ts`
-  fails until it does.
+- ~~This repository's CI: an `example-azure-format` job.~~ Not built: `test/example.test.ts` runs
+  `ci:local --pipeline azure` inside the suite, which CI's `test` job already runs on 22 and 24,
+  and `test/azure-logging.test.ts` holds `--format azure` itself - a job would run the same again.
+- As built, a pull request's statuses come from `scripts/azure-pr.mjs` in the example (option A of
+  section 2), because whether a "partially succeeded" run passes a required build validation could
+  not be confirmed.
 
 ### Phase 4 - Canvas pipeline: evidence and governance (Canvas repo)
 
