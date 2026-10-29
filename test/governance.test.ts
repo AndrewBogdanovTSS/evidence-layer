@@ -1,8 +1,8 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { checkReachability, readInvariants, reachableCommands } from '../src/core/governance'
+import { checkReachability, readInvariants, reachableCommands, triggerSources } from '../src/core/governance'
 
 let repo: string
 
@@ -13,7 +13,13 @@ function makeRepo(opts: {
   workflow?: string
   invariants?: string[]
   scriptFiles?: Record<string, string>
+  /** Any other files, by repo-relative path - Azure Pipelines files and their templates. */
+  files?: Record<string, string>
 }): void {
+  for (const [path, body] of Object.entries(opts.files ?? {})) {
+    mkdirSync(dirname(join(repo, path)), { recursive: true })
+    writeFileSync(join(repo, path), body)
+  }
   writeFileSync(join(repo, 'package.json'), JSON.stringify({ scripts: opts.scripts ?? {} }))
 
   if (opts.hook) {
@@ -146,5 +152,93 @@ describe('checkReachability', () => {
     const [finding] = checkReachability(repo)
     expect(finding?.level).toBe('unverifiable')
     expect(finding?.level).not.toBe('pass')
+  })
+})
+
+describe('Azure Pipelines files as triggers', () => {
+  const docs = { 'check:docs': 'tsx scripts/docs.ts' }
+  const invariant = ['README claims hold; enforced by `pnpm check:docs`.']
+
+  it('reads azure-pipelines.yml at the root and YAML under the usual directories', () => {
+    makeRepo({
+      scripts: { ...docs, lint: 'eslint .' },
+      files: {
+        'azure-pipelines.yml': 'steps:\n  - script: pnpm check:docs\n',
+        '.azuredevops/pipelines/lint.yml': 'steps:\n  - bash: pnpm lint\n',
+      },
+    })
+    expect([...reachableCommands(repo)].sort()).toEqual(['check:docs', 'lint'])
+  })
+
+  it('follows local templates, relative to the file that names them or to the root', () => {
+    makeRepo({
+      scripts: { ...docs, lint: 'eslint .', typecheck: 'tsc' },
+      files: {
+        'azure-pipelines.yml': 'stages:\n  - template: ci/stages.yml\n',
+        'ci/stages.yml': "jobs:\n  - template: 'jobs/lint.yml' # relative to ci/\n  - template: /tools/typecheck.yml@self\n",
+        'ci/jobs/lint.yml': 'steps:\n  - script: pnpm lint && pnpm check:docs\n',
+        'tools/typecheck.yml': 'steps:\n  - script: pnpm typecheck\n',
+      },
+    })
+    expect([...reachableCommands(repo)].sort()).toEqual(['check:docs', 'lint', 'typecheck'])
+    expect(triggerSources(repo).unread).toEqual([])
+  })
+
+  it('survives templates that include each other', () => {
+    makeRepo({
+      scripts: docs,
+      files: {
+        'azure-pipelines.yml': 'steps:\n  - template: a.yml\n',
+        'a.yml': 'steps:\n  - template: azure-pipelines.yml\n  - script: pnpm check:docs\n',
+      },
+    })
+    expect(reachableCommands(repo).has('check:docs')).toBe(true)
+  })
+
+  it('lists templates it cannot read: another repository, a computed path, a missing file', () => {
+    makeRepo({
+      files: {
+        'azure-pipelines.yml': [
+          'extends:',
+          '  template: pipelines/base.yml@templates',
+          'steps:',
+          '  - template: ${{ parameters.steps }}',
+          '  - template: gone.yml',
+        ].join('\n'),
+      },
+    })
+    expect(triggerSources(repo).unread).toEqual(['pipelines/base.yml@templates', '${{ parameters.steps }}', 'gone.yml (not found)'])
+  })
+
+  it('names the Azure file a pass rests on, and that no file shows a pipeline runs it', () => {
+    makeRepo({ scripts: docs, invariants: invariant, files: { 'azure-pipelines.yml': '- script: pnpm check:docs\n' } })
+    const [finding] = checkReachability(repo)
+    expect(finding?.level).toBe('pass')
+    expect(finding?.detail).toContain('`azure-pipelines.yml`')
+    expect(finding?.detail).toContain('no file here can show that one does')
+  })
+
+  it('credits a git hook before an Azure file when both reach the command', () => {
+    makeRepo({ scripts: docs, invariants: invariant, hook: 'pnpm check:docs', files: { 'azure-pipelines.yml': '- script: pnpm check:docs\n' } })
+    const [finding] = checkReachability(repo)
+    expect(finding?.detail).toContain('`.githooks/pre-push`')
+    expect(finding?.detail).not.toContain('Azure')
+  })
+
+  it('makes an unreached invariant unverifiable, not an error, while a template is unread', () => {
+    makeRepo({ scripts: docs, invariants: invariant, files: { 'azure-pipelines.yml': 'extends:\n  template: base.yml@templates\n' } })
+    const [finding] = checkReachability(repo)
+    expect(finding?.level).toBe('unverifiable')
+    expect(finding?.code).toBe('governance/template-unread')
+    expect(finding?.detail).toContain('base.yml@templates')
+  })
+
+  it('still passes an invariant something readable reaches, unread templates or not', () => {
+    makeRepo({
+      scripts: docs,
+      invariants: invariant,
+      files: { 'azure-pipelines.yml': 'extends:\n  template: base.yml@templates\nsteps:\n  - script: pnpm check:docs\n' },
+    })
+    expect(checkReachability(repo)[0]?.level).toBe('pass')
   })
 })

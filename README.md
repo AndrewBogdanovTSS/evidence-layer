@@ -557,6 +557,15 @@ which parses back to the same text
 and `--format json` print the review as written: in an Azure step, use
 `azure`.
 
+`governance` reads Azure Pipelines files as triggers: `azure-pipelines*.yml`
+at the root, YAML under `.azure-pipelines/`, `azure-pipelines/`,
+`.azuredevops/` or `.pipelines/`, and the local templates they include. A pass
+names the file it rests on - an Azure file runs once a pipeline in Azure DevOps
+points at it, which no file shows. A template from another repository cannot be
+read here, so while one is unread, what nothing readable reaches is
+`unverifiable` rather than an error
+([DEC-0013](docs/decisions/0013-governance-reads-azure-pipelines.md)).
+
 ## Supported hosts
 
 | Host | Adapter | Protocol checked against |
@@ -677,7 +686,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **576 tests** across **42 files**, and that sentence is checked
+The suite is **584 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

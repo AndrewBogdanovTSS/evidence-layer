@@ -100,8 +100,9 @@ export const CODES = {
   'governance/no-command': 'an invariant names no runnable command',
   'governance/unknown-script': 'an invariant names a script package.json does not have',
   'governance/runtime-composed': 'an invariant\'s trigger is composed at runtime and cannot be traced',
-  'governance/unreached': 'no git hook or CI workflow runs an invariant\'s script',
-  'governance/reached': 'a git hook or CI workflow runs the invariant\'s script',
+  'governance/template-unread': 'no readable trigger runs an invariant\'s script, and a pipeline template that might could not be read',
+  'governance/unreached': 'no git hook, CI workflow or pipeline file runs an invariant\'s script',
+  'governance/reached': 'a git hook, CI workflow or pipeline file runs the invariant\'s script',
   'governance/new-miss': 'a `Missed-By:` trailer was recorded into the journal',
 
   // exceptions - is a bypass still a live decision, or a forgotten one
