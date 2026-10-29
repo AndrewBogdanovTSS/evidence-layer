@@ -322,6 +322,16 @@ follows the trigger graph - the git hook and the CI workflow, expanded through
 the scripts they call - to find out whether anything reaches them. An invariant
 nothing reaches is a finding.
 
+The triggers are git hooks in `.githooks/`, GitHub workflows, and Azure
+Pipelines files - `azure-pipelines*.yml` at the root and any YAML under
+`.azure-pipelines/`, `azure-pipelines/`, `.azuredevops/` or `.pipelines/`, with
+the local templates they include. A pass names the file that reached the
+command; an Azure file runs only once a pipeline in Azure DevOps points at it,
+which no file shows, and the pass says so. A template from another repository,
+or with a computed path, cannot be read here: while one is unread, an invariant
+nothing readable reaches is `governance/template-unread`, `unverifiable` -
+not an error that might be wrong, and not a pass.
+
 That matters because of the least interesting and most common failure in this
 whole area: the rule was written, the tool was built, the documentation said it
 was enforced, and nothing ever ran it. Ordinary repositories cannot tell a
@@ -550,8 +560,9 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `governance/no-command` | an invariant names no runnable command |
 | `governance/unknown-script` | an invariant names a script package.json does not have |
 | `governance/runtime-composed` | an invariant's trigger is composed at runtime and cannot be traced |
-| `governance/unreached` | no git hook or CI workflow runs an invariant's script |
-| `governance/reached` | a git hook or CI workflow runs the invariant's script |
+| `governance/template-unread` | no readable trigger runs an invariant's script, and a pipeline template that might could not be read |
+| `governance/unreached` | no git hook, CI workflow or pipeline file runs an invariant's script |
+| `governance/reached` | a git hook, CI workflow or pipeline file runs the invariant's script |
 | `governance/new-miss` | a `Missed-By:` trailer was recorded into the journal |
 | `exceptions/summary` | how many governance exceptions are active and expired |
 | `exceptions/undated` | an exception has no valid expiry date |
