@@ -132,6 +132,14 @@ describe('checkReachability', () => {
     expect(checkReachability(repo)[0]!.detail).toContain('not a script in package.json')
   })
 
+  it('says a repository with no package.json cannot be checked, rather than crashing', () => {
+    makeRepo({ invariants: ['The suite runs; enforced by `npm test`.'], workflow: 'jobs:\n  t:\n    steps:\n      - run: npm test\n' })
+    rmSync(join(repo, 'package.json'))
+    expect(checkReachability(repo).map((f) => [f.level, f.code])).toEqual([['unverifiable', 'governance/no-manifest']])
+    writeFileSync(join(repo, 'package.json'), '{ not json')
+    expect(checkReachability(repo)[0]!.detail).toContain('not valid JSON')
+  })
+
   it('warns, rather than fails, when enforcement is a person', () => {
     makeRepo({ invariants: ['Accessibility is considered; enforced by a reviewer.'] })
     expect(checkReachability(repo)[0]!.level).toBe('warning')

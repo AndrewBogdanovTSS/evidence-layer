@@ -174,10 +174,28 @@ export function triggerSources(repo: string): { sources: TriggerSource[]; unread
  * hook that runs `pnpm check:all` also reaches everything that script runs,
  * and through the source of any script file a script invokes in turn.
  */
+/**
+ * The project's package scripts, or why there are none to read. A repository
+ * with no `package.json` - a Python or Go project - has no scripts for an
+ * invariant to name, which is a thing this cannot check, not a crash.
+ */
+export function packageScripts(repo: string): { scripts: Record<string, string> } | { missing: string } {
+  const path = join(repo, 'package.json')
+  if (!existsSync(path)) return { missing: 'there is no package.json at the repository root' }
+  let manifest: unknown
+  try {
+    manifest = JSON.parse(readFileSync(path, 'utf8'))
+  } catch {
+    return { missing: 'package.json is not valid JSON' }
+  }
+  const scripts = typeof manifest === 'object' && manifest !== null ? (manifest as { scripts?: unknown }).scripts : undefined
+  if (typeof scripts !== 'object' || scripts === null) return { scripts: {} }
+  return { scripts: Object.fromEntries(Object.entries(scripts).filter((e): e is [string, string] => typeof e[1] === 'string')) }
+}
+
 export function traceTriggers(repo: string): { reached: Map<string, TriggerSource>; unread: string[] } {
-  const scripts = (JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')) as {
-    scripts?: Record<string, string>
-  }).scripts ?? {}
+  const read = packageScripts(repo)
+  const scripts = 'scripts' in read ? read.scripts : {}
   const { sources, unread } = triggerSources(repo)
 
   // npm special-cases four script names (`test`, `start`, `stop`, `restart`)
@@ -247,9 +265,8 @@ export function checkReachability(repo: string, decisionsDir?: string): CodedFin
   }
 
   const { reached, unread } = traceTriggers(repo)
-  const scripts = (JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')) as {
-    scripts?: Record<string, string>
-  }).scripts ?? {}
+  const manifest = packageScripts(repo)
+  const scripts = 'scripts' in manifest ? manifest.scripts : {}
 
   return invariants.map((inv): CodedFinding => {
     const claim = inv.text.length > 90 ? inv.text.slice(0, 90) + '...' : inv.text
@@ -266,6 +283,15 @@ export function checkReachability(repo: string, decisionsDir?: string): CodedFin
     // invariant written the natural way for an npm project ("enforced by
     // `npm test`") was misread as naming a script called "npm".
     const scriptName = inv.command.replace(/^(?:pnpm|npm run|npm|yarn run|yarn)\s+/, '').split(/\s+/)[0]!
+    if ('missing' in manifest) {
+      return {
+        level: 'unverifiable',
+        code: 'governance/no-manifest',
+        claim,
+        detail: manifest.missing + ', so "' + inv.command + '" cannot be resolved to a script, or traced from a trigger',
+        file,
+      }
+    }
     if (!(scriptName in scripts)) {
       return { level: 'error', code: 'governance/unknown-script', claim, detail: '"' + inv.command + '" is not a script in package.json', file }
     }

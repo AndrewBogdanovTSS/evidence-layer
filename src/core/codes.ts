@@ -99,6 +99,7 @@ export const CODES = {
   'governance/no-invariants': 'no decision record declares an invariant',
   'governance/no-command': 'an invariant names no runnable command',
   'governance/unknown-script': 'an invariant names a script package.json does not have',
+  'governance/no-manifest': 'there is no readable package.json, so an invariant\'s script cannot be resolved',
   'governance/runtime-composed': 'an invariant\'s trigger is composed at runtime and cannot be traced',
   'governance/template-unread': 'no readable trigger runs an invariant\'s script, and a pipeline template that might could not be read',
   'governance/unreached': 'no git hook, CI workflow or pipeline file runs an invariant\'s script',
