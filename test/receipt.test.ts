@@ -1,5 +1,8 @@
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { checkSamples, citedPaths, parseReceipt } from '../src/core/receipt'
+import { checkDiffCount, checkReceipt, checkSamples, citedPaths, parseReceipt } from '../src/core/receipt'
+import { sh, tempRepo } from './helpers/git'
 
 const RECEIPT_ONE_SAMPLE = [
   '**Repo path**: /somewhere',
@@ -74,6 +77,11 @@ describe('parseReceipt', () => {
     expect(parseReceipt(md).samples).toEqual([])
   })
 
+  it('reads a count as the first number in its field, not every digit run together', () => {
+    expect(parseReceipt('**Files in diff**: 22 (1 not committed)').filesInDiff).toBe(22)
+    expect(Number.isNaN(parseReceipt('**Files in diff**: none').filesInDiff)).toBe(true)
+  })
+
   it('leaves a missing field undefined rather than guessing at it', () => {
     expect(parseReceipt('**Branch**: master').headSha).toBeUndefined()
   })
@@ -120,5 +128,37 @@ describe('checkSamples - one quote per cited file (v2)', () => {
     const receipt = parseReceipt('')
     const findings = checkSamples(receipt, '', '.')
     expect(findings[0]!.level).toBe('error')
+  })
+})
+
+describe('checkDiffCount - the diff the receipt describes is the diff git computes', () => {
+  const twoFileChange = () => {
+    const dir = tempRepo('el-receipt-', { 'a.js': 'a\n' })
+    const base = sh(dir, 'rev-parse', 'HEAD')
+    writeFileSync(join(dir, 'a.js'), 'a2\n')
+    writeFileSync(join(dir, 'b.js'), 'b\n')
+    sh(dir, 'add', '-A')
+    sh(dir, 'commit', '-qm', 'change')
+    return { dir, base, head: sh(dir, 'rev-parse', 'HEAD') }
+  }
+  const receipt = (head: string, base: string, files: string) =>
+    ['**HEAD SHA**: ' + head, '**Base SHA**: ' + base, '**Files in diff**: ' + files].join('\n')
+
+  it('fails a receipt that undercounts its diff, with the count git gives as the fix', () => {
+    const { dir, base, head } = twoFileChange()
+    const [finding] = checkDiffCount(parseReceipt(receipt(head, base, '1')), dir)
+    expect(finding).toMatchObject({ level: 'error', code: 'receipt/diff-count-mismatch', expected: 1, observed: 2 })
+    expect(finding!.fix).toContain('**Files in diff**: 2')
+  })
+
+  it('passes the count git gives, and is part of checkReceipt', () => {
+    const { dir, base, head } = twoFileChange()
+    const md = receipt(head, base, '2')
+    expect(checkReceipt(parseReceipt(md), md, dir).find((f) => f.code.startsWith('receipt/diff-count'))?.code).toBe('receipt/diff-count')
+  })
+
+  it('says nothing when the base is not a commit here - the base check speaks to that', () => {
+    const { dir, head } = twoFileChange()
+    expect(checkDiffCount(parseReceipt(receipt(head, 'e'.repeat(40), '1')), dir)).toEqual([])
   })
 })

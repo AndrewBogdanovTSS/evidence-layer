@@ -530,6 +530,8 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `receipt/wrong-commit` | the review is about a different commit than expected |
 | `receipt/files-opened` | every file in the diff was opened |
 | `receipt/files-unopened` | fewer files were opened than the diff contains |
+| `receipt/diff-count` | the number of files the receipt says the diff touches is the number git diff names |
+| `receipt/diff-count-mismatch` | the number of files the receipt says the diff touches is not the number git diff names |
 | `receipt/base-missing` | the receipt records no base SHA or target branch |
 | `receipt/no-remote-ref` | the target branch is not in this clone, so the base cannot be checked here |
 | `receipt/no-merge-base` | no merge-base exists here, so the base cannot be checked |
