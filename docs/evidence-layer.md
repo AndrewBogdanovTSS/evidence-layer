@@ -521,6 +521,7 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `claims/vague-comparison` | a comparison that says neither to what nor measured how |
 | `claims/success-without-effect` | a success word with no stated effect |
 | `claims/sycophancy` | agreement offered in place of evidence |
+| `claims/provenance-unchecked` | the review cites artifact blocks, and neither a seal nor a bundle was given to hold them to |
 | `receipt/missing-field` | the Access Receipt lacks a required field |
 | `receipt/no-sample` | the Access Receipt has no Sample integrity line |
 | `receipt/malformed-head` | the HEAD SHA is not a full 40-character commit id |

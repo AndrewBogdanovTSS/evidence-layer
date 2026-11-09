@@ -52,6 +52,7 @@ export const CODES = {
   'claims/vague-comparison': 'a comparison that says neither to what nor measured how',
   'claims/success-without-effect': 'a success word with no stated effect',
   'claims/sycophancy': 'agreement offered in place of evidence',
+  'claims/provenance-unchecked': 'the review cites artifact blocks, and neither a seal nor a bundle was given to hold them to',
 
   // receipt - was this review written against a real, correctly-based checkout
   'receipt/missing-field': 'the Access Receipt lacks a required field',

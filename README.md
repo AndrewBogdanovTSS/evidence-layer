@@ -392,8 +392,10 @@ it `unverifiable`, never a pass.
 
 The seal is not an attestation. It lives where the same agent can write, so it
 catches the default failure, not someone rewriting it on purpose; CI, which
-gathers its own evidence, stays the independent party. Without `--seal`,
-nothing changes and nothing local is read.
+gathers its own evidence, stays the independent party. Without `--seal` or
+`--bundle`, nothing local is read, and a review that cites blocks gets one
+`claims/provenance-unchecked` finding - `unverifiable`, so `--strict` fails
+it: what was not checked is said, never left for `0 unverifiable` to imply.
 
 It also holds only in the checkout that gathered. Where the review is written
 somewhere else - a later CI job, a person reading the bundle CI uploaded -
@@ -695,7 +697,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **606 tests** across **42 files**, and that sentence is checked
+The suite is **607 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
