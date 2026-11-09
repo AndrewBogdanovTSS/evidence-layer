@@ -284,6 +284,14 @@ project's own standard.
 No semantics change. Everything here either removes a false statement or
 makes an existing silence visible.
 
+*Status, 2026-11-09: implemented for 0.19.0 - see
+[the release notes](../releases/v0.19.0.md). Two departures from the table:
+0.9 keeps bare `VERIFIED` a warning and puts the date in code with a test
+that fails from it, rather than naming a version, since which release comes
+after 2026-12-06 is not known yet; and 0.2's action summary comes from
+`--format github`, which the action already runs, rather than from
+`action/run.mjs`.*
+
 | # | Item | From | Size | Done when |
 |---|---|---|---|---|
 | 0.1 | Journal every stop, including the ones with nothing to check, with why (`no-claims`, `no-changed-review`). `journal report --include-gate` prints stops checked out of stops seen. | A1 | S | The appendix's A1 probe leaves one journal entry, and the report shows 0 of 1 checked. |

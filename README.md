@@ -69,11 +69,14 @@ What this layer changes, concretely:
   at the commit under review, and warns when one artifact is quietly backing
   four unrelated claims. A bare tag any writer can satisfy for free carries no
   information; an id is either in the document, at that commit, or it is not.
-- **The receipt proves the agent read *this* repository.** Stale context
-  windows, files renamed three commits ago, paths reconstructed from a
-  half-remembered tree: `receipt` checks the review's Access Receipt against
-  git's own output, and backs every cited file with that file's verbatim first
-  line. The baseline is checked by equality against
+- **The receipt proves the review was written against *this* repository.**
+  Stale context windows, files renamed three commits ago, paths reconstructed
+  from a half-remembered tree: `receipt` checks the review's Access Receipt
+  against git's own output - the commit exists here, the diff has the size the
+  receipt says, every cited `path:line` exists at that commit - and backs every
+  cited file with that file's verbatim first line. That is evidence of the
+  checkout, not of reading: the gatherer pre-fills the quotes, and a cited
+  line is checked for existing, not for what is on it. The baseline is checked by equality against
   `merge-base origin/<target> <head>`, never ancestry, because a stale base
   fails in the reassuring direction - the diff comes out *larger*, so nothing
   looks missing.
@@ -144,7 +147,7 @@ npx evidence-layer journal tag <id> real     # mark a finding real or false
 | command | the claim it makes falsifiable |
 | --- | --- |
 | `claims` | "I verified this" - every `VERIFIED[id]` tag must address a real artifact collected at the commit under review; with `--seal`, one this checkout's gather wrote about this code, and with `--bundle`, one a given bundle carries |
-| `receipt` | "I read this repository" - the review's Access Receipt must match the repository's own git output, and a cited file must be backed by that file's own verbatim first line |
+| `receipt` | "I reviewed this repository" - the review's Access Receipt must match the repository's own git output, and a cited file must be backed by that file's own verbatim first line |
 | `ci-summary` | nothing; it renders a captured run for a CI job summary, and reports `unverifiable` when it has nothing to read |
 | `governance` | "this is enforced" - every invariant a decision record declares must be reachable from a git hook or a CI workflow, and no governance exception may be past its expiry; on the way, it records every `Missed-By:` commit trailer into the journal (`--no-journal` to skip) |
 | `journal report` | "these checks are useful" - real findings, false findings and misses, counted over time rather than assumed |
@@ -409,8 +412,10 @@ usage, never a pass.
 ## In an agent's session: the runtime gate
 
 CI checks a review after a person can already read it. The gate runs the same
-checks at the moment the agent says it is done, so an unbacked "tests pass" is
-caught by the agent that wrote it:
+checks at the moment the agent says it is done, so an unbacked "tests pass"
+stated as a claim is caught by the agent that wrote it. One stated as prose is
+not graded yet: the stop goes through, and is journalled as having had nothing
+to check, so it is counted rather than missing:
 
 - **When the session starts**, it shows the agent the claim grammar as a
   filled-in example rather than a template of placeholders, lists the claims

@@ -12,6 +12,8 @@
  * and one schema rather than becoming two formats nobody reads together.
  *
  *   - A **finding** is written by a checker, at the moment it runs, for free.
+ *     Today that is the runtime gate, into the checkout's own journal; the
+ *     CLI checks report their findings and do not journal them yet.
  *   - A **miss** is written once, when a bug that slipped through gets fixed -
  *     extracted from a commit trailer (see `misses.ts`) and appended here in
  *     the same shape, so one reader answers both questions.

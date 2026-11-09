@@ -1,7 +1,12 @@
 /**
  * `check:receipt` core - was this review written against this repo?
  *
- * The claim it makes falsifiable: **"I read the code."**
+ * The claim it makes falsifiable: **"I reviewed this repository, at this
+ * commit, against this base."** Not "I read the code": the quotes a receipt
+ * carries show a file was opened at that commit by someone - the gatherer
+ * pre-fills them - and a `path:line` citation is checked for existing, not for
+ * what is on it. What it does establish is the checkout: the commit, the true
+ * merge-base, the size of the diff, and that every cited path is there.
  *
  * A review states, in a fixed block at the top, where it read from: the commit,
  * the baseline it diffed against, how many files the diff touched, how many it

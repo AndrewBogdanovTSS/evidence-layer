@@ -1,8 +1,9 @@
 # The evidence layer
 
-Six commands, each turning one kind of claim into something that could be proved
-wrong, one that checks whether anything runs them, and a journal that gives the
-whole layer a clock.
+Commands that each turn one kind of claim into something that could be proved
+wrong, one that checks whether anything runs them, a runtime gate that runs
+them when an agent says it is done, and a journal that gives the whole layer a
+clock. The README lists them.
 
 None of the checking logic is specific to any one project. It is three layers:
 a portable core under [`src/core/`](../src/core) that knows only markdown, git
@@ -61,7 +62,7 @@ package's version - a ref written once keeps recommending the release it was
 written in, so `pnpm release` rewrites it and this fails when it was not.
 
 Watch the command row when `dist/` is not on disk. It reports `unverifiable` -
-not a pass. **Three outcomes, never two.** A checker that reports success when it
+not a pass. **Five outcomes, never two.** A checker that reports success when it
 could not run manufactures confidence out of nothing.
 
 Then try this, because a check nobody has seen fail is indistinguishable from a
@@ -266,7 +267,7 @@ and then the bundle's own `- Head:` line name the commit. A bundle file that
 is not there is bad usage, exit 2, never a pass.
 
 Referencing an artifact is not supposed to cost more than writing a bare tag -
-see step 3 below. `pnpm evidence` computes every id and writes the
+see step 3 above. `pnpm evidence` computes every id and writes the
 `**Claim**` / `**Grounding**: VERIFIED[id: predicates]` pair already filled
 in, the predicates read off the run it gathered; the honest move is to leave
 that line in place, not go looking an id up by hand. Predicates are optional in
@@ -285,7 +286,10 @@ changed file, so deleting the ones a review does not need is the whole edit.
 
 A review states where it read from, in a fixed block above any verdict: the
 commit, the baseline, how many files the diff touched, how many were opened, and
-(per the v2 note above) one verbatim quote per file a claim cites.
+(per the v2 note above) one verbatim quote per file a claim cites. The number
+of files is counted against `git diff <base>...<head>`
+(`receipt/diff-count-mismatch`) - compared only with the number opened, as it
+was before 0.19.0, an undercount passed "every file was opened".
 
 The check that matters most is the baseline. `git diff base...head` is only as
 honest as `base`, and a local branch reference goes stale in silence: it still
@@ -357,7 +361,7 @@ which downgrades an unreached command from a false `error` to an honest
 
 `check:all` also prints the [governance exceptions](governance-exceptions.md)
 count (active and expired, always, even at zero - see below) and records any
-new [misses](decisions/0002-evidence-layer-v2.md) from commit trailers on
+new [misses](decisions/archive/0002-evidence-layer-v2.md) from commit trailers on
 every run.
 
 It prints a machine-readable block on every run, **including a clean one**,
@@ -403,10 +407,14 @@ because its author decided it could be.
 
 ### 6c. `journal.jsonl` - the layer's own clock
 
-Every check appends what it found; a commit fixing a bug that a review missed
-adds `Missed-By: <review or PR>` to its own message and `check:all` extracts
-it automatically. One committed, append-only file, one schema for both
-questions - "did this check ever find something real?" and "what got past a
+The runtime gate appends every decision it makes to a journal in the
+checkout's git directory; a commit fixing a bug that a review missed adds
+`Missed-By: <review or PR>` to its own message, and `check:all` extracts it
+into the committed `journal.jsonl` automatically. `claims`, `receipt` and
+`governance` do not journal their own findings yet - what they find is in
+each run's report, not in the journal.
+
+One schema for both questions - "did this check ever find something real?" and "what got past a
 clean review?" - because the layer's usefulness was otherwise a claim with no
 clock, exactly like the README's test count before `check:docs` existed.
 
@@ -425,7 +433,7 @@ pnpm journal:tag <id> real|false       # tag a finding at fix time, not later
 pnpm journal:tag <id> --caught yes|no  # could an existing check have caught this miss
 ```
 
-Recording started the day [`docs/decisions/archive/0002-evidence-layer-v2.md`](decisions/0002-evidence-layer-v2.md)
+Recording started the day [`docs/decisions/archive/0002-evidence-layer-v2.md`](decisions/archive/0002-evidence-layer-v2.md)
 was ratified - none of it can be reconstructed retroactively, which is why the
 journal was the first thing built rather than the last. Whether six checks are
 more than this project needs is a real, currently unanswerable question; it
