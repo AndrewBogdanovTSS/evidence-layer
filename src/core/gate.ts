@@ -22,7 +22,9 @@
  *     `**Claim**:` lines of the agent's final message. Errors block the stop,
  *     so the agent fixes its claims before anyone reads them: one numbered
  *     item per failing claim, each with the fix its finding carries, then
- *     the claims the current run does back.
+ *     the claims the current run does back. A stop with nothing to check -
+ *     no changed review, no `**Claim**:` line - is let through, and
+ *     journalled as `nothing-to-check`, so it is counted rather than missing.
  *
  * Two budgets keep a strict check from becoming a trap. A **retry episode**
  * starts at the first Stop with errors and closes at the first Stop without
@@ -582,7 +584,19 @@ function stop(event: Extract<GateEvent, { kind: 'stop' }>, opts: GateOptions): G
       journal(where, 'gate:stop', 'closed-unchecked', 'allow', 'unverifiable', [finding], [])
       return { action: 'allow', outcome: 'closed-unchecked', level: 'unverifiable', findings: [finding] }
     }
-    return { action: 'allow', outcome: 'not-applicable', level: null, findings: [] }
+    // Let through, as before, and said nowhere the agent reads - but counted.
+    // A session that reports "all 12 tests pass" as prose, never gathering,
+    // lands here; uncounted, `journal report` said the gate had not run.
+    const finding: Finding = {
+      level: 'unverifiable',
+      claim: 'this stop reported something the gate could check',
+      detail:
+        'no review file changed this session, and ' +
+        (event.message === undefined ? 'there was no final message' : 'the final message has no **Claim** line') +
+        ' - nothing was checked',
+    }
+    journal(where, 'gate:stop', 'nothing-to-check', 'allow', 'unverifiable', [finding], [])
+    return { action: 'allow', outcome: 'nothing-to-check', level: 'unverifiable', findings: [finding] }
   }
 
   const ctx = stopContext(root, state)

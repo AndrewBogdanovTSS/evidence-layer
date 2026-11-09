@@ -438,7 +438,9 @@ stricter trades. Every decision - including each allow that checked nothing,
 which is never recorded as a pass - goes into a journal in the checkout's git
 directory, not the committed one; `npx evidence-layer journal report
 --include-gate` counts blocks, clean stops and stops let through without a
-clean check, and lists the blocks nobody has tagged yet, by id, so `journal
+clean check - out of every stop it saw, including those with nothing to
+check: no changed review and no `**Claim**:` line in the final reply, which
+is where a result stated as prose lands, still unchecked - and lists the blocks nobody has tagged yet, by id, so `journal
 tag <id> real|false --gate` marks one without reading the journal. The id is
 never in the reason the agent reads: the blocked party does not grade its own
 blocks.
@@ -697,7 +699,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **609 tests** across **42 files**, and that sentence is checked
+The suite is **610 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

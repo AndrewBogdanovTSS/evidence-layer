@@ -72,9 +72,16 @@ export function run(argv: string[]): void {
     const g = summariseGate(entries)
     console.log('Runtime gate (this checkout only)')
     console.log('---------------------------------')
-    if (g.blocks + g.cleanAllows + g.degradedAllows + g.closedUnchecked + g.denies === 0) {
+    if (g.stops + g.denies === 0) {
       console.log('(nothing recorded - the gate has not run in this checkout)')
     } else {
+      console.log(g.checkedStops + ' of ' + g.stops + ' stops checked something')
+      if (g.nothingToCheck > 0) {
+        console.log(
+          g.nothingToCheck + ' had nothing to check - no changed review, and no **Claim** line in the final message. ' +
+            'A result stated there as prose lands here, unchecked',
+        )
+      }
       console.log(
         g.blocks + ' blocked stops (' + g.realBlocks + ' tagged real, ' + g.falseBlocks + ' false), ' +
           g.cleanAllows + ' clean, ' + g.degradedAllows + ' let through without a clean check, ' +

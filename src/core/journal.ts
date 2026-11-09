@@ -251,6 +251,11 @@ export interface GateSummary {
   closedUnchecked: number
   /** File writes into the ledger it refused. */
   denies: number
+  /** Every stop it journalled, and how many of them it ran its checks on - the denominator the counts above lack. */
+  stops: number
+  checkedStops: number
+  /** Stops with no changed review and no `**Claim**:` line in the final message: let through, nothing checked. */
+  nothingToCheck: number
   /** Median time a decision took, in ms, over the entries that recorded one. */
   medianMs: number | null
 }
@@ -263,7 +268,9 @@ export interface GateSummary {
 export function summariseGate(entries: JournalEntry[]): GateSummary {
   const gate = entries.filter((e) => e.gate !== undefined)
   const blocks = gate.filter((e) => e.gate!.action === 'block')
-  const allows = gate.filter((e) => e.gate!.action === 'allow')
+  // An allow with nothing checked is not a degraded allow either: it is in `nothingToCheck`.
+  const allows = gate.filter((e) => e.gate!.action === 'allow' && e.gate!.outcome !== 'nothing-to-check')
+  const stops = gate.filter((e) => e.gate!.event === 'stop')
   const times = gate.map((e) => e.gate!.elapsedMs).filter((t) => t > 0).sort((a, b) => a - b)
   return {
     blocks: blocks.length,
@@ -275,6 +282,9 @@ export function summariseGate(entries: JournalEntry[]): GateSummary {
     ).length,
     closedUnchecked: allows.filter((e) => e.gate!.outcome === 'closed-unchecked').length,
     denies: gate.filter((e) => e.gate!.action === 'deny').length,
+    stops: stops.length,
+    checkedStops: stops.filter((e) => e.gate!.outcome === 'checked' || e.gate!.outcome === 'retry-exhausted').length,
+    nothingToCheck: stops.filter((e) => e.gate!.outcome === 'nothing-to-check').length,
     medianMs: times.length > 0 ? times[Math.floor(times.length / 2)]! : null,
   }
 }
