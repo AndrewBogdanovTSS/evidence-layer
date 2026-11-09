@@ -33,8 +33,20 @@ describe('checkDecisionHygiene', () => {
     expect(finding?.level).toBe('warning')
   })
 
-  it('passes a record whose status is not accepted, without checking its review date', () => {
-    writeRecord('0001-x.md', ['id: DEC-0001', 'status: proposed'])
+  it('holds a proposed record to its decide_by date, as an accepted one is held to review_by', () => {
+    const level = (decideBy?: string) => {
+      writeRecord('0001-x.md', ['id: DEC-0001', 'status: proposed', ...(decideBy ? ['decide_by: ' + decideBy] : [])])
+      const f = checkDecisionHygiene(repo, undefined, new Date('2026-11-09T12:00:00Z')).find((x) => x.claim.startsWith('DEC-0001'))!
+      return [f.level, f.code]
+    }
+    expect(level()).toEqual(['error', 'decisions/bad-decide-date'])
+    expect(level('soon')).toEqual(['error', 'decisions/bad-decide-date'])
+    expect(level('2026-11-09')).toEqual(['error', 'decisions/undecided'])
+    expect(level('2026-11-10')).toEqual(['pass', 'decisions/pending'])
+  })
+
+  it('passes a record whose status is neither accepted nor proposed, without checking a date', () => {
+    writeRecord('0001-x.md', ['id: DEC-0001', 'status: superseded'])
     const finding = checkDecisionHygiene(repo).find((f) => f.claim.includes('review date'))
     expect(finding?.level).toBe('pass')
     expect(finding?.detail).toContain('not `accepted`')

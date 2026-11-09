@@ -121,6 +121,9 @@ export const CODES = {
   'decisions/bad-review-date': 'an accepted decision record has no valid `review_by` date',
   'decisions/overdue': 'an accepted decision record is past its `review_by` date',
   'decisions/current': 'an accepted decision record is within its `review_by` date',
+  'decisions/bad-decide-date': 'a proposed decision record has no valid `decide_by` date',
+  'decisions/undecided': 'a proposed decision record is past its `decide_by` date',
+  'decisions/pending': 'a proposed decision record is within its `decide_by` date',
 } as const satisfies Record<string, string>
 
 export type Code = keyof typeof CODES

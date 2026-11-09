@@ -170,8 +170,10 @@ id, collected at the reviewed commit - anywhere in the document, not just
 nearby, because proximity alone had a real gap: a block copied to the wrong
 place still cleared a proximity check, since that only confirms *a* block is
 nearby, not that it is *the* block the claim is about. (Bare `VERIFIED` still
-works for one release, with a warning - see
-`docs/decisions/archive/0002-evidence-layer-v2.md` for the cutover date.) DOCUMENTED
+works, with a warning, until 2026-12-06 - `BARE_VERIFIED_CUTOVER` in
+`src/core/claims.ts`, set by
+[`DEC-0002`](decisions/archive/0002-evidence-layer-v2.md) - and is an error in the
+first release on or after it.) DOCUMENTED
 needs a citation. INFERRED needs its reasoning. Language that cannot be wrong -
 "more robust", "behaves identically", "it works" - needs a stated effect or an
 explicit UNVERIFIED. One artifact backing more than two claims is a warning:
@@ -450,6 +452,12 @@ record archived under `docs/decisions/archive/` is never scanned, on purpose:
 an archived record's date is expected to be in the past, and flagging it would
 be true and useless.
 
+A `proposed` record is held the same way to `decide_by`: the date by which
+it is accepted, rejected or withdrawn. Without one it is
+`decisions/bad-decide-date`, and past it `decisions/undecided`, both errors -
+before 0.19.0 a proposal was reported as a pass every run, however long it
+had been open.
+
 ## Machine-readable output
 
 `claims`, `receipt` and `governance` take `--format json`, and `--format
@@ -585,6 +593,9 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `decisions/bad-review-date` | an accepted decision record has no valid `review_by` date |
 | `decisions/overdue` | an accepted decision record is past its `review_by` date |
 | `decisions/current` | an accepted decision record is within its `review_by` date |
+| `decisions/bad-decide-date` | a proposed decision record has no valid `decide_by` date |
+| `decisions/undecided` | a proposed decision record is past its `decide_by` date |
+| `decisions/pending` | a proposed decision record is within its `decide_by` date |
 
 The table is checked against `src/core/codes.ts` by `check:docs`, both ways.
 

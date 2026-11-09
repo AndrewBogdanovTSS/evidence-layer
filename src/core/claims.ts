@@ -18,8 +18,8 @@
  *     artifact block within 15 lines) and adds a warning recommending the
  *     addressed form. Proximity alone has a real gap: a block copied to the
  *     wrong place still passes it, because it confirms *a* block is nearby, not
- *     that it is *the* block the claim is about. See
- *     `docs/decisions/0002-evidence-layer-v2.md` for the deprecation date.
+ *     that it is *the* block the claim is about. A warning until
+ *     `BARE_VERIFIED_CUTOVER`, after which the next release makes it an error.
  *
  * DOCUMENTED must cite something. INFERRED must show its reasoning. Language
  * that cannot be wrong - "more robust", "behaves identically", "it works" - has
@@ -76,6 +76,17 @@ import { suggestedClaim } from './skeleton'
 
 /** How far below a legacy (unaddressed) VERIFIED tag its artifact block is allowed to sit. */
 export const ARTIFACT_WINDOW = 15
+
+/**
+ * The day bare `VERIFIED` stops being a warning. Set by DEC-0002 in 2026-09,
+ * and kept here rather than only in that record, which was archived: a
+ * cutover nothing in the code knows about is a date nobody acts on. The
+ * first release on or after it makes `claims/bare-verified` an error -
+ * `test/claims.test.ts` fails from this date until one does, which is the
+ * clock. Not read at runtime: the same version must give the same verdict on
+ * the same review, whatever day it runs.
+ */
+export const BARE_VERIFIED_CUTOVER = '2026-12-06'
 
 /** A single artifact id is allowed to back this many claims before it is a warning, not a pass. */
 export const SHOTGUN_THRESHOLD = 2
@@ -801,7 +812,8 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
         claim: claim.text,
         detail:
           'bare VERIFIED only confirms a block is nearby, not that it is the block this claim is about - ' +
-          'use VERIFIED[id] instead (see docs/decisions/0002-evidence-layer-v2.md for the cutover date)',
+          'use VERIFIED[id] instead. Bare VERIFIED becomes an error in the first evidence-layer release on or after ' +
+          BARE_VERIFIED_CUTOVER,
         ...(artifacts[idx]!.id !== undefined && { fix: fixes.grounding(artifacts[idx], claim.inline) }),
         ...where,
       })

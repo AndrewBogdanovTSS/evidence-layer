@@ -36,7 +36,9 @@
  * the block early (`fenceFor`).
  *
  * `artifact` alone (no id) is still valid - it is the pre-addressing grammar,
- * kept for one release as a warning-only path rather than a break. See
+ * kept as a warning-only path rather than a break until bare `VERIFIED`, the
+ * only thing that can cite such a block, becomes an error (`claims.ts`,
+ * `BARE_VERIFIED_CUTOVER`). See
  * `claims.ts` for how a claim references an id, and why proximity alone used
  * to be the only check: a copied-in-the-wrong-place block passed it, because
  * proximity confirms a block exists nearby, not that it is the block the claim

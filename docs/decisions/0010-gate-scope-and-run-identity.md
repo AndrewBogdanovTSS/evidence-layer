@@ -5,6 +5,7 @@ date: 2026-10-19
 supersedes: null
 invariants: []
 review_by: null
+decide_by: 2026-12-31
 enforce_owner: Andrii Bohdanov
 ---
 

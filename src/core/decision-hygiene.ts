@@ -56,7 +56,8 @@ function parseFrontmatterFields(text: string): Record<string, string> {
  * decision has gone stale." A record whose status is not `accepted` (rare -
  * most decisions live here already accepted, or are archived once
  * superseded) is reported rather than skipped, so every file this scanned is
- * still visible in the output.
+ * still visible in the output. A `proposed` record is held to its own date,
+ * `decide_by`, the way an accepted one is held to `review_by`.
  */
 export function checkDecisionHygiene(repo: string, decisionsDir?: string, today: Date = new Date()): CodedFinding[] {
   const dir = decisionsDir ?? join(repo, 'docs', 'decisions')
@@ -76,6 +77,35 @@ export function checkDecisionHygiene(repo: string, decisionsDir?: string, today:
 
     if (!status) {
       findings.push({ level: 'warning', code: 'decisions/no-status', claim: id + ' declares a status', detail: 'no `status:` field in the frontmatter', file })
+      continue
+    }
+    // A proposal gets a clock too. Without one it can sit open indefinitely,
+    // reported every run as a pass - the drift `review_by` exists to stop,
+    // moved one status earlier. `decide_by` is when it must be accepted,
+    // rejected or withdrawn; the same 00:00 UTC rule as `review_by`.
+    if (status === 'proposed') {
+      const decideBy = fields.decide_by
+      if (!decideBy || !DATE_RE.test(decideBy)) {
+        findings.push({
+          level: 'error',
+          code: 'decisions/bad-decide-date',
+          claim: id + ' has a valid decide_by date',
+          detail:
+            (decideBy ? '"' + decideBy + '"' : 'no `decide_by` field') +
+            ' is not a YYYY-MM-DD date - a proposal with no date to be decided by can stay open forever',
+          file,
+        })
+      } else if (new Date(decideBy + 'T00:00:00Z').getTime() < today.getTime()) {
+        findings.push({
+          level: 'error',
+          code: 'decisions/undecided',
+          claim: id + ' is decided in time',
+          detail: 'decide_by ' + decideBy + ' has passed - accept it with a review_by date, reject it, or move the date on purpose',
+          file,
+        })
+      } else {
+        findings.push({ level: 'pass', code: 'decisions/pending', claim: id + ' is decided in time', detail: 'proposed, to be decided by ' + decideBy, file })
+      }
       continue
     }
     if (status !== 'accepted') {
