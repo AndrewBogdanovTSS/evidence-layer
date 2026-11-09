@@ -619,10 +619,13 @@ listed in [`docs/evidence-layer.md`](docs/evidence-layer.md#machine-readable-out
 `claims`, `receipt`, `ci-summary`, `journal`, governance, exceptions and misses
 need **no configuration at all** - they operate on markdown text, git output and
 `package.json`, which every project already has. Call `gatherEvidence({ repo,
-base })` with nothing else and it plans `pnpm lint`, `pnpm typecheck`, a
-lockfile check and `pnpm test` - the three scripts an ordinary Node project
+base })` with nothing else and it plans the project's `lint`, `typecheck` and
+`test` scripts, a lockfile check - the three scripts an ordinary Node project
 already has names for, plus one fact `pnpm-lock.yaml` can answer about itself -
-and reports the working tree's own status alongside them. Any of those
+and reports the working tree's own status alongside them. The scripts run
+through the package manager the project's `packageManager` field or lockfile
+names (pnpm when neither does), and one the project does not have is skipped,
+with the reason in the bundle, rather than run to fail. Any of those
 commands can be the project's own instead, and the work-summary counts need a
 summariser, because which report a project writes is that project's business.
 
@@ -692,7 +695,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **599 tests** across **42 files**, and that sentence is checked
+The suite is **602 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

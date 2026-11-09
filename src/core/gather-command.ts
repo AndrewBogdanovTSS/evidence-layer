@@ -15,7 +15,7 @@
  * Next, the command a sealed run recorded - what actually gathered the
  * evidence being cited. Then, a project that has an `evidence` script is
  * taken to gather with it, through the package manager its `packageManager`
- * field names (npm when it names none). Anything else answers `null`, and the
+ * field names, or its lockfile shows (npm when neither says). Anything else answers `null`, and the
  * caller says so in words rather than inventing a command that may not exist.
  *
  * `cliCommandFor` answers the same question for this package's own CLI, so a
@@ -36,8 +36,29 @@ export function gatherCommandFor(root: string, recorded?: string): string | null
   if (typeof configured === 'string' && configured.trim() !== '') return configured.trim()
   if (typeof recorded === 'string' && recorded.trim() !== '') return recorded.trim()
   if (!read || !isRecord(read.scripts) || typeof read.scripts.evidence !== 'string') return null
-  const manager = typeof read.packageManager === 'string' ? /^(npm|pnpm|yarn|bun)@/.exec(read.packageManager)?.[1] : undefined
-  return (manager ?? 'npm') + ' run evidence'
+  return (packageManagerFor(root) ?? 'npm') + ' run evidence'
+}
+
+export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
+
+const LOCKFILES: readonly (readonly [string, PackageManager])[] = [
+  ['pnpm-lock.yaml', 'pnpm'],
+  ['yarn.lock', 'yarn'],
+  ['bun.lock', 'bun'],
+  ['bun.lockb', 'bun'],
+  ['package-lock.json', 'npm'],
+]
+
+/**
+ * The package manager the project at `root` uses: its `packageManager` field,
+ * otherwise the lockfile it has, otherwise `null` - a caller decides what to
+ * assume, and says so.
+ */
+export function packageManagerFor(root: string): PackageManager | null {
+  const read = readManifest(root)
+  const declared = typeof read?.packageManager === 'string' ? /^(npm|pnpm|yarn|bun)@/.exec(read.packageManager)?.[1] : undefined
+  if (declared) return declared as PackageManager
+  return LOCKFILES.find(([file]) => existsSync(join(root, file)))?.[1] ?? null
 }
 
 /**
@@ -50,7 +71,7 @@ export function gatherCommandFor(root: string, recorded?: string): string | null
 export function cliCommandFor(root: string): string {
   const read = readManifest(root)
   if (read?.name === 'evidence-layer') return 'node dist/bin/evidence-layer.mjs'
-  const manager = typeof read?.packageManager === 'string' ? /^(npm|pnpm|yarn|bun)@/.exec(read.packageManager)?.[1] : undefined
+  const manager = packageManagerFor(root)
   if (manager === 'pnpm') return 'pnpm exec evidence-layer'
   if (manager === 'yarn') return 'yarn evidence-layer'
   if (manager === 'bun') return 'bunx evidence-layer'

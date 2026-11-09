@@ -22,9 +22,13 @@
  *     that failed is evidence and a command that never ran is not.
  *
  * Zero-config default: with no options beyond `repo`/`base`/`head`, this plans
- * `pnpm lint`, `pnpm typecheck`, a lockfile check and `pnpm test` - the three
- * scripts an ordinary Node project already has a name for, plus one fact
- * `pnpm-lock.yaml` can answer about itself. A project with a reason to scope
+ * the project's `lint`, `typecheck` and `test` scripts, through the package
+ * manager it uses (pnpm when nothing says), plus a lockfile check -
+ * the three scripts an ordinary Node project already has a name for, plus one
+ * fact `pnpm-lock.yaml` can answer about itself. A script the project does not
+ * have is skipped, and the bundle says so: run anyway, it would exit "command
+ * not found", and the skeleton would hand that over as a claim that lint
+ * reported violations. A project with a reason to scope
  * those further (as this repository does, for its own test step) passes
  * `testGate` or `lintCommand`; nothing here requires it to.
  *
@@ -61,7 +65,9 @@ import { WORK_SUMMARY_KEYS, artifactId, classifyCommand, formatArtifact, formatW
 import type { StopReason, WorkKind, WorkSummary } from './artifact'
 import { generateClaimSkeleton, generateSampleSkeleton } from './skeleton'
 import type { SkeletonArtifact } from './skeleton'
-import { gatherCommandFor } from './gather-command'
+import { gatherCommandFor, packageManagerFor } from './gather-command'
+import type { PackageManager } from './gather-command'
+import { packageScripts } from './governance'
 import { gitCapture, run, runAsync } from './proc'
 import { changedPaths, publishRun, repoRoot, sameSource, sourceFingerprint, toRootRelative } from './seal'
 import type { RunArtifact, SourceFingerprint } from './seal'
@@ -89,20 +95,52 @@ export interface PlanOptions {
    * assume there is one unless told otherwise, rather than silently skipping.
    */
   hasLockfile?: boolean
+  /**
+   * The project's package scripts, so a default step whose script does not
+   * exist is skipped and says so - never run to exit with "command not found"
+   * and be handed to the writer as "Lint reports violations". `null` when
+   * there is no package.json at all. `gatherEvidence` reads it; left out,
+   * nothing is skipped for it, so this stays a pure function.
+   */
+  scripts?: readonly string[] | null
+  /** Which package manager runs the default steps. `gatherEvidence` reads it from the project; default `pnpm`. */
+  packageManager?: PackageManager
+}
+
+/** How each package manager runs a script by name. `bun test` is bun's own test runner, not the script, so bun says `run`. */
+const RUN_SCRIPT: Record<PackageManager, (script: string) => string> = {
+  pnpm: (script) => 'pnpm ' + script,
+  yarn: (script) => 'yarn ' + script,
+  npm: (script) => (script === 'test' ? 'npm test' : 'npm run ' + script),
+  bun: (script) => 'bun run ' + script,
+}
+
+/**
+ * Why a default step does not run, or `undefined` when it does: `--skip`
+ * first, then a script the project does not have. A step whose command the
+ * caller supplied is the caller's to vouch for, so only defaults are held to
+ * the script list.
+ */
+function defaultSkip(step: string, skip: string[], custom: boolean, opts: PlanOptions): string | undefined {
+  if (skip.includes(step)) return 'skipped by --skip'
+  if (custom || opts.scripts === undefined) return undefined
+  if (opts.scripts === null) return 'no package.json in this repository, so no `' + step + '` script to run'
+  return opts.scripts.includes(step) ? undefined : 'no `' + step + '` script in package.json'
 }
 
 /** The zero-config default plan: lint, typecheck, a lockfile check and test - the facts a typical Node project already has a name or a lockfile for. */
 export function planStepsDefault(changedFiles: string[], skip: string[], opts: PlanOptions = {}): Step[] {
   const steps: Step[] = []
+  const script = RUN_SCRIPT[opts.packageManager ?? 'pnpm']
   steps.push({
     name: 'lint',
-    command: opts.lintCommand ? opts.lintCommand(changedFiles) : 'pnpm lint',
-    skipReason: skip.includes('lint') ? 'skipped by --skip' : undefined,
+    command: opts.lintCommand ? opts.lintCommand(changedFiles) : script('lint'),
+    skipReason: defaultSkip('lint', skip, opts.lintCommand !== undefined, opts),
   })
   steps.push({
     name: 'typecheck',
-    command: opts.typecheckCommand ? opts.typecheckCommand(changedFiles) : 'pnpm typecheck',
-    skipReason: skip.includes('typecheck') ? 'skipped by --skip' : undefined,
+    command: opts.typecheckCommand ? opts.typecheckCommand(changedFiles) : script('typecheck'),
+    skipReason: defaultSkip('typecheck', skip, opts.typecheckCommand !== undefined, opts),
   })
   const hasLockfile = opts.hasLockfile ?? true
   steps.push({
@@ -117,12 +155,10 @@ export function planStepsDefault(changedFiles: string[], skip: string[], opts: P
   const gate = opts.testGate ? opts.testGate(changedFiles) : true
   steps.push({
     name: 'test',
-    command: opts.testCommand ? opts.testCommand(changedFiles) : 'pnpm test',
-    skipReason: skip.includes('test')
-      ? 'skipped by --skip'
-      : gate
-        ? undefined
-        : "no files changed that this project's test gate considers relevant",
+    command: opts.testCommand ? opts.testCommand(changedFiles) : script('test'),
+    skipReason:
+      defaultSkip('test', skip, opts.testCommand !== undefined, opts) ??
+      (gate ? undefined : "no files changed that this project's test gate considers relevant"),
   })
   return steps
 }
@@ -431,7 +467,13 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   // same way the working-tree guard above is not something a caller gets to
   // assert instead of the filesystem answering it.
   const hasLockfile = existsSync(join(opts.repo, 'pnpm-lock.yaml'))
-  const plan: PlanOptions = { ...opts.plan, hasLockfile }
+  const manifest = packageScripts(opts.repo)
+  const plan: PlanOptions = {
+    packageManager: packageManagerFor(opts.repo) ?? 'pnpm',
+    ...opts.plan,
+    hasLockfile,
+    scripts: 'scripts' in manifest ? Object.keys(manifest.scripts) : existsSync(join(opts.repo, 'package.json')) ? [] : null,
+  }
 
   let testOutput: string | undefined
   const steps: StepOutcome[] = []
