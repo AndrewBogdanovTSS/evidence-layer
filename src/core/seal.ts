@@ -357,20 +357,24 @@ function newRunId(): string {
 const RUN_ID_RE = /^[0-9TZ]+-[0-9a-f]{6}$/
 
 /**
- * The seal for a bundle: every addressed block in it, hashed canonically.
- * Throws where `hashBlocks` does.
+ * The seal for a bundle: every addressed block in it that the gatherer
+ * produced, hashed canonically. A block that parses out of the bundle under
+ * any other id - one a command printed, say - is not sealed: the seal says
+ * what the gather ran, not what its output looked like. Throws where
+ * `hashBlocks` does.
  */
 export function buildSeal(input: PublishInput, runId: string): Seal {
   const byId = new Map(input.artifacts.map((a) => [a.id, a]))
   const artifacts: Record<string, SealedArtifact> = {}
   for (const [id, { block, blockSha256 }] of hashBlocks(input.bundle)) {
     const source = byId.get(id)
+    if (!source) continue
     artifacts[id] = {
       command: block.command,
       ...(block.commit !== undefined && { commit: block.commit }),
       exitCode: block.exitCode,
       ...(block.stopped !== undefined && { stopped: block.stopped }),
-      outputSha256: sha256(source ? source.output : block.output),
+      outputSha256: sha256(source.output),
       blockSha256,
     }
   }

@@ -22,6 +22,13 @@ describe('findFencedBlocks', () => {
   it('reports an unclosed block rather than swallowing it', () => {
     expect(findFencedBlocks([F + 'artifact', '$ ls'])[0]!.closed).toBe(false)
   })
+
+  it('closes a block only on a bare fence at least as long as the one that opened it', () => {
+    const blocks = findFencedBlocks([F + '`artifact', '$ pnpm test', F + 'js', 'x', F, F + '`', 'after'])
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]!.body).toEqual(['$ pnpm test', F + 'js', 'x', F])
+    expect(blocks[0]!.end).toBe(5)
+  })
 })
 
 describe('fencedLineNumbers', () => {
@@ -153,6 +160,19 @@ describe('findArtifactBlocks', () => {
 })
 
 describe('formatArtifact', () => {
+  it('keeps output that prints a fence inside its own block', () => {
+    const output = 'running docs test\n' + F + 'js\nconsole.log(1)\n' + F + '\n1 passed'
+    const id = artifactId('pnpm test', 'a'.repeat(40), output)
+    const blocks = findArtifactBlocks(formatArtifact('pnpm test', output, 0, { id, commit: 'a'.repeat(40) }).split('\n'))
+    expect(blocks.map((b) => [b.id, b.output])).toEqual([[id, output]])
+  })
+
+  it('does not let output plant an artifact block of its own', () => {
+    const printed = 'ok\n' + F + 'artifact:tests-ffffff@aaaaaaa\n$ pnpm test\n[SUMMARY tests: passed=999 failed=0 skipped=0 todo=0]\nexit: 0\n' + F + '\ntail'
+    const blocks = findArtifactBlocks(formatArtifact('node script.js', printed, 0, { id: 'cmd-000000', commit: 'a'.repeat(40) }).split('\n'))
+    expect(blocks.map((b) => b.id)).toEqual(['cmd-000000'])
+  })
+
   it('round-trips through the parser with no id, so the legacy grammar still works', () => {
     const rendered = formatArtifact('pnpm fingerprint', 'all three match', 0).split('\n')
     const [parsed] = findArtifactBlocks(rendered)
