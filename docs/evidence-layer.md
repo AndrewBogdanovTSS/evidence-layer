@@ -456,16 +456,17 @@ be true and useless.
 github` for a GitHub Actions step - annotations titled by code, then the text,
 then a job summary (see the README's section on the Action). With `json`,
 stdout is one JSON document and nothing else - the same report `check:all`
-prints between its delimiters, schema 5 - and the exit code is the one the
+prints between its delimiters, schema 6 - and the exit code is the one the
 text mode would have given:
 
 ```json
 {
-  "schema": 5,
+  "schema": 6,
   "check": "claims",
   "mode": "default",
   "generatedAt": "2026-10-18T14:43:52.827Z",
   "summary": "1 checked - 1 failed, 0 flaky, 0 warnings, 0 unverifiable",
+  "grades": { "claims": 1, "verified": 1, "documented": 0, "inferred": 0, "unverified": 0, "ungraded": 0 },
   "findings": [
     {
       "level": "error",
@@ -479,6 +480,12 @@ text mode would have given:
   ]
 }
 ```
+
+`grades`, on a `claims` report only, counts the review's claims by the grade
+each carries as written - the text report prints it under the summary line,
+and a GitHub or Azure summary leads with it. A review whose every claim is
+UNVERIFIED passes, rightly; `grades` is what tells it apart from one whose
+claims are verified.
 
 `fix`, present where one is mechanical, is what would settle the finding,
 written to be applied as it stands: the lines to put in place of a claim -

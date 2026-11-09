@@ -18,6 +18,8 @@ import { annotations, renderFindingsSummary, stopToken } from './annotations'
 import { azureIssues, azureSummary, defang, defangFinding, defangJson } from './azure-logging'
 import { report as printText, summarise } from './cli'
 import type { Finding, Format } from './cli'
+import { formatGradeMix } from './claims'
+import type { GradeMix } from './claims'
 
 export const JSON_BEGIN = '---GOVERNANCE-JSON-BEGIN---'
 export const JSON_END = '---GOVERNANCE-JSON-END---'
@@ -31,8 +33,9 @@ export const JSON_END = '---GOVERNANCE-JSON-END---'
  * 4 - findings carry `code` (see `./codes`), and a report says which `check`
  *     produced it. The same document is what `--format json` prints.
  * 5 - findings carry an optional `fix`: what would settle them, as it stands.
+ * 6 - a `claims` report carries `grades`: how its claims are graded, as written.
  */
-export const REPORT_SCHEMA = 5
+export const REPORT_SCHEMA = 6
 
 export interface ReportFinding {
   level: string
@@ -53,6 +56,8 @@ export interface Report {
   mode: string
   generatedAt: string
   summary: string
+  /** A `claims` report only: how the review's claims are graded. Since schema 6. */
+  grades?: GradeMix
   findings: ReportFinding[]
 }
 
@@ -66,13 +71,14 @@ export interface Report {
  * that emits them, so the only thing keeping them equal was that nobody had
  * edited one of the two.
  */
-export function buildReport(findings: Finding[], mode: string, check?: string): Report {
+export function buildReport(findings: Finding[], mode: string, check?: string, grades?: GradeMix): Report {
   return {
     schema: REPORT_SCHEMA,
     ...(check !== undefined && { check }),
     mode,
     generatedAt: new Date().toISOString(),
     summary: summarise(findings),
+    ...(grades !== undefined && { grades }),
     findings: findings.map((f) => ({
       level: f.level,
       claim: f.claim,
@@ -110,8 +116,8 @@ export function emitReport(findings: Finding[], mode: string, format: Format = '
  * exist to find the block in a log that is mostly not the block, and here
  * there is nothing else. The exit code is the text mode's, unchanged.
  */
-export function printJsonReport(findings: Finding[], mode: string, check: string): void {
-  console.log(JSON.stringify(buildReport(findings, mode, check), null, 2))
+export function printJsonReport(findings: Finding[], mode: string, check: string, grades?: GradeMix): void {
+  console.log(JSON.stringify(buildReport(findings, mode, check, grades), null, 2))
 }
 
 /**
@@ -134,23 +140,26 @@ export function printFindings(
   findings: Finding[],
   mode: string,
   check: string,
+  grades?: GradeMix,
 ): void {
-  if (format === 'json') return printJsonReport(findings, mode, check)
-  if (format === 'text') return printText(title, findings)
+  if (format === 'json') return printJsonReport(findings, mode, check, grades)
+  // Written from counts, never from review text, so it needs no defanging.
+  const notes = grades ? ['Grades: ' + formatGradeMix(grades)] : []
+  if (format === 'text') return printText(title, findings, notes)
   if (format === 'azure') {
     for (const line of azureIssues(findings)) console.log(line)
-    printText(defang(title), findings.map(defangFinding))
-    const attach = azureSummary(renderFindingsSummary(title, findings), check)
+    printText(defang(title), findings.map(defangFinding), notes)
+    const attach = azureSummary(renderFindingsSummary(title, findings, notes), check)
     if (attach) console.log(attach)
     return
   }
   for (const line of annotations(findings)) console.log(line)
   const token = stopToken()
   console.log('::stop-commands::' + token)
-  printText(title, findings)
+  printText(title, findings, notes)
   console.log('::' + token + '::')
   const summary = process.env.GITHUB_STEP_SUMMARY
-  if (summary) appendFileSync(summary, renderFindingsSummary(title, findings), 'utf8')
+  if (summary) appendFileSync(summary, renderFindingsSummary(title, findings, notes), 'utf8')
 }
 
 /** Pulls the machine-readable block out of a pile of console output. */

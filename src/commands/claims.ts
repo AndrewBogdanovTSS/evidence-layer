@@ -18,7 +18,7 @@
  * Exit codes: 0 clean - 1 at least one error - 2 bad usage.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { EXIT, downgradeClaims, exitCodeFor, formatOf, help, lintClaims, parseArgs, parseReceipt, printFindings, usage } from '../index'
+import { EXIT, downgradeClaims, exitCodeFor, formatOf, gradeMix, help, lintClaims, parseArgs, parseReceipt, printFindings, usage } from '../index'
 import { checkFreshness, checkProvenance, compareCited, readCurrentRun } from '../core/seal'
 import { checkBundle, readBundle } from '../core/bundle'
 import type { CodedFinding } from '../index'
@@ -134,6 +134,6 @@ export function run(argv: string[]): void {
     for (const d of downgraded) say('marked UNVERIFIED: ' + path + ':' + d.line + ' (' + d.code + ')')
     if (downgraded.length === 0) say('nothing to mark UNVERIFIED in ' + path)
   }
-  printFindings(format, 'Claims in ' + path, findings, args.strict === true ? 'strict' : 'default', 'claims')
+  printFindings(format, 'Claims in ' + path, findings, args.strict === true ? 'strict' : 'default', 'claims', gradeMix(readFileSync(path, 'utf8')))
   process.exit(exitCodeFor(findings, args.strict === true))
 }

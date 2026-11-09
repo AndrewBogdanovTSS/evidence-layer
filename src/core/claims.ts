@@ -450,6 +450,45 @@ export function findClaims(lines: string[], fenced: Set<number>, gradeWindow = G
   return claims
 }
 
+/** How a review's claims are graded, as written - what a summary line of findings cannot show. */
+export interface GradeMix {
+  claims: number
+  verified: number
+  documented: number
+  inferred: number
+  unverified: number
+  /** Claims that carry no grade at all. */
+  ungraded: number
+}
+
+/**
+ * The grades a review's `**Claim**:` lines carry. A review whose every claim
+ * is UNVERIFIED passes - an honest UNVERIFIED is not a failure - and its
+ * "3 checked - 0 failed" reads exactly like a review with three verified
+ * claims. This is the number that tells the two apart.
+ */
+export function gradeMix(markdown: string, gradeWindow = GRADE_WINDOW): GradeMix {
+  const lines = markdown.split(/\r?\n/)
+  const claims = findClaims(lines, fencedLineNumbers(lines), gradeWindow)
+  const count = (grade: Grade) => claims.filter((c) => c.grade === grade).length
+  return {
+    claims: claims.length,
+    verified: count('VERIFIED'),
+    documented: count('DOCUMENTED'),
+    inferred: count('INFERRED'),
+    unverified: count('UNVERIFIED'),
+    ungraded: claims.filter((c) => c.grade === undefined).length,
+  }
+}
+
+/** `0 of 3 claims VERIFIED - 0 DOCUMENTED, 0 INFERRED, 3 UNVERIFIED, 0 with no grade`. */
+export function formatGradeMix(mix: GradeMix): string {
+  return (
+    mix.verified + ' of ' + mix.claims + ' claim' + (mix.claims === 1 ? '' : 's') + ' VERIFIED - ' +
+    mix.documented + ' DOCUMENTED, ' + mix.inferred + ' INFERRED, ' + mix.unverified + ' UNVERIFIED, ' + mix.ungraded + ' with no grade'
+  )
+}
+
 /**
  * A claim the caller found itself - a table cell, a list item, a line in a
  * format this module does not parse - to be graded by the same rules as a

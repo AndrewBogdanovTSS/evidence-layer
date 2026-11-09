@@ -126,7 +126,8 @@ const ICON: Record<Level, string> = {
   flaky: '↻',
 }
 
-export function report(title: string, findings: Finding[]): void {
+/** The text report. `notes` follow the summary line - facts about what was checked that no one finding carries. */
+export function report(title: string, findings: Finding[], notes: string[] = []): void {
   console.log('')
   console.log(title)
   console.log('-'.repeat(title.length))
@@ -138,6 +139,7 @@ export function report(title: string, findings: Finding[]): void {
   }
   console.log('')
   console.log(summarise(findings))
+  for (const note of notes) console.log(note)
   console.log('')
 }
 

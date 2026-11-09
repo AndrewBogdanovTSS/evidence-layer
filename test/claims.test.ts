@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lintClaims } from '../src/core/claims'
+import { formatGradeMix, gradeMix, lintClaims } from '../src/core/claims'
 import { artifactId, formatArtifact } from '../src/core/artifact'
 
 const F = '`'.repeat(3)
@@ -152,5 +152,20 @@ describe('false positives - the reason people switch checkers off', () => {
 
   it('does not treat a hypothetical as a success claim', () => {
     expect(errors('It could not be tested without a GPU.')).toHaveLength(0)
+  })
+})
+
+describe('gradeMix - how the claims are graded, as written', () => {
+  it('tells a review of honest UNVERIFIED claims from one of verified ones', () => {
+    const md = [
+      '**Claim**: Tests pass.', '**Grounding**: UNVERIFIED', '',
+      '**Claim**: Lint is clean.', '**Grounding**: UNVERIFIED', '',
+      '**Claim**: The docs say so.', '**Grounding**: DOCUMENTED #12', '',
+      '**Claim**: No grade.', '',
+      '```', '**Claim**: an example inside a fence', '```',
+    ].join('\n')
+    const mix = gradeMix(md)
+    expect(mix).toEqual({ claims: 4, verified: 0, documented: 1, inferred: 0, unverified: 2, ungraded: 1 })
+    expect(formatGradeMix(mix)).toBe('0 of 4 claims VERIFIED - 1 DOCUMENTED, 0 INFERRED, 2 UNVERIFIED, 1 with no grade')
   })
 })
