@@ -1,8 +1,9 @@
 # The evidence layer
 
-Six commands, each turning one kind of claim into something that could be proved
-wrong, one that checks whether anything runs them, and a journal that gives the
-whole layer a clock.
+Commands that each turn one kind of claim into something that could be proved
+wrong, one that checks whether anything runs them, a runtime gate that runs
+them when an agent says it is done, and a journal that gives the whole layer a
+clock. The README lists them.
 
 None of the checking logic is specific to any one project. It is three layers:
 a portable core under [`src/core/`](../src/core) that knows only markdown, git
@@ -61,7 +62,7 @@ package's version - a ref written once keeps recommending the release it was
 written in, so `pnpm release` rewrites it and this fails when it was not.
 
 Watch the command row when `dist/` is not on disk. It reports `unverifiable` -
-not a pass. **Three outcomes, never two.** A checker that reports success when it
+not a pass. **Five outcomes, never two.** A checker that reports success when it
 could not run manufactures confidence out of nothing.
 
 Then try this, because a check nobody has seen fail is indistinguishable from a
@@ -170,8 +171,10 @@ id, collected at the reviewed commit - anywhere in the document, not just
 nearby, because proximity alone had a real gap: a block copied to the wrong
 place still cleared a proximity check, since that only confirms *a* block is
 nearby, not that it is *the* block the claim is about. (Bare `VERIFIED` still
-works for one release, with a warning - see
-`docs/decisions/archive/0002-evidence-layer-v2.md` for the cutover date.) DOCUMENTED
+works, with a warning, until 2026-12-06 - `BARE_VERIFIED_CUTOVER` in
+`src/core/claims.ts`, set by
+[`DEC-0002`](decisions/archive/0002-evidence-layer-v2.md) - and is an error in the
+first release on or after it.) DOCUMENTED
 needs a citation. INFERRED needs its reasoning. Language that cannot be wrong -
 "more robust", "behaves identically", "it works" - needs a stated effect or an
 explicit UNVERIFIED. One artifact backing more than two claims is a warning:
@@ -264,7 +267,7 @@ and then the bundle's own `- Head:` line name the commit. A bundle file that
 is not there is bad usage, exit 2, never a pass.
 
 Referencing an artifact is not supposed to cost more than writing a bare tag -
-see step 3 below. `pnpm evidence` computes every id and writes the
+see step 3 above. `pnpm evidence` computes every id and writes the
 `**Claim**` / `**Grounding**: VERIFIED[id: predicates]` pair already filled
 in, the predicates read off the run it gathered; the honest move is to leave
 that line in place, not go looking an id up by hand. Predicates are optional in
@@ -283,7 +286,10 @@ changed file, so deleting the ones a review does not need is the whole edit.
 
 A review states where it read from, in a fixed block above any verdict: the
 commit, the baseline, how many files the diff touched, how many were opened, and
-(per the v2 note above) one verbatim quote per file a claim cites.
+(per the v2 note above) one verbatim quote per file a claim cites. The number
+of files is counted against `git diff <base>...<head>`
+(`receipt/diff-count-mismatch`) - compared only with the number opened, as it
+was before 0.19.0, an undercount passed "every file was opened".
 
 The check that matters most is the baseline. `git diff base...head` is only as
 honest as `base`, and a local branch reference goes stale in silence: it still
@@ -355,7 +361,7 @@ which downgrades an unreached command from a false `error` to an honest
 
 `check:all` also prints the [governance exceptions](governance-exceptions.md)
 count (active and expired, always, even at zero - see below) and records any
-new [misses](decisions/0002-evidence-layer-v2.md) from commit trailers on
+new [misses](decisions/archive/0002-evidence-layer-v2.md) from commit trailers on
 every run.
 
 It prints a machine-readable block on every run, **including a clean one**,
@@ -401,10 +407,14 @@ because its author decided it could be.
 
 ### 6c. `journal.jsonl` - the layer's own clock
 
-Every check appends what it found; a commit fixing a bug that a review missed
-adds `Missed-By: <review or PR>` to its own message and `check:all` extracts
-it automatically. One committed, append-only file, one schema for both
-questions - "did this check ever find something real?" and "what got past a
+The runtime gate appends every decision it makes to a journal in the
+checkout's git directory; a commit fixing a bug that a review missed adds
+`Missed-By: <review or PR>` to its own message, and `check:all` extracts it
+into the committed `journal.jsonl` automatically. `claims`, `receipt` and
+`governance` do not journal their own findings yet - what they find is in
+each run's report, not in the journal.
+
+One schema for both questions - "did this check ever find something real?" and "what got past a
 clean review?" - because the layer's usefulness was otherwise a claim with no
 clock, exactly like the README's test count before `check:docs` existed.
 
@@ -423,7 +433,7 @@ pnpm journal:tag <id> real|false       # tag a finding at fix time, not later
 pnpm journal:tag <id> --caught yes|no  # could an existing check have caught this miss
 ```
 
-Recording started the day [`docs/decisions/archive/0002-evidence-layer-v2.md`](decisions/0002-evidence-layer-v2.md)
+Recording started the day [`docs/decisions/archive/0002-evidence-layer-v2.md`](decisions/archive/0002-evidence-layer-v2.md)
 was ratified - none of it can be reconstructed retroactively, which is why the
 journal was the first thing built rather than the last. Whether six checks are
 more than this project needs is a real, currently unanswerable question; it
@@ -450,22 +460,29 @@ record archived under `docs/decisions/archive/` is never scanned, on purpose:
 an archived record's date is expected to be in the past, and flagging it would
 be true and useless.
 
+A `proposed` record is held the same way to `decide_by`: the date by which
+it is accepted, rejected or withdrawn. Without one it is
+`decisions/bad-decide-date`, and past it `decisions/undecided`, both errors -
+before 0.19.0 a proposal was reported as a pass every run, however long it
+had been open.
+
 ## Machine-readable output
 
 `claims`, `receipt` and `governance` take `--format json`, and `--format
 github` for a GitHub Actions step - annotations titled by code, then the text,
 then a job summary (see the README's section on the Action). With `json`,
 stdout is one JSON document and nothing else - the same report `check:all`
-prints between its delimiters, schema 5 - and the exit code is the one the
+prints between its delimiters, schema 6 - and the exit code is the one the
 text mode would have given:
 
 ```json
 {
-  "schema": 5,
+  "schema": 6,
   "check": "claims",
   "mode": "default",
   "generatedAt": "2026-10-18T14:43:52.827Z",
   "summary": "1 checked - 1 failed, 0 flaky, 0 warnings, 0 unverifiable",
+  "grades": { "claims": 1, "verified": 1, "documented": 0, "inferred": 0, "unverified": 0, "ungraded": 0 },
   "findings": [
     {
       "level": "error",
@@ -479,6 +496,12 @@ text mode would have given:
   ]
 }
 ```
+
+`grades`, on a `claims` report only, counts the review's claims by the grade
+each carries as written - the text report prints it under the summary line,
+and a GitHub or Azure summary leads with it. A review whose every claim is
+UNVERIFIED passes, rightly; `grades` is what tells it apart from one whose
+claims are verified.
 
 `fix`, present where one is mechanical, is what would settle the finding,
 written to be applied as it stands: the lines to put in place of a claim -
@@ -521,6 +544,7 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `claims/vague-comparison` | a comparison that says neither to what nor measured how |
 | `claims/success-without-effect` | a success word with no stated effect |
 | `claims/sycophancy` | agreement offered in place of evidence |
+| `claims/provenance-unchecked` | the review cites artifact blocks, and neither a seal nor a bundle was given to hold them to |
 | `receipt/missing-field` | the Access Receipt lacks a required field |
 | `receipt/no-sample` | the Access Receipt has no Sample integrity line |
 | `receipt/malformed-head` | the HEAD SHA is not a full 40-character commit id |
@@ -530,6 +554,8 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `receipt/wrong-commit` | the review is about a different commit than expected |
 | `receipt/files-opened` | every file in the diff was opened |
 | `receipt/files-unopened` | fewer files were opened than the diff contains |
+| `receipt/diff-count` | the number of files the receipt says the diff touches is the number git diff names |
+| `receipt/diff-count-mismatch` | the number of files the receipt says the diff touches is not the number git diff names |
 | `receipt/base-missing` | the receipt records no base SHA or target branch |
 | `receipt/no-remote-ref` | the target branch is not in this clone, so the base cannot be checked here |
 | `receipt/no-merge-base` | no merge-base exists here, so the base cannot be checked |
@@ -560,6 +586,7 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `governance/no-invariants` | no decision record declares an invariant |
 | `governance/no-command` | an invariant names no runnable command |
 | `governance/unknown-script` | an invariant names a script package.json does not have |
+| `governance/no-manifest` | there is no readable package.json, so an invariant's script cannot be resolved |
 | `governance/runtime-composed` | an invariant's trigger is composed at runtime and cannot be traced |
 | `governance/template-unread` | no readable trigger runs an invariant's script, and a pipeline template that might could not be read |
 | `governance/unreached` | no git hook, CI workflow or pipeline file runs an invariant's script |
@@ -574,6 +601,9 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `decisions/bad-review-date` | an accepted decision record has no valid `review_by` date |
 | `decisions/overdue` | an accepted decision record is past its `review_by` date |
 | `decisions/current` | an accepted decision record is within its `review_by` date |
+| `decisions/bad-decide-date` | a proposed decision record has no valid `decide_by` date |
+| `decisions/undecided` | a proposed decision record is past its `decide_by` date |
+| `decisions/pending` | a proposed decision record is within its `decide_by` date |
 
 The table is checked against `src/core/codes.ts` by `check:docs`, both ways.
 

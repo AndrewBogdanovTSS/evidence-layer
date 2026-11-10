@@ -1,7 +1,12 @@
 /**
  * `check:receipt` core - was this review written against this repo?
  *
- * The claim it makes falsifiable: **"I read the code."**
+ * The claim it makes falsifiable: **"I reviewed this repository, at this
+ * commit, against this base."** Not "I read the code": the quotes a receipt
+ * carries show a file was opened at that commit by someone - the gatherer
+ * pre-fills them - and a `path:line` citation is checked for existing, not for
+ * what is on it. What it does establish is the checkout: the commit, the true
+ * merge-base, the size of the diff, and that every cited path is there.
  *
  * A review states, in a fixed block at the top, where it read from: the commit,
  * the baseline it diffed against, how many files the diff touched, how many it
@@ -133,9 +138,12 @@ export function parseReceipt(markdown: string): Receipt {
     const re = new RegExp('^\\s*\\*\\*' + name + '\\*\\*:\\s*(.+)$', 'im')
     return re.exec(markdown)?.[1]?.trim().replace(/^`|`$/g, '')
   }
+  // The first whole number in the field: "22 (1 not committed)" is 22. Every
+  // digit in the field run together, as before 0.19.0, read it as 221.
   const num = (name: string): number | undefined => {
     const raw = field(name)
-    return raw === undefined ? undefined : Number(raw.replace(/[^\d]/g, ''))
+    const digits = raw === undefined ? undefined : /\d+/.exec(raw)?.[0]
+    return digits === undefined ? (raw === undefined ? undefined : Number.NaN) : Number(digits)
   }
 
   const samples = parseSamples(markdown)
@@ -185,7 +193,7 @@ export function checkReceipt(
     ['filesOpened', 'Files opened during review'],
   ]
   for (const [key, label] of required) {
-    if (receipt[key] === undefined || receipt[key] === '') {
+    if (receipt[key] === undefined || receipt[key] === '' || Number.isNaN(receipt[key])) {
       findings.push({ level: 'error', code: 'receipt/missing-field', claim: 'receipt records ' + label, detail: 'field missing or unparseable' })
     }
   }
@@ -220,13 +228,14 @@ export function checkReceipt(
   }
 
   findings.push(...checkBase(receipt, repo))
+  if (headExists) findings.push(...checkDiffCount(receipt, repo))
   findings.push(...checkSamples(receipt, markdown, repo))
   findings.push(...checkCitations(markdown, receipt.headSha, repo))
 
   // 6. Coverage. Not an error - a reviewer may legitimately skip generated
   //    files - but an unexplained gap is worth saying out loud.
-  if (receipt.filesInDiff !== undefined && receipt.filesOpened !== undefined) {
-    const ok = receipt.filesOpened >= receipt.filesInDiff
+  if (Number.isFinite(receipt.filesInDiff) && Number.isFinite(receipt.filesOpened)) {
+    const ok = receipt.filesOpened! >= receipt.filesInDiff!
     findings.push({
       level: ok ? 'pass' : 'warning',
       code: ok ? 'receipt/files-opened' : 'receipt/files-unopened',
@@ -287,6 +296,38 @@ export function checkBase(receipt: Receipt, repo: string): CodedFinding[] {
   }
   return [
     { level: 'error', code: 'receipt/wrong-base', claim, detail, fix: 'set the base SHA to the merge-base:\n**Base SHA**: `' + mergeBase + '`' },
+  ]
+}
+
+/**
+ * The diff's size, held to git. Before 0.19.0 `Files in diff` was compared
+ * only with `Files opened` - two numbers the writer typed - so a receipt that
+ * undercounted its diff passed "every file was opened" by opening the files
+ * it had counted. Counted over `base...head`, the commits under review: a file
+ * edited but not committed is not part of the commit the receipt names.
+ * Nothing is said when the base is not a commit here - `checkBase` speaks to
+ * that.
+ */
+export function checkDiffCount(receipt: Receipt, repo: string): CodedFinding[] {
+  if (receipt.filesInDiff === undefined || Number.isNaN(receipt.filesInDiff) || !receipt.baseSha || !SHA_RE.test(receipt.baseSha) || !receipt.headSha) return []
+  if (gitCapture(['cat-file', '-t', receipt.baseSha], repo) !== 'commit') return []
+  const listed = gitCapture(['diff', '--name-only', '-z', receipt.baseSha + '...' + receipt.headSha], repo)
+  if (listed === null) return []
+  const actual = listed.split('\0').filter(Boolean).length
+  const claim = 'the diff touches ' + receipt.filesInDiff + ' file' + (receipt.filesInDiff === 1 ? '' : 's')
+  if (actual === receipt.filesInDiff) {
+    return [{ level: 'pass', code: 'receipt/diff-count', claim, detail: 'git diff ' + receipt.baseSha.slice(0, 7) + '...' + receipt.headSha.slice(0, 7) + ' names ' + actual }]
+  }
+  return [
+    {
+      level: 'error',
+      code: 'receipt/diff-count-mismatch',
+      claim,
+      detail: 'git diff ' + receipt.baseSha.slice(0, 7) + '...' + receipt.headSha.slice(0, 7) + ' names ' + actual + ' - the receipt describes a different change',
+      fix: 'set the count to what git says:\n**Files in diff**: ' + actual,
+      expected: receipt.filesInDiff,
+      observed: actual,
+    },
   ]
 }
 

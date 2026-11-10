@@ -93,14 +93,14 @@ describe('stop - which reviews it checks', () => {
   it('checks nothing when this session changed no review and made no claims', () => {
     const dir = repo()
     start(dir)
-    expect(stop(dir, {}, { message: 'All done, see the diff.' }).outcome).toBe('not-applicable')
+    expect(stop(dir, {}, { message: 'All done, see the diff.' }).outcome).toBe('nothing-to-check')
   })
 
   it('does not check a review left modified before the session started', () => {
     const dir = repo()
     writeFileSync(join(dir, 'review.md'), UNBACKED)
     start(dir)
-    expect(stop(dir).outcome).toBe('not-applicable')
+    expect(stop(dir).outcome).toBe('nothing-to-check')
   })
 
   it('keeps the session snapshot across a resume, so a review written before it still counts', () => {
@@ -244,7 +244,7 @@ describe('stop - claims in the final message', () => {
     const dir = repo()
     start(dir)
     const message = 'It works now and is much cleaner.\n\n```markdown\n**Claim**: the suite passes.\n```\n'
-    expect(stop(dir, {}, { message }).outcome).toBe('not-applicable')
+    expect(stop(dir, {}, { message }).outcome).toBe('nothing-to-check')
   })
 })
 
@@ -267,11 +267,29 @@ describe('the gate journal', () => {
     expect(gateJournal(dir2).map((e) => [e.gate?.outcome, e.outcome])).toEqual([['no-snapshot', 'unverifiable']])
   })
 
+  it('records a stop with nothing to check, and why, so a result reported as prose is counted - not left out', () => {
+    const dir = repo()
+    start(dir)
+    const decision = stop(dir, {}, { message: 'Done. I ran the full test suite and all 12 tests pass.' })
+    expect(decision).toMatchObject({ action: 'allow', outcome: 'nothing-to-check', level: 'unverifiable' })
+    expect('message' in decision && decision.message).toBeFalsy()
+    stop(dir)
+    const entries = gateJournal(dir)
+    expect(entries.map((e) => [e.gate?.outcome, e.outcome])).toEqual([
+      ['nothing-to-check', 'unverifiable'],
+      ['nothing-to-check', 'unverifiable'],
+    ])
+    expect(entries[0]!.findings![0]).toContain('the final message has no **Claim** line')
+    expect(entries[1]!.findings![0]).toContain('there was no final message')
+    expect(summariseGate(entries)).toMatchObject({ stops: 2, checkedStops: 0, nothingToCheck: 2, degradedAllows: 0 })
+  })
+
   it('maps outcomes onto the five levels without inventing a pass', () => {
     expect(journalOutcome('checked', 'warning')).toBe('warning')
     expect(journalOutcome('retry-exhausted', 'error')).toBe('error')
     expect(journalOutcome('fail-open-error', 'unverifiable')).toBe('unverifiable')
     expect(journalOutcome('not-applicable', null)).toBeNull()
+    expect(journalOutcome('nothing-to-check', 'unverifiable')).toBe('unverifiable')
     expect(levelOf([{ level: 'warning', claim: '', detail: '' }, { level: 'unverifiable', claim: '', detail: '' }])).toBe(
       'unverifiable',
     )
@@ -483,11 +501,12 @@ describe('stop - nothing to check while an episode is open', () => {
     // Closed, so the next failure starts a fresh episode with fresh blocks.
     writeFileSync(join(dir, 'review.md'), UNBACKED)
     expect(stop(dir).action).toBe('block')
-    // With no episode open, a stop with nothing to check stays silent.
+    // With no episode open, a stop with nothing to check says nothing to the
+    // agent - and is journalled as such, never as a close or a clean check.
     const quiet = repo()
     start(quiet)
-    stop(quiet)
-    expect(gateJournal(quiet)).toHaveLength(0)
+    expect(stop(quiet)).toMatchObject({ action: 'allow', outcome: 'nothing-to-check' })
+    expect(gateJournal(quiet).map((e) => e.gate?.outcome)).toEqual(['nothing-to-check'])
   }, 30_000)
 })
 

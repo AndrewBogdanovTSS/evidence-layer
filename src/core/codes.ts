@@ -52,6 +52,7 @@ export const CODES = {
   'claims/vague-comparison': 'a comparison that says neither to what nor measured how',
   'claims/success-without-effect': 'a success word with no stated effect',
   'claims/sycophancy': 'agreement offered in place of evidence',
+  'claims/provenance-unchecked': 'the review cites artifact blocks, and neither a seal nor a bundle was given to hold them to',
 
   // receipt - was this review written against a real, correctly-based checkout
   'receipt/missing-field': 'the Access Receipt lacks a required field',
@@ -63,6 +64,8 @@ export const CODES = {
   'receipt/wrong-commit': 'the review is about a different commit than expected',
   'receipt/files-opened': 'every file in the diff was opened',
   'receipt/files-unopened': 'fewer files were opened than the diff contains',
+  'receipt/diff-count': 'the number of files the receipt says the diff touches is the number git diff names',
+  'receipt/diff-count-mismatch': 'the number of files the receipt says the diff touches is not the number git diff names',
   'receipt/base-missing': 'the receipt records no base SHA or target branch',
   'receipt/no-remote-ref': 'the target branch is not in this clone, so the base cannot be checked here',
   'receipt/no-merge-base': 'no merge-base exists here, so the base cannot be checked',
@@ -99,6 +102,7 @@ export const CODES = {
   'governance/no-invariants': 'no decision record declares an invariant',
   'governance/no-command': 'an invariant names no runnable command',
   'governance/unknown-script': 'an invariant names a script package.json does not have',
+  'governance/no-manifest': 'there is no readable package.json, so an invariant\'s script cannot be resolved',
   'governance/runtime-composed': 'an invariant\'s trigger is composed at runtime and cannot be traced',
   'governance/template-unread': 'no readable trigger runs an invariant\'s script, and a pipeline template that might could not be read',
   'governance/unreached': 'no git hook, CI workflow or pipeline file runs an invariant\'s script',
@@ -117,6 +121,9 @@ export const CODES = {
   'decisions/bad-review-date': 'an accepted decision record has no valid `review_by` date',
   'decisions/overdue': 'an accepted decision record is past its `review_by` date',
   'decisions/current': 'an accepted decision record is within its `review_by` date',
+  'decisions/bad-decide-date': 'a proposed decision record has no valid `decide_by` date',
+  'decisions/undecided': 'a proposed decision record is past its `decide_by` date',
+  'decisions/pending': 'a proposed decision record is within its `decide_by` date',
 } as const satisfies Record<string, string>
 
 export type Code = keyof typeof CODES

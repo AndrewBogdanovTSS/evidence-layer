@@ -107,6 +107,20 @@ describe('evidence-layer claims --bundle', () => {
     expect(missing.stderr).toContain('no such bundle file')
   })
 
+  it('says, without --bundle or --seal, that the cited blocks were held to nothing - unverifiable, never silence', async () => {
+    const dir = gatherableRepo('el-bundle-')
+    const gathered = await gatherOneStep(dir)
+    const { id, block } = lintBlock(gathered)
+    writeFileSync(join(dir, 'review.md'), review(id, block))
+    const alone = claims(dir, 'review.md')
+    expect(alone.status).toBe(0)
+    expect(alone.findings.filter((f) => f.code === 'claims/provenance-unchecked').map((f) => [f.level, f.detail])).toEqual([
+      ['unverifiable', expect.stringContaining(id)],
+    ])
+    expect(claims(dir, 'review.md', '--strict').status).toBe(1)
+    expect(claims(dir, 'review.md', '--bundle', gathered.out).findings.map((f) => f.code)).not.toContain('claims/provenance-unchecked')
+  })
+
   it('takes the commit under review from the bundle when neither --sha nor a receipt names one', async () => {
     const dir = gatherableRepo('el-bundle-')
     const { id, block } = lintBlock(await gatherOneStep(dir))

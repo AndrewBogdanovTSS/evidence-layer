@@ -11,13 +11,15 @@
  *
  * `--bundle` holds every cited block to a bundle file instead of a checkout's
  * seal - the one a CI gather job uploaded, wherever the review was written.
- * A bundle that is not there is bad usage, never a pass.
+ * A bundle that is not there is bad usage, never a pass. With neither, a
+ * review that cites blocks gets one `unverifiable` finding saying their
+ * provenance went unchecked.
  *
  * Exit codes: 0 clean - 1 at least one error - 2 bad usage.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { EXIT, downgradeClaims, exitCodeFor, formatOf, help, lintClaims, parseArgs, parseReceipt, printFindings, usage } from '../index'
-import { checkFreshness, checkProvenance, readCurrentRun } from '../core/seal'
+import { EXIT, downgradeClaims, exitCodeFor, formatOf, gradeMix, help, lintClaims, parseArgs, parseReceipt, printFindings, usage } from '../index'
+import { checkFreshness, checkProvenance, compareCited, readCurrentRun } from '../core/seal'
 import { checkBundle, readBundle } from '../core/bundle'
 import type { CodedFinding } from '../index'
 
@@ -48,6 +50,31 @@ Lints a review for grounding tags and their required backing.
 exit 0 = every claim is backed, 1 = at least one is not, 2 = bad usage
 `
 
+/**
+ * Said, when neither `--seal` nor `--bundle` was given: the cited blocks were
+ * found in the review, and nothing held them to a gather. A block typed by
+ * hand under an invented id passes every other rule - the id hashes the full
+ * output and the block shows a trimmed one, so it cannot be recomputed here.
+ * A check that did not run is `unverifiable`, never left out: before 0.19.0
+ * this was silence, and `0 unverifiable` read as though provenance had passed.
+ */
+function provenanceUnchecked(markdown: string, path: string): CodedFinding[] {
+  const cited = compareCited(markdown, path, {})
+  if (cited.length === 0) return []
+  return [
+    {
+      level: 'unverifiable',
+      code: 'claims/provenance-unchecked',
+      claim: 'the cited blocks came from a gather',
+      detail:
+        cited.length + ' cited block' + (cited.length === 1 ? '' : 's') + ' (' + cited.map((c) => c.id).join(', ') + ') ' +
+        (cited.length === 1 ? 'was' : 'were') + ' checked against this review alone - a block typed by hand under an invented id passes that',
+      fix: 'run it again with --bundle <the bundle the gather wrote> or, in the checkout that gathered, --seal',
+      file: path,
+    },
+  ]
+}
+
 export function run(argv: string[]): void {
   const args = parseArgs(argv)
   if (args.help) help(HELP)
@@ -74,6 +101,7 @@ export function run(argv: string[]): void {
     // With a seal or a bundle there is a bundle to suggest runs from; without one, nothing local is read.
     const suggestFrom = current && 'run' in current ? current.run.bundle : bundle?.text
     const findings: CodedFinding[] = lintClaims(markdown, path, { expectedHeadSha, suggestFrom })
+    if (current === undefined && given === undefined) findings.push(...provenanceUnchecked(markdown, path))
     if (bundle) findings.push(...checkBundle(markdown, path, bundle))
     else if (given && 'broken' in given) {
       findings.push({ level: 'error', code: 'bundle/broken', claim: 'the cited blocks are the ones in ' + args.bundle, detail: given.broken })
@@ -106,6 +134,6 @@ export function run(argv: string[]): void {
     for (const d of downgraded) say('marked UNVERIFIED: ' + path + ':' + d.line + ' (' + d.code + ')')
     if (downgraded.length === 0) say('nothing to mark UNVERIFIED in ' + path)
   }
-  printFindings(format, 'Claims in ' + path, findings, args.strict === true ? 'strict' : 'default', 'claims')
+  printFindings(format, 'Claims in ' + path, findings, args.strict === true ? 'strict' : 'default', 'claims', gradeMix(readFileSync(path, 'utf8')))
   process.exit(exitCodeFor(findings, args.strict === true))
 }

@@ -1,5 +1,8 @@
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { planStepsDefault, stepFailed } from '../src/core/gather'
+import { gatherEvidence, planStepsDefault, stepFailed } from '../src/core/gather'
+import { sh } from './helpers/git'
 import { gatherOneStep, gatherableRepo, printAndExit } from './helpers/gather'
 
 describe('planStepsDefault - the zero-config default', () => {
@@ -46,10 +49,49 @@ describe('planStepsDefault - the zero-config default', () => {
     for (const step of steps) expect(step.skipReason).toBe('skipped by --skip')
   })
 
+  it('runs the default steps through the package manager the project uses', () => {
+    expect(planStepsDefault([], [], { packageManager: 'npm' }).map((s) => s.command)).toEqual([
+      'npm run lint', 'npm run typecheck', 'pnpm install --frozen-lockfile --lockfile-only', 'npm test',
+    ])
+    expect(planStepsDefault([], [], { packageManager: 'bun' })[3]!.command).toBe('bun run test')
+  })
+
+  it('skips a default step whose script the project does not have, and says so, rather than running it to fail', () => {
+    const steps = planStepsDefault([], [], { scripts: ['test'], lintCommand: () => 'eslint .' })
+    expect(steps.map((s) => [s.name, s.skipReason])).toEqual([
+      ['lint', undefined],
+      ['typecheck', 'no `typecheck` script in package.json'],
+      ['lockfile', undefined],
+      ['test', undefined],
+    ])
+    expect(planStepsDefault([], [], { scripts: null })[3]!.skipReason).toBe('no package.json in this repository, so no `test` script to run')
+  })
+
   it('a --skip of lockfile wins even when a lockfile genuinely exists', () => {
     const steps = planStepsDefault(['a.ts'], ['lockfile'], { hasLockfile: true })
     expect(steps.find((s) => s.name === 'lockfile')?.skipReason).toBe('skipped by --skip')
   })
+})
+
+describe('gatherEvidence - the zero-config plan in a project', () => {
+  it('suggests no claim about a step whose script does not exist, and names the package manager its lockfile shows', async () => {
+    const dir = gatherableRepo('el-gather-')
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node -e ""' } }))
+    writeFileSync(join(dir, 'package-lock.json'), '{}')
+    sh(dir, 'add', '-A')
+    sh(dir, 'commit', '-qm', 'manifest')
+    const out = join(dir, 'evidence.local.md')
+    const result = await gatherEvidence({ repo: dir, base: 'HEAD', out, seal: false })
+    expect(result.steps.map((s) => [s.name, 'skipReason' in s ? s.skipReason : s.command])).toEqual([
+      ['lint', 'no `lint` script in package.json'],
+      ['typecheck', 'no `typecheck` script in package.json'],
+      ['lockfile', 'no pnpm-lock.yaml in this repository'],
+      ['test', 'npm test'],
+    ])
+    const bundle = readFileSync(out, 'utf8')
+    expect(bundle).not.toMatch(/Lint reports|Typecheck reports/)
+    expect(bundle).toContain('_Not run: no `lint` script in package.json._')
+  }, 30_000)
 })
 
 describe('gatherEvidence - how every step ended', () => {

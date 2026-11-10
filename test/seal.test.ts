@@ -44,12 +44,15 @@ function fp(dir: string, excluded: string[] = ['review.md']): SourceFingerprint 
 
 const block = (output: string, commit = 'f8ae76a', command = 'pnpm test') => {
   const id = artifactId(command, commit, output)
-  return { id, text: formatArtifact(command, output, 0, { id, commit }) }
+  return { id, text: formatArtifact(command, output, 0, { id, commit }), command, output }
 }
 
-function publish(dir: string, blocks: { id: string; text: string }[], excluded = ['review.md']) {
+type Block = ReturnType<typeof block>
+const produced = (blocks: Block[]) => blocks.map((b) => ({ id: b.id, command: b.command, exitCode: 0, output: b.output }))
+
+function publish(dir: string, blocks: Block[], excluded = ['review.md']) {
   const bundle = '# Evidence bundle\n\n' + blocks.map((b) => b.text).join('\n\n') + '\n'
-  return publishRun(dir, { headSha: sh(dir, 'rev-parse', 'HEAD'), source: fp(dir, excluded), excluded, bundle, artifacts: [] })
+  return publishRun(dir, { headSha: sh(dir, 'rev-parse', 'HEAD'), source: fp(dir, excluded), excluded, bundle, artifacts: produced(blocks) })
 }
 
 const review = (b: { id: string; text: string }) => '**Claim**: the suite passes.\n**Grounding**: VERIFIED[' + b.id + ']\n\n' + b.text
@@ -258,12 +261,20 @@ describe('runs', () => {
     expect('run' in current && current.run.seal.runId).toBe(last!.seal.runId)
   })
 
+  it('seals only the artifacts the gatherer produced, not a block that merely parses out of the bundle', () => {
+    const dir = repo()
+    const a = block('one')
+    const stray = block('printed by a command', 'f8ae76a', 'pnpm lint')
+    const seal = buildSeal({ headSha: 'x', source: fp(dir), excluded: [], bundle: a.text + '\n\n' + stray.text, artifacts: produced([a]) }, '20261018T000000000Z-000000')
+    expect(Object.keys(seal.artifacts)).toEqual([a.id])
+  })
+
   it('refuses two different artifacts under one short id instead of losing one', () => {
     const dir = repo()
     const a = block('one')
     const forged = a.text.replace('one', 'two')
     expect(() =>
-      buildSeal({ headSha: 'x', source: fp(dir), excluded: [], bundle: a.text + '\n\n' + forged, artifacts: [] }, '20261018T000000000Z-000000'),
+      buildSeal({ headSha: 'x', source: fp(dir), excluded: [], bundle: a.text + '\n\n' + forged, artifacts: produced([a]) }, '20261018T000000000Z-000000'),
     ).toThrow(/share the id/)
   })
 })

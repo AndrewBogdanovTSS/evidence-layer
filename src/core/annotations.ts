@@ -76,11 +76,12 @@ const cell = (text: string): string => text.replace(/\r?\n\s*/g, ' · ').replace
  * pass. Passes are counted, not listed - a summary that lists forty green rows
  * hides the one red one, and the log still has all of them.
  */
-export function renderFindingsSummary(title: string, findings: Finding[]): string {
+export function renderFindingsSummary(title: string, findings: Finding[], notes: string[] = []): string {
   const errors = findings.filter((f) => f.level === 'error').length
   const verdict = errors > 0 ? '❌ ' + title + ': ' + errors + ' failing' : '✅ ' + title
   const problems = findings.filter((f) => f.level !== 'pass')
-  const lines = ['## ' + verdict, '', '`' + summarise(findings) + '`', '']
+  // Notes first: "0 of 3 claims VERIFIED" is what a reader of a green check most needs, and least expects.
+  const lines = ['## ' + verdict, '', ...notes.flatMap((n) => ['**' + n + '**', '']), '`' + summarise(findings) + '`', '']
   if (problems.length > 0) {
     lines.push('| | Code | Claim | Detail | Where |', '|---|---|---|---|---|')
     for (const f of problems) {

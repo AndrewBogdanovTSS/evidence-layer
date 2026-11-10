@@ -31,8 +31,14 @@
  *     [SUMMARY lint: files=7 ignored=0 errors=0 warnings=0]
  *     [SUMMARY tests: passed=71 failed=0 skipped=0 todo=0]
  *
+ * The fence is three backticks, or more when the output itself holds a run of
+ * them - one longer than the longest, so nothing the command printed can close
+ * the block early (`fenceFor`).
+ *
  * `artifact` alone (no id) is still valid - it is the pre-addressing grammar,
- * kept for one release as a warning-only path rather than a break. See
+ * kept as a warning-only path rather than a break until bare `VERIFIED`, the
+ * only thing that can cite such a block, becomes an error (`claims.ts`,
+ * `BARE_VERIFIED_CUTOVER`). See
  * `claims.ts` for how a claim references an id, and why proximity alone used
  * to be the only check: a copied-in-the-wrong-place block passed it, because
  * proximity confirms a block exists nearby, not that it is the block the claim
@@ -54,27 +60,49 @@ export interface FencedBlock {
   body: string[]
 }
 
-/** Every fenced code block in a markdown document, in order. */
+/**
+ * Every fenced code block in a markdown document, in order.
+ *
+ * Fences are read by length, as CommonMark reads them: a block opened by
+ * four backticks is closed only by a bare run of four or more, so a line of
+ * three inside it - a test run printing a Markdown snippet - is output, not
+ * the end of the block. Before 0.19.0 any line starting with three backticks
+ * toggled a block, and such output broke its artifact block in two, or
+ * planted a block of its own. Indentation is still not limited to three
+ * spaces, so a fence inside a list item reads as it always has.
+ */
 export function findFencedBlocks(lines: string[]): FencedBlock[] {
   const blocks: FencedBlock[] = []
-  let open: FencedBlock | null = null
+  let open: (FencedBlock & { fence: number }) | null = null
   for (let i = 0; i < lines.length; i++) {
-    const fence = /^\s*```(.*)$/.exec(lines[i]!)
-    if (!fence) {
-      if (open) open.body.push(lines[i]!)
+    const line = lines[i]!
+    if (open) {
+      const close = /^\s*(`{3,})\s*$/.exec(line)
+      if (close && close[1]!.length >= open.fence) {
+        const { fence: _fence, ...block } = open
+        blocks.push({ ...block, end: i, closed: true })
+        open = null
+      } else {
+        open.body.push(line)
+      }
       continue
     }
-    if (!open) {
-      open = { info: fence[1]!.trim(), start: i, end: i, closed: false, body: [] }
-      continue
-    }
-    open.end = i
-    open.closed = true
-    blocks.push(open)
-    open = null
+    // A backtick fence's info string cannot itself hold a backtick - that
+    // line is inline code, not a fence.
+    const fence = /^\s*(`{3,})([^`]*)$/.exec(line)
+    if (fence) open = { info: fence[2]!.trim(), start: i, end: i, closed: false, body: [], fence: fence[1]!.length }
   }
-  if (open) blocks.push(open)
+  if (open) {
+    const { fence: _fence, ...block } = open
+    blocks.push({ ...block, end: lines.length - 1 })
+  }
   return blocks
+}
+
+/** A fence that no line of `body` can close: three backticks, or one more than the longest run in it. */
+export function fenceFor(body: string): string {
+  const longest = Math.max(0, ...(body.match(/`+/g) ?? []).map((run) => run.length))
+  return '`'.repeat(Math.max(3, longest + 1))
 }
 
 /**
@@ -330,7 +358,6 @@ export function formatArtifact(
   exitCode: number,
   opts: { id?: string; commit?: string; maxLines?: number; stopped?: StopReason } = {},
 ): string {
-  const fence = '`'.repeat(3)
   const maxLines = opts.maxLines ?? 40
   const lines = output.replace(/\r\n/g, '\n').split('\n')
   const body =
@@ -342,5 +369,8 @@ export function formatArtifact(
           ...lines.slice(-Math.floor(maxLines / 2)),
         ]
   const info = opts.id ? 'artifact:' + opts.id + (opts.commit ? '@' + opts.commit.slice(0, 7) : '') : 'artifact'
+  // Longer than any backtick run in what it quotes, so quoted output that
+  // prints a fence of its own stays inside the block.
+  const fence = fenceFor([command, ...body].join('\n'))
   return [fence + info, '$ ' + command, ...body, formatExitLine(exitCode, opts.stopped), fence].join('\n')
 }

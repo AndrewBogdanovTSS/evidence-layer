@@ -197,7 +197,7 @@ describe('claims --fix', () => {
     const fixed = spawnSync(process.execPath, [BIN, 'claims', path, '--fix', '--format', 'json'], { encoding: 'utf8' })
     expect(fixed.status).toBe(0)
     expect(fixed.stderr).toContain('marked UNVERIFIED: ' + path + ':1 (claims/count-mismatch)')
-    expect(JSON.parse(fixed.stdout).schema).toBe(5)
+    expect(JSON.parse(fixed.stdout).schema).toBe(6)
     expect(readFileSync(path, 'utf8')).toContain('**Grounding**: UNVERIFIED\n')
   })
 })

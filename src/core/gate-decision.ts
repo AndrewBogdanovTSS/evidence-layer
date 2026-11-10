@@ -20,6 +20,13 @@ export type GateOutcome =
   | 'no-snapshot'
   /** A stop with nothing to check closed an open retry episode - an end to it, not a clean check. */
   | 'closed-unchecked'
+  /**
+   * A stop in a checkout the gate watches, with nothing to check: no review
+   * changed, and the final message makes no `**Claim**:` line. Journalled as
+   * not checked, so a session that reported its results as prose is counted
+   * rather than left out. Since 0.19.0; before, it was `not-applicable`.
+   */
+  | 'nothing-to-check'
   | 'not-applicable'
 
 export interface GateAssessment {
@@ -100,6 +107,7 @@ export function gateFailure(kind: GateEvent['kind'], error: unknown, opts: GateO
  */
 export function journalOutcome(outcome: GateOutcome, level: Level | null): Outcome | null {
   if (outcome === 'not-applicable') return null
+  if (outcome === 'nothing-to-check') return 'unverifiable'
   if (outcome === 'retry-exhausted') return 'error'
   if (outcome === 'checked') return level ?? 'pass'
   return level === 'error' ? 'error' : 'unverifiable'

@@ -1,5 +1,5 @@
 /**
- * `pnpm check:docs` - does this repository's README (with its reason-code table, and the action release the example's workflow pins) still tell the truth?
+ * `pnpm check:docs` - does this repository's README (with its reason-code table, the action release the example's workflow pins, and every document's relative links) still tell the truth?
  *
  * The consumer-side half of the layer, and the worked example of where the
  * line falls: every claim below is a fact about *this* package - its engine
@@ -7,16 +7,16 @@
  * exactly why none of it can live in `src/core/`. A README is a pile of
  * assertions written once and trusted forever; this gives them a clock.
  *
- * Three outcomes, never two. A claim this script cannot evaluate (because the
+ * Never two outcomes. A claim this script cannot evaluate (because the
  * build it would read is not on disk, or the suite run it reads printed no
  * summary) is reported `unverifiable`, which is not a pass.
  *
  * Exit codes: 0 clean - 1 at least one error - 3 flaky - 2 bad usage.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CODES, exitCodeFor, help, parseArgs, report, run, usage } from '../src/index'
+import { CODES, exitCodeFor, fencedLineNumbers, gitCapture, help, parseArgs, report, run, usage } from '../src/index'
 import type { Finding } from '../src/index'
 import { parseTestCount } from '../src/adapters/node-default'
 import { ACTION_REF_FILES, findActionRefs } from './action-refs'
@@ -235,6 +235,38 @@ function checkLinks(readme: string, repo: string): Finding {
 }
 
 /**
+ * Every relative link in every other tracked Markdown file points at something
+ * that exists - the README's own check, widened. The README was the only page
+ * checked, and the tour and the exceptions page had linked to a decision
+ * record for weeks after it moved to `archive/`, and to a `packages/` path
+ * from before this was its own repository. A link inside a fenced block is an
+ * example, not a link, and is not read.
+ */
+function checkDocLinks(repo: string): Finding {
+  const files = (gitCapture(['ls-files', '-z', '--', '*.md'], repo) ?? '').split('\0').filter((f) => f !== '' && f !== 'README.md')
+  const broken: string[] = []
+  let checked = 0
+  for (const file of files) {
+    const lines = readFileSync(join(repo, file), 'utf8').split(/\r?\n/)
+    const fenced = fencedLineNumbers(lines)
+    lines.forEach((line, i) => {
+      if (fenced.has(i)) return
+      for (const m of line.matchAll(/\]\((?![a-z][a-z0-9+.-]*:)([^)#\s]+)(?:#[^)]*)?\)/gi)) {
+        checked += 1
+        if (!existsSync(join(repo, dirname(file), m[1]!))) broken.push(file + ':' + (i + 1) + ' -> ' + m[1])
+      }
+    })
+  }
+  return {
+    level: broken.length === 0 ? 'pass' : 'error',
+    claim: 'every file the other documents link to exists',
+    detail: broken.length === 0 ? checked + ' links checked in ' + files.length + ' files' : 'missing: ' + broken.join(', '),
+    expected: checked,
+    observed: checked - broken.length,
+  }
+}
+
+/**
  * "Supports Claude Code" is a claim about a protocol this repository does not
  * control, so the README may make it only for a host that has an adapter in
  * `src/hosts/` *and* recorded inputs in `test/fixtures/hosts/<name>/` - the
@@ -355,6 +387,7 @@ function main(): void {
     ...checkExports(readme, pkg),
     checkCommands(readme, repo, pkg),
     checkLinks(readme, repo),
+    checkDocLinks(repo),
     ...checkHostSupport(readme, repo),
     ...checkActionRefs(repo, pkg),
     ...checkCodeTable(repo),

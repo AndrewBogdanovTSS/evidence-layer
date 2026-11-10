@@ -8,7 +8,8 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { downgradeClaims, lintClaims } from '../src/core/claims'
+import { downgradeClaims, formatGradeMix, gradeMix, lintClaims } from '../src/core/claims'
+import type { GradeMix } from '../src/core/claims'
 import { CODES } from '../src/core/codes'
 import type { CodedFinding } from '../src/core/codes'
 
@@ -94,7 +95,7 @@ describe('--format json', () => {
     for (const review of ['examples/plain-node-project/reviews/good-claims.md', 'examples/plain-node-project/reviews/predicate-mismatch.md']) {
       const { text, json, report } = asJson('claims', review)
       expect(json.status).toBe(text.status)
-      expect(report.schema).toBe(5)
+      expect(report.schema).toBe(6)
       expect(report.check).toBe('claims')
       expect(report.findings.every((f) => f.code !== undefined && f.code in CODES)).toBe(true)
     }
@@ -102,6 +103,15 @@ describe('--format json', () => {
     expect(json.status).toBe(text.status)
     expect(report.check).toBe('receipt')
     expect(report.findings.every((f) => f.code !== undefined && f.code in CODES)).toBe(true)
+  })
+
+  it('says how a review\'s claims are graded - in the report, and on the text summary', () => {
+    const review = 'examples/plain-node-project/reviews/good-claims.md'
+    const md = readFileSync(join(root, review), 'utf8')
+    const { report } = asJson('claims', review)
+    expect((report as unknown as { grades: GradeMix }).grades).toEqual(gradeMix(md))
+    expect(cli('claims', review).stdout).toContain('Grades: ' + formatGradeMix(gradeMix(md)))
+    expect(asJson('receipt', 'demo/reviews/bad-receipt.md').report).not.toHaveProperty('grades')
   })
 
   it('prints only the report for governance - no text, no delimiters', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lintClaims } from '../src/core/claims'
+import { BARE_VERIFIED_CUTOVER, formatGradeMix, gradeMix, lintClaims } from '../src/core/claims'
 import { artifactId, formatArtifact } from '../src/core/artifact'
 
 const F = '`'.repeat(3)
@@ -152,5 +152,40 @@ describe('false positives - the reason people switch checkers off', () => {
 
   it('does not treat a hypothetical as a success claim', () => {
     expect(errors('It could not be tested without a GPU.')).toHaveLength(0)
+  })
+})
+
+describe('gradeMix - how the claims are graded, as written', () => {
+  it('tells a review of honest UNVERIFIED claims from one of verified ones', () => {
+    const md = [
+      '**Claim**: Tests pass.', '**Grounding**: UNVERIFIED', '',
+      '**Claim**: Lint is clean.', '**Grounding**: UNVERIFIED', '',
+      '**Claim**: The docs say so.', '**Grounding**: DOCUMENTED #12', '',
+      '**Claim**: No grade.', '',
+      '```', '**Claim**: an example inside a fence', '```',
+    ].join('\n')
+    const mix = gradeMix(md)
+    expect(mix).toEqual({ claims: 4, verified: 0, documented: 1, inferred: 0, unverified: 2, ungraded: 1 })
+    expect(formatGradeMix(mix)).toBe('0 of 4 claims VERIFIED - 1 DOCUMENTED, 0 INFERRED, 2 UNVERIFIED, 1 with no grade')
+  })
+})
+
+describe('the bare VERIFIED cutover', () => {
+  it('names its date in the warning, not a path in a repository the reader may not have', () => {
+    const md = '**Claim**: the suite passes.\n**Grounding**: VERIFIED\n\n```artifact\n$ pnpm test\nok\nexit: 0\n```\n'
+    const warning = lintClaims(md, 'r.md').find((f) => f.code === 'claims/bare-verified')!
+    expect(warning.level).toBe('warning')
+    expect(warning.detail).toContain(BARE_VERIFIED_CUTOVER)
+    expect(warning.detail).not.toContain('docs/decisions')
+  })
+
+  // The clock. From the cutover this fails until a release makes bare
+  // VERIFIED an error - then the test above changes to expect one, and this
+  // one goes, in the same commit.
+  it('is still ahead - bare VERIFIED is a warning only until ' + BARE_VERIFIED_CUTOVER, () => {
+    expect(
+      Date.now() < Date.parse(BARE_VERIFIED_CUTOVER + 'T00:00:00Z'),
+      'the bare VERIFIED cutover has passed: make claims/bare-verified an error, in a release with notes',
+    ).toBe(true)
   })
 })
