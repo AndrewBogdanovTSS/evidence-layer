@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { missEntryId, parseMissesFromLog, recordNewMisses } from '../src/core/misses'
+import { isFixCommit, missEntryId, parseMissesFromLog, readMissedBy, recordNewMisses } from '../src/core/misses'
 import { appendEntry, readJournal } from '../src/core/journal'
 import { sh, tempRepo } from './helpers/git'
 
@@ -19,6 +19,19 @@ describe('parseMissesFromLog', () => {
     expect(parseMissesFromLog(log)).toEqual([
       { commit: 'abc123', reviewRef: 'demo/reviews/good-claims.md', subject: 'fix: lock delay off-by-one' },
     ])
+  })
+
+  it('reads `Missed-By: none` as an answer, not as a miss by a review called none', () => {
+    const log = record('abc123', 'fix: a typo in a message\n\nMissed-By: none') + record('def456', 'fix: x\n\nMissed-By: PR #12')
+    expect(parseMissesFromLog(log).map((m) => m.reviewRef)).toEqual(['PR #12'])
+    expect(readMissedBy('fix: x\n\nMissed-By: None - found before any review')).toBe('none')
+    expect(readMissedBy('fix: x\n\nMissed-By: PR #12')).toBe('PR #12')
+    expect(readMissedBy('fix: x')).toBeUndefined()
+  })
+
+  it('knows a fix by its conventional prefix, scoped or breaking, and nothing else', () => {
+    expect(['fix: a', 'fix(gate): a', 'fix!: a'].map(isFixCommit)).toEqual([true, true, true])
+    expect(['feat: fix a', 'fixes: a', 'docs: the fix', 'Fix a'].map(isFixCommit)).toEqual([false, false, false, false])
   })
 
   it('ignores commits with no trailer', () => {

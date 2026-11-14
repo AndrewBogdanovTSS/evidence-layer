@@ -117,7 +117,9 @@ is what notices it drifting.
   on your commit before you push it.
 - `Missed-By: <review or PR>` on a commit that fixes a bug a review let through.
   `governance` extracts these into `journal.jsonl`; that count is the layer's
-  only measure of what reviews miss.
+  only measure of what reviews miss. Every `fix:` commit answers the question:
+  `Missed-By: none` when no review let the bug through - read as an answer and
+  recorded as nothing. `check:ladder` warns on a `fix:` with neither.
 
 ## Decisions and plans
 

@@ -25,6 +25,10 @@
  * an agent actually writes renames its parameters - tested, missed. The parser
  * is TypeScript's own, already a devDependency, so nothing new is installed.
  *
+ * 3. **The miss.** A `fix:` commit says which review let its bug through -
+ *    `Missed-By: <review or PR>`, or `Missed-By: none` - or it is a warning.
+ *    That trailer is the only thing the journal of misses is filled from.
+ *
  * Read entirely from git - the commit, its parent, the files at each - so it
  * checks commits that are not checked out, which is what the demo refs are.
  * Repository business, not portable core, same as `check-docs.ts`: which files
@@ -41,7 +45,7 @@ import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
-import { exitCodeFor, formatOf, help, parseArgs, printFindings, usage } from '../src/index'
+import { exitCodeFor, formatOf, help, isFixCommit, parseArgs, printFindings, readMissedBy, usage } from '../src/index'
 import type { Finding } from '../src/index'
 
 const HELP = `
@@ -330,6 +334,22 @@ function main(): void {
       })
     }
     for (const value of trailers) findings.push(checkRung(value, { repo, parent, rev: sha, diff, clones }))
+
+    // The journal of misses is filled from this trailer and nothing else, so a
+    // fix that does not carry it is a miss nobody will ever count. A warning,
+    // like a missing Ladder-Rung: it catches the trailer left off, not a lie.
+    const message = git(repo, ['log', '-1', '--format=%B', sha]).out
+    if (isFixCommit(message)) {
+      const missedBy = readMissedBy(message)
+      findings.push({
+        level: missedBy === undefined ? 'warning' : 'pass',
+        claim: 'a fix says which review let the bug through',
+        detail:
+          missedBy === undefined
+            ? 'a `fix:` commit with no `Missed-By:` trailer - name the review or PR that missed it, or write `Missed-By: none` if none did'
+            : 'Missed-By: ' + missedBy,
+      })
+    }
 
     findings.push(
       clones.length === 0
