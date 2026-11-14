@@ -466,7 +466,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   for (const diff of skip.includes('diff') ? [] : diffs) {
     const stat = publishable(run(diff.command, { cwd: opts.repo, timeoutMs: 60_000 }))
     const id = artifactId(stat.command, headSha, stat.output)
-    runArtifacts.push({ id, command: stat.command, commit: headSha.slice(0, 7), exitCode: stat.exitCode, output: stat.output })
+    runArtifacts.push({ id, command: stat.command, commit: headSha.slice(0, 7), exitCode: stat.exitCode, output: stat.output, step: diff.heading })
     parts.push('## ' + diff.heading, '', formatArtifact(stat.command, stat.output, stat.exitCode, { id, commit: headSha }), '')
   }
 
@@ -480,7 +480,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     const status = publishable(run('git status --porcelain=v1 --untracked-files=all', { cwd: opts.repo, timeoutMs: 30_000 }))
     treeClean = status.output.trim() === ''
     const id = artifactId(status.command, headSha, status.output)
-    runArtifacts.push({ id, command: status.command, commit: headSha.slice(0, 7), exitCode: status.exitCode, output: status.output })
+    runArtifacts.push({ id, command: status.command, commit: headSha.slice(0, 7), exitCode: status.exitCode, output: status.output, step: 'tree' })
     parts.push(
       '## working tree',
       '',
@@ -526,7 +526,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
       else noSummary = summary.unavailable
     }
     const id = artifactId(res.command, headSha, res.output, STEP_KIND[step.name])
-    runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
+    runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output, step: step.name })
     steps.push({ name: step.name, command: res.command, id, exitCode: res.exitCode, ...(res.stopped && { stopped: res.stopped }) })
     const artifact: SkeletonArtifact = { command: res.command, output: res.output, exitCode: res.exitCode, id, commit: headSha, stopped: res.stopped }
     parts.push(blockOrPointer(artifact), '')
@@ -550,7 +550,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     const res = publishable(await runAsync('pnpm audit', { cwd: opts.repo, timeoutMs: 60_000 }))
     observe('dependency audit')
     const id = artifactId(res.command, headSha, res.output)
-    runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
+    runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output, step: 'audit' })
     steps.push({ name: 'audit', command: res.command, id, exitCode: res.exitCode, ...(res.stopped && { stopped: res.stopped }) })
     const artifact: SkeletonArtifact = { command: res.command, output: res.output, exitCode: res.exitCode, id, commit: headSha, stopped: res.stopped }
     parts.push(

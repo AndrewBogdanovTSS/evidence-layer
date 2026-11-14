@@ -131,13 +131,14 @@ concrete near-miss.
 
 ## The commands
 
-One executable, seven commands - `journal` is the one command with
+One executable, eight commands - `journal` is the one command with
 subcommands, and `hook` and `init` are the runtime gate's (see
 [below](#in-an-agents-session-the-runtime-gate)):
 
 ```bash
 npx evidence-layer claims review.md          # is every claim backed by evidence?
 npx evidence-layer receipt review.md         # was this review written against this repo?
+npx evidence-layer restamp review.md         # after gathering again: move the review onto the new run
 npx evidence-layer ci-summary output.txt     # render captured output as a CI summary
 npx evidence-layer governance                # is anything actually running the checks?
 npx evidence-layer journal report            # what the checks have actually found
@@ -148,6 +149,7 @@ npx evidence-layer journal tag <id> real     # mark a finding real or false
 | --- | --- |
 | `claims` | "I verified this" - every `VERIFIED[id]` tag must address a real artifact collected at the commit under review; with `--seal`, one this checkout's gather wrote about this code, and with `--bundle`, one a given bundle carries |
 | `receipt` | "I reviewed this repository" - the review's Access Receipt must match the repository's own git output, and a cited file must be backed by that file's own verbatim first line |
+| `restamp` | nothing; after a gather it replaces the blocks a review carries from an earlier run with the current run's for the same step, rewrites the ids in the grade tags citing them, and checks the result as `claims --seal` does - never a sentence or a predicate |
 | `ci-summary` | nothing; it renders a captured run for a CI job summary, and reports `unverifiable` when it has nothing to read |
 | `governance` | "this is enforced" - every invariant a decision record declares must be reachable from a git hook or a CI workflow, and no governance exception may be past its expiry; on the way, it records every `Missed-By:` commit trailer into the journal (`--no-journal` to skip) |
 | `journal report` | "these checks are useful" - real findings, false findings and misses, counted over time rather than assumed |
@@ -414,6 +416,14 @@ did not change is not, and neither is writing the review itself. A pass says
 exactly what it covers - tracked and non-ignored files, not ignored ones,
 dependencies or the environment - and an untracked file too large to hash makes
 it `unverifiable`, never a pass.
+
+When the code did change, gather again and run
+`npx evidence-layer restamp review.md`: each block from the earlier run is
+replaced by the current run's block for the same step, the ids in the grade
+tags follow, and the result is checked as `--seal` checks it. Sentences and
+predicates stay as written - `passed>=71` over a run that passed 70 is still
+an error - so it cannot make a claim pass, only make the honest fix after an
+edit one command instead of every block copied again by hand.
 
 The seal is not an attestation. It lives where the same agent can write, so it
 catches the default failure, not someone rewriting it on purpose; CI, which
@@ -737,7 +747,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **657 tests** across **42 files**, and that sentence is checked
+The suite is **664 tests** across **43 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

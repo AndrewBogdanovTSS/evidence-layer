@@ -253,8 +253,14 @@ Read `bad-claims.md` and `good-claims.md` side by side. The repaired one is
 longer, hedges more and sounds less confident - and it is the only one of the
 two that could be proved wrong.
 
-`--seal` holds every cited block to the run this checkout gathered, and so
-works only where the gather ran. `--bundle <file>` holds it to a bundle file
+`--seal` holds every cited block to a run this checkout gathered, and so
+works only where the gather ran. The current run, or an earlier kept one that
+saw the files as they are now (`seal/earlier-run`) - gathering again mints
+new ids even when nothing changed, and must not break every citation. After a
+real change, `evidence-layer restamp <review.md>` moves the review onto the
+new run: blocks replaced from the current bundle, ids rewritten in the grade
+tags, never a sentence or a predicate
+([DEC-0010](decisions/0010-gate-scope-and-run-identity.md)). `--bundle <file>` holds it to a bundle file
 instead - in CI, the one a gather job uploaded, wherever the review was then
 written: every cited block must be, canonically, the one the bundle carries
 under its id. Without one of the two, `claims` cannot tell a gathered block

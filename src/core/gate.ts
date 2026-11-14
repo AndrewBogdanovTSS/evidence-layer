@@ -529,10 +529,17 @@ function formatReason(findings: Finding[], intro: string, opts: { blocking?: Lev
  * checks cannot know the project's command; the gate can, and "gather again"
  * without one sends an agent off to find out how - the expensive path.
  */
-function withGatherFix(findings: CodedFinding[], gather: GatherHow): CodedFinding[] {
+function withGatherFix(findings: CodedFinding[], gather: GatherHow, root: string): CodedFinding[] {
   const fix = 'gather again with ' + gatherWith(gather) + ', then cite the runs the new bundle lists - or mark the claims UNVERIFIED'
+  // For a review file, the second half is one command: `restamp` moves its
+  // blocks and ids onto the new run. A final reply has no blocks to move.
+  const restamped = (file: string) =>
+    'gather again with ' + gatherWith(gather) + ', then move the review onto the new run with `' + cliCommandFor(root) + ' restamp ' + file +
+    '` - or mark the claims UNVERIFIED'
   return findings.map((f) =>
-    f.level !== 'pass' && GATHER_CODES.has(f.code) && (f.fix === undefined || f.fix.startsWith('gather')) ? { ...f, fix } : f,
+    f.level !== 'pass' && GATHER_CODES.has(f.code) && (f.fix === undefined || f.fix.startsWith('gather'))
+      ? { ...f, fix: f.code === 'seal/stale' && f.file !== undefined && f.file !== 'final message' ? restamped(f.file) : fix }
+      : f,
   )
 }
 
@@ -676,6 +683,7 @@ function stop(event: Extract<GateEvent, { kind: 'stop' }>, opts: GateOptions): G
   const findings = withGatherFix(
     [...changed.flatMap((r) => checkReview(ctx, r)), ...(message !== undefined ? checkMessage(ctx, message) : [])],
     ctx.gather,
+    root,
   )
   const level = levelOf(findings)
   const blocking: Level[] = opts.strict === true ? ['error', 'flaky', 'unverifiable'] : ['error']

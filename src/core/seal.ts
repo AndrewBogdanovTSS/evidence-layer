@@ -300,6 +300,13 @@ export interface SealedArtifact {
   outputSha256: string
   /** `canonicalBlock` of the block as the gatherer wrote it. */
   blockSha256: string
+  /**
+   * The gather step that produced it - `test`, `lint`, `diff` - when the
+   * gatherer said. What `restamp` matches a run's artifact to the next run's
+   * by: a command can change between two gathers (a diff's range does, at
+   * every commit) where the step does not. Since 0.20.0.
+   */
+  step?: string
 }
 
 export interface Seal {
@@ -325,6 +332,8 @@ export interface RunArtifact {
   exitCode: number
   stopped?: StopReason
   output: string
+  /** The gather step that produced it, recorded on the seal. */
+  step?: string
 }
 
 export interface PublishInput {
@@ -376,6 +385,7 @@ export function buildSeal(input: PublishInput, runId: string): Seal {
       ...(block.stopped !== undefined && { stopped: block.stopped }),
       outputSha256: sha256(source.output),
       blockSha256,
+      ...(source.step !== undefined && { step: source.step }),
     }
   }
   return {
