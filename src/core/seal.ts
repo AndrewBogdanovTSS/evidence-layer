@@ -486,37 +486,89 @@ export function readCurrentRun(repo: string, state = stateDir(repo)): CurrentRun
   // Checked before it is joined onto a path: a run id is a directory name, and
   // `../../somewhere` is not one.
   if (!RUN_ID_RE.test(pointer.runId)) return { broken: 'current.json names an invalid run id' }
-  const dir = join(state, 'runs', pointer.runId)
+  return readRunDir(join(state, 'runs'), pointer.runId)
+}
+
+/** One run directory, read and checked whole: the seal's shape, and the bundle against the seal's hash of it. */
+function readRunDir(runs: string, runId: string): { run: Run } | { broken: string } {
+  const dir = join(runs, runId)
   let seal: Seal | string
   let bundle: string
   try {
     seal = validateSeal(JSON.parse(readFileSync(join(dir, 'seal.json'), 'utf8')))
     bundle = readFileSync(join(dir, 'bundle.md'), 'utf8')
   } catch (error) {
-    return { broken: 'run ' + pointer.runId + ' cannot be read: ' + (error instanceof Error ? error.message : String(error)) }
+    return { broken: 'run ' + runId + ' cannot be read: ' + (error instanceof Error ? error.message : String(error)) }
   }
-  if (typeof seal === 'string') return { broken: 'run ' + pointer.runId + ' has a malformed seal: ' + seal }
-  if (seal.runId !== pointer.runId) return { broken: 'run ' + pointer.runId + ' carries the seal of ' + seal.runId }
+  if (typeof seal === 'string') return { broken: 'run ' + runId + ' has a malformed seal: ' + seal }
+  if (seal.runId !== runId) return { broken: 'run ' + runId + ' carries the seal of ' + seal.runId }
   if (sha256(bundle) !== seal.bundleSha256) {
-    return { broken: 'the bundle of run ' + pointer.runId + ' was edited after it was gathered' }
+    return { broken: 'the bundle of run ' + runId + ' was edited after it was gathered' }
   }
   return { run: { dir, seal, bundle } }
+}
+
+/**
+ * Every kept run that holds together, newest first - each checked as
+ * `readCurrentRun` checks the current one. A run that does not read is left
+ * out: it backs nothing, and the current run being broken is `readCurrentRun`'s
+ * to report. `except` leaves one out, usually the current run.
+ *
+ * What makes an earlier run citable (DEC-0010, C3): a gather mints new ids
+ * even when nothing changed - the id hashes output, and test output carries
+ * timings - so re-gathering "to be safe" used to turn every citation in a
+ * review into `seal/not-gathered`, although the run it cited was still on
+ * disk and had seen the same files.
+ */
+export function readKeptRuns(repo: string, state = stateDir(repo), except?: string): Run[] {
+  if (!state) return []
+  const runs = join(state, 'runs')
+  let names: string[]
+  try {
+    names = readdirSync(runs).filter((d) => RUN_ID_RE.test(d) && d !== except).sort().reverse()
+  } catch {
+    return []
+  }
+  return names.flatMap((name) => {
+    const read = readRunDir(runs, name)
+    return 'run' in read ? [read.run] : []
+  })
 }
 
 // ---------------------------------------------------------------------------
 // Checks
 
+/** What a check needs to hold a citation to a run other than the current one. */
+export interface EarlierRuns {
+  /** The kept runs other than the current one, newest first (`readKeptRuns`). */
+  runs: Run[]
+  /** Today's fingerprint, taken with a run's own exclusions. A caller caches it: hashing the tree is the expensive part. */
+  fingerprint: (excluded: string[]) => FingerprintResult
+  repo: string
+}
+
 /**
  * Every addressed VERIFIED claim's block, held to the seal: the id must be one
- * the gatherer produced in this run, and each block carrying it must be
- * byte-for-byte (canonically) the one it wrote. Claims whose id resolves to no
- * block are left to `lintClaims`, which already reports them.
+ * the gatherer produced, and each block carrying it must be byte-for-byte
+ * (canonically) the one it wrote. Claims whose id resolves to no block are
+ * left to `lintClaims`, which already reports them.
+ *
+ * An id the current run did not produce is looked for in the earlier kept
+ * runs, when the caller hands them over: from one that saw the files as they
+ * are now it passes, as `seal/earlier-run`; from one that saw different files
+ * it is `seal/stale`, naming the paths; from none it is `seal/not-gathered`.
  */
-export function checkProvenance(markdown: string, file: string, run: Run): CodedFinding[] {
+export function checkProvenance(markdown: string, file: string, run: Run, earlier?: EarlierRuns): CodedFinding[] {
   const findings: CodedFinding[] = []
   for (const cited of compareCited(markdown, file, run.seal.artifacts)) {
     const { id, where } = cited
     if (cited.missing) {
+      const origin = earlier?.runs.find((r) => r.seal.artifacts[id] !== undefined)
+      if (origin && earlier) {
+        const there = compareCited(markdown, file, origin.seal.artifacts).find((c) => c.id === id)
+        findings.push(...(there?.edited ? [editedFinding(id, there.edited, origin, where)] : earlierRunFindings(id, origin, run, earlier, where)))
+        continue
+      }
       findings.push({
         level: 'error',
         code: 'seal/not-gathered',
@@ -527,19 +579,9 @@ export function checkProvenance(markdown: string, file: string, run: Run): Coded
       })
       continue
     }
-    const edited = cited.edited
     findings.push(
-      edited
-        ? {
-            level: 'error',
-            code: 'seal/edited',
-            claim: 'artifact ' + id + ' came from the gatherer',
-            detail:
-              'the block at line ' + (edited.start + 1) + ' differs from the one run ' + run.seal.runId +
-              ' wrote - it was edited after it was gathered. Copy it from the bundle again',
-            fix: 'copy the ' + id + ' block from the evidence bundle again, unedited - or mark the claims citing it UNVERIFIED',
-            ...where,
-          }
+      cited.edited
+        ? editedFinding(id, cited.edited, run, where)
         : {
             level: 'pass',
             code: 'seal/provenance',
@@ -550,6 +592,109 @@ export function checkProvenance(markdown: string, file: string, run: Run): Coded
     )
   }
   return findings
+}
+
+function editedFinding(id: string, edited: ArtifactBlock, run: Run, where: { file: string; line: number }): CodedFinding {
+  return {
+    level: 'error',
+    code: 'seal/edited',
+    claim: 'artifact ' + id + ' came from the gatherer',
+    detail:
+      'the block at line ' + (edited.start + 1) + ' differs from the one run ' + run.seal.runId +
+      ' wrote - it was edited after it was gathered. Copy it from the bundle again',
+    fix: 'copy the ' + id + ' block from the evidence bundle again, unedited - or mark the claims citing it UNVERIFIED',
+    ...where,
+  }
+}
+
+/**
+ * What an id from an earlier kept run is worth today. Freshness is judged
+ * against the run the block came from, not the current one: the question is
+ * whether the files are what *that* run saw.
+ *
+ *   - they are: a pass, `seal/earlier-run` - and, when the current run ran
+ *     the same command and ended differently, `seal/disagreeing-runs` beside
+ *     it at `flaky`: two runs over the same files that do not agree are not
+ *     evidence of either result, and citing the older, greener one must not
+ *     be silent;
+ *   - they are not: `seal/stale`, naming the paths - an error for a lint,
+ *     typecheck or test run, a warning for anything else, as at the gate;
+ *   - nobody can tell: `seal/unhashable`.
+ */
+export function earlierRunFindings(id: string, origin: Run, current: Run, earlier: EarlierRuns, where: { file: string; line?: number }): CodedFinding[] {
+  const claim = 'artifact ' + id + ' is about this code'
+  const sealed = origin.seal.artifacts[id]!
+  const now = earlier.fingerprint(origin.seal.excluded)
+  if ('unverifiable' in now) return [{ level: 'unverifiable', code: 'seal/unhashable', claim, detail: now.unverifiable, ...where }]
+  if (!sameSource(origin.seal.source, now.fingerprint)) {
+    const paths = changedPaths(earlier.repo, origin.seal.source, now.fingerprint)
+    return [
+      {
+        level: freshnessMatters(sealed.command, id) ? 'error' : 'warning',
+        code: 'seal/stale',
+        claim,
+        detail:
+          'it came from run ' + origin.seal.runId + ', an earlier gather, and the code has changed since that run' +
+          (paths && paths.length > 0 ? ' (' + summarisePaths(paths) + ')' : '') + ' - cite the current run instead',
+        fix: 'gather the evidence again if the code changed since the current run, then move the review onto it with `evidence-layer restamp ' + where.file + '`',
+        ...where,
+      },
+    ]
+  }
+  const findings: CodedFinding[] = [
+    {
+      level: 'pass',
+      code: 'seal/earlier-run',
+      claim: 'artifact ' + id + ' came from the gatherer',
+      detail: 'identical to the block run ' + origin.seal.runId + ' wrote - an earlier gather, of the files as they are now',
+      ...where,
+    },
+  ]
+  const disagreement = disagreementWith(origin, id, current)
+  if (disagreement) {
+    findings.push({
+      level: 'flaky',
+      code: 'seal/disagreeing-runs',
+      claim: 'the runs of `' + sealed.command + '` over this code agree',
+      detail:
+        'run ' + origin.seal.runId + ' (cited, ' + id + ') says ' + disagreement.cited + '; the current run ' + current.seal.runId + ' (' +
+        disagreement.currentId + ') says ' + disagreement.current + ' - the same files, two results',
+      fix: 'cite ' + disagreement.currentId + ', the current run\'s, or run the command again and see which result holds',
+      ...where,
+    })
+  }
+  return findings
+}
+
+/** How a run's artifact ended, in the terms two runs are compared by: exit, stop reason, work summary. */
+function outcomeOf(run: Run, id: string): string | undefined {
+  const block = hashBlocks(run.bundle).get(id)?.block
+  if (!block) return undefined
+  const summary = /^\[SUMMARY [^\]]*\]$/m.exec(block.output.trim().split(/\r?\n/).at(-1) ?? '')?.[0]
+  return 'exit ' + block.exitCode + (block.stopped ? ' (' + block.stopped + ')' : '') + (summary ? ' ' + summary : '')
+}
+
+/** The current run's artifact for the cited one's command, when the two ended differently - `undefined` when they agree or it ran no such command. */
+function disagreementWith(origin: Run, id: string, current: Run): { cited: string; current: string; currentId: string } | undefined {
+  const command = origin.seal.artifacts[id]!.command
+  const currentId = Object.entries(current.seal.artifacts).find(([, a]) => a.command === command)?.[0]
+  if (currentId === undefined) return undefined
+  // Only when the current run saw the same files too: a different result over different files is not a disagreement.
+  if (!sameSource(origin.seal.source, current.seal.source)) return undefined
+  const cited = outcomeOf(origin, id)
+  const now = outcomeOf(current, currentId)
+  return cited !== undefined && now !== undefined && cited !== now ? { cited, current: now, currentId } : undefined
+}
+
+/**
+ * Whether a check of one text still has to ask if the *current* run is fresh:
+ * yes when a citation rests on it, or cites nothing a run could back; no when
+ * every cited id was found in an earlier run, each already judged against the
+ * run it came from.
+ */
+export function restsOnCurrentRun(provenance: CodedFinding[]): boolean {
+  const cited = provenance.filter((f) => f.code.startsWith('seal/'))
+  return cited.length === 0 || cited.some((f) => f.code === 'seal/provenance' || f.code === 'seal/edited' || f.code === 'seal/not-gathered')
 }
 
 /** One cited id, held to a set of known blocks: absent from it, or the first of its blocks that differs. */

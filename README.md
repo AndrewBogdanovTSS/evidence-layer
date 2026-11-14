@@ -403,8 +403,12 @@ and the bundle names the step and the path.
 npx evidence-layer claims review.md --seal
 ```
 
-adds two checks. Every cited block must be one the current run produced,
-unedited. And the code must still be what that run was gathered from: editing a
+adds two checks. Every cited block must be one a kept run produced, unedited -
+the current run, or an earlier one that saw the files as they are now
+(`seal/earlier-run`): gathering again "to be safe" mints new ids, since test
+output carries timings, and must not break every citation in the review. An
+earlier run of other files is `seal/stale`, and one that disagrees with the
+current run about the same command over the same files is said so, as `flaky`. And the code must still be what that run was gathered from: editing a
 file after gathering is an error naming the file, while committing content that
 did not change is not, and neither is writing the review itself. A pass says
 exactly what it covers - tracked and non-ignored files, not ignored ones,
@@ -733,7 +737,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **652 tests** across **42 files**, and that sentence is checked
+The suite is **657 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

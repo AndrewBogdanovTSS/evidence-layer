@@ -14,11 +14,13 @@ import {
   freshnessMatters,
   publishRun,
   readCurrentRun,
+  readKeptRuns,
+  restsOnCurrentRun,
   sourceFingerprint,
   stateDir,
   toRootRelative,
 } from '../src/core/seal'
-import type { SourceFingerprint } from '../src/core/seal'
+import type { EarlierRuns, Run, SourceFingerprint } from '../src/core/seal'
 import { sh } from './helpers/git'
 
 function repo(files: Record<string, string> = { 'src/a.js': 'a\n' }, commit = true): string {
@@ -354,6 +356,70 @@ describe('checkFreshness', () => {
     // Same size, new mtime: the metadata moved, so this is a change, not a gap.
     utimesSync(join(dir, 'dump.bin'), new Date(), new Date(Date.now() + 60_000))
     expect(checkFreshness(dir, run).level).toBe('error')
+  })
+})
+
+describe('a citation from an earlier kept run (DEC-0010, C3)', () => {
+  const earlier = (dir: string, current: Run): EarlierRuns => ({
+    runs: readKeptRuns(dir, undefined, current.seal.runId),
+    fingerprint: (excluded) => sourceFingerprint(dir, excluded),
+    repo: dir,
+  })
+  const codes = (findings: { level: string; code: string }[]) => findings.map((f) => [f.level, f.code])
+
+  it('passes when that run saw the files as they are now - a re-gather that changed nothing breaks no citation', () => {
+    const dir = repo()
+    // Same suite, same files, another second on the clock: a new id.
+    const first = block('ok in 1.2s')
+    publish(dir, [first])
+    const current = publish(dir, [block('ok in 1.4s')])
+    const findings = checkProvenance(review(first), 'review.md', current, earlier(dir, current))
+    expect(codes(findings)).toEqual([['pass', 'seal/earlier-run']])
+    expect(findings[0]!.detail).toContain('an earlier gather, of the files as they are now')
+    // Each such citation was judged against its own run, so the current run's freshness is not asked on its behalf.
+    expect(restsOnCurrentRun(findings)).toBe(false)
+    // Without the kept runs handed over, it is what it was before 0.20.0.
+    expect(codes(checkProvenance(review(first), 'review.md', current))).toEqual([['error', 'seal/not-gathered']])
+  })
+
+  it('is stale, naming the paths, when the code changed after that run', () => {
+    const dir = repo()
+    const first = block('ok in 1.2s')
+    publish(dir, [first])
+    writeFileSync(join(dir, 'src/a.js'), 'edited after the first gather\n')
+    const current = publish(dir, [block('ok in 1.4s')])
+    const [finding, ...rest] = checkProvenance(review(first), 'review.md', current, earlier(dir, current))
+    expect(rest).toEqual([])
+    expect(finding).toMatchObject({ level: 'error', code: 'seal/stale' })
+    expect(finding!.detail).toContain('src/a.js')
+    expect(finding!.fix).toContain('restamp review.md')
+  })
+
+  it('says so, as flaky, when the current run ran the same command over the same files and ended differently', () => {
+    const dir = repo()
+    const green = block('ok')
+    publish(dir, [green])
+    const redId = artifactId('pnpm test', 'f8ae76a', '1 failed')
+    const red = { id: redId, text: formatArtifact('pnpm test', '1 failed', 1, { id: redId, commit: 'f8ae76a' }), command: 'pnpm test', output: '1 failed' }
+    const current = publish(dir, [red])
+    const findings = checkProvenance(review(green), 'review.md', current, earlier(dir, current))
+    expect(codes(findings)).toEqual([['pass', 'seal/earlier-run'], ['flaky', 'seal/disagreeing-runs']])
+    expect(findings[1]!.detail).toContain('exit 0')
+    expect(findings[1]!.detail).toContain('exit 1')
+    expect(findings[1]!.fix).toContain(redId)
+  })
+
+  it('still fails a block edited after the earlier run wrote it, and reads every kept run that holds together', () => {
+    const dir = repo()
+    const first = block('ok in 1.2s')
+    const firstRun = publish(dir, [first])
+    const current = publish(dir, [block('ok in 1.4s')])
+    const edited = review(first).replace('ok in 1.2s', 'ok in 0.2s')
+    expect(codes(checkProvenance(edited, 'review.md', current, earlier(dir, current)))).toEqual([['error', 'seal/edited']])
+    expect(readKeptRuns(dir).map((r) => r.seal.runId).sort()).toEqual([firstRun.seal.runId, current.seal.runId].sort())
+    // A run whose bundle was edited on disk backs nothing, and is left out.
+    writeFileSync(join(firstRun.dir, 'bundle.md'), 'tampered')
+    expect(readKeptRuns(dir).map((r) => r.seal.runId)).toEqual([current.seal.runId])
   })
 })
 

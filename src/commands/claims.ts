@@ -19,7 +19,8 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { EXIT, downgradeClaims, exitCodeFor, formatOf, gradeMix, help, lintClaims, parseArgs, parseReceipt, printFindings, usage } from '../index'
-import { checkFreshness, checkProvenance, compareCited, readCurrentRun } from '../core/seal'
+import { checkFreshness, checkProvenance, compareCited, readCurrentRun, readKeptRuns, restsOnCurrentRun, sourceFingerprint } from '../core/seal'
+import type { FingerprintResult } from '../core/seal'
 import { checkBundle, readBundle } from '../core/bundle'
 import type { CodedFinding } from '../index'
 
@@ -108,7 +109,21 @@ export function run(argv: string[]): void {
     }
     if (current === undefined) return findings
     if ('run' in current) {
-      findings.push(...checkProvenance(markdown, path, current.run), checkFreshness(repo, current.run))
+      // An id from an earlier kept run is judged against that run: a pass when
+      // it saw the files as they are now, stale when it did not (DEC-0010, C3).
+      const fingerprints = new Map<string, FingerprintResult>()
+      const fingerprint = (excluded: string[]): FingerprintResult => {
+        const key = JSON.stringify(excluded)
+        if (!fingerprints.has(key)) fingerprints.set(key, sourceFingerprint(repo, excluded))
+        return fingerprints.get(key)!
+      }
+      const provenance = checkProvenance(markdown, path, current.run, {
+        runs: readKeptRuns(repo, undefined, current.run.seal.runId),
+        fingerprint,
+        repo,
+      })
+      findings.push(...provenance)
+      if (restsOnCurrentRun(provenance)) findings.push(checkFreshness(repo, current.run, fingerprint(current.run.seal.excluded)))
     } else {
       // Asked for and not there is not a pass: nothing was checked.
       findings.push({

@@ -90,6 +90,8 @@ export const CODES = {
   'seal/not-gathered': 'the current run produced no artifact with this id',
   'seal/edited': 'the cited block differs from the one the run wrote',
   'seal/provenance': 'the cited block is the one the run wrote',
+  'seal/earlier-run': 'the cited block is the one an earlier kept run wrote, of the files as they are now',
+  'seal/disagreeing-runs': 'the cited run and the current run ran the same command over the same files and ended differently',
   'seal/unhashable': 'the working directory cannot be fingerprinted here',
   'seal/stale': 'the code changed after the evidence was gathered',
   'seal/partial-coverage': 'what was hashed is unchanged, but part of the tree could not be hashed',

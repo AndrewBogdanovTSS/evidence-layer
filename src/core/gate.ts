@@ -54,8 +54,8 @@ import { UNCLAIMED_PREFIX, appendEntry } from './journal'
 import { gitCapture } from './proc'
 import { decidePreWrite } from './protect'
 import { checkReceipt, parseReceipt } from './receipt'
-import { checkFreshness, checkProvenance, freshnessMatters, readCurrentRun, repoRoot, sourceFingerprint, stateDir } from './seal'
-import type { CurrentRun, FingerprintResult } from './seal'
+import { checkFreshness, checkProvenance, earlierRunFindings, freshnessMatters, readCurrentRun, readKeptRuns, repoRoot, restsOnCurrentRun, sameSource, sourceFingerprint, stateDir } from './seal'
+import type { CurrentRun, EarlierRuns, FingerprintResult, Run } from './seal'
 import { suggestedClaim } from './skeleton'
 import type { SuggestedClaim } from './skeleton'
 
@@ -311,12 +311,27 @@ interface StopContext {
   freshness: () => CodedFinding
   /** The fingerprint `freshness` took, once it has run. */
   fingerprint: () => FingerprintResult | undefined
+  /**
+   * The kept runs other than the current one, and today's fingerprint for
+   * whatever exclusions a run was sealed with - read and taken on first use
+   * only, which is when a text cites an id the current run did not produce.
+   * A stop whose citations are all the current run's pays for none of it.
+   */
+  earlier: () => EarlierRuns
 }
 
 function stopContext(root: string, state: string): StopContext {
   const current = readCurrentRun(root, state)
-  let fingerprint: FingerprintResult | undefined
   let freshness: CodedFinding | undefined
+  // One fingerprint per set of exclusions, which in practice is one: every
+  // run in a checkout leaves out the same bundle and review paths.
+  const fingerprints = new Map<string, FingerprintResult>()
+  const fingerprintFor = (excluded: string[]): FingerprintResult => {
+    const key = JSON.stringify(excluded)
+    if (!fingerprints.has(key)) fingerprints.set(key, sourceFingerprint(root, excluded, root))
+    return fingerprints.get(key)!
+  }
+  let runs: Run[] | undefined
   return {
     root,
     gather: gatherHow(root, current),
@@ -324,11 +339,15 @@ function stopContext(root: string, state: string): StopContext {
     freshness: () => {
       if (freshness) return freshness
       if (!('run' in current)) throw new Error('freshness was asked of a checkout with no sealed run')
-      fingerprint = sourceFingerprint(root, current.run.seal.excluded, root)
-      freshness = checkFreshness(root, current.run, fingerprint)
+      freshness = checkFreshness(root, current.run, fingerprintFor(current.run.seal.excluded))
       return freshness
     },
-    fingerprint: () => fingerprint,
+    fingerprint: () => ('run' in current ? fingerprints.get(JSON.stringify(current.run.seal.excluded)) : undefined),
+    earlier: () => ({
+      runs: (runs ??= readKeptRuns(root, state, 'run' in current ? current.run.seal.runId : undefined)),
+      fingerprint: fingerprintFor,
+      repo: root,
+    }),
   }
 }
 
@@ -357,8 +376,38 @@ function checkReview(ctx: StopContext, path: string): CodedFinding[] {
   return findings
 }
 
+/**
+ * The earlier kept runs a final message's citations reach: for each id the
+ * current run did not produce, the newest earlier run that did. A chat reply
+ * carries no blocks, so an id in it resolves against a bundle - and since
+ * DEC-0010 (C3) against an earlier run's too, when that run saw the files as
+ * they are now.
+ */
+function earlierOrigins(ctx: StopContext, ids: string[]): Map<string, Run> {
+  const origins = new Map<string, Run>()
+  if (!('run' in ctx.current)) return origins
+  const missing = ids.filter((id) => ctx.current && 'run' in ctx.current && ctx.current.run.seal.artifacts[id] === undefined)
+  if (missing.length === 0) return origins
+  const { runs } = ctx.earlier()
+  for (const id of missing) {
+    const origin = runs.find((r) => r.seal.artifacts[id] !== undefined)
+    if (origin) origins.set(id, origin)
+  }
+  return origins
+}
+
+/** Whether an earlier run saw the files as they are now - `false` when that cannot be told. */
+function sawCurrentFiles(ctx: StopContext, run: Run): boolean {
+  const now = ctx.earlier().fingerprint(run.seal.excluded)
+  return 'fingerprint' in now && sameSource(run.seal.source, now.fingerprint)
+}
+
 function checkMessage(ctx: StopContext, message: string): CodedFinding[] {
-  const bundle = 'run' in ctx.current ? ctx.current.run.bundle : undefined
+  const current = 'run' in ctx.current ? ctx.current.run.bundle : undefined
+  // Only the bundles of runs that saw today's files join the lookup: an id
+  // from a run of other code stays unresolved here, and is named stale below.
+  const sameSourceBundles = [...new Set(earlierOrigins(ctx, citedIds(message)).values())].filter((r) => sawCurrentFiles(ctx, r)).map((r) => r.bundle)
+  const bundle = current === undefined ? undefined : [current, ...sameSourceBundles].join('\n\n')
   // A chat reply carries no blocks, so an id it cites is looked up in the
   // sealed bundle - and a finding that said "this document" sent the agent
   // looking in the wrong place.
@@ -405,9 +454,17 @@ function sealFindings(ctx: StopContext, text: string, file: string, opts: { from
     ]
   }
   const run = current.run
-  // Blocks resolved from the bundle are sealed by construction - the bundle's
-  // own hash was checked when the run was read.
-  const findings = opts.fromBundle ? [] : checkProvenance(text, file, run)
+  // An id the current run did not produce is looked for in the earlier kept
+  // runs - read only now, when one is actually cited. Blocks resolved from a
+  // bundle are sealed by construction: each bundle's hash was checked when
+  // its run was read, so a final message's ids need only their run judged.
+  const fromEarlier = ids.some((id) => run.seal.artifacts[id] === undefined)
+  const findings = opts.fromBundle
+    ? [...earlierOrigins(ctx, ids)].flatMap(([id, origin]) => earlierRunFindings(id, origin, run, ctx.earlier(), { file }))
+    : checkProvenance(text, file, run, fromEarlier ? ctx.earlier() : undefined)
+  // The current run's freshness is asked only when a citation rests on it.
+  const restsOnCurrent = opts.fromBundle ? ids.some((id) => run.seal.artifacts[id] !== undefined) || findings.length === 0 : restsOnCurrentRun(findings)
+  if (!restsOnCurrent) return findings
   const freshness = ctx.freshness()
   const matters = ids.some((id) => {
     const sealed = run.seal.artifacts[id]

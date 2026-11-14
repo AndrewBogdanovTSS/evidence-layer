@@ -33,10 +33,10 @@ const HONEST = '# Review\n\n**Claim**: whether the suite passes.\n**Grounding**:
 const TESTS_OUTPUT = 'ok\n[SUMMARY tests: passed=3 failed=0 skipped=0 todo=0]'
 
 /** Gathers a sealed run holding one test artifact, the way gatherEvidence would. */
-function sealTests(dir: string): { id: string; block: string } {
+function sealTests(dir: string, output = TESTS_OUTPUT): { id: string; block: string } {
   const head = sh(dir, 'rev-parse', 'HEAD')
-  const id = artifactId('pnpm test', head, TESTS_OUTPUT)
-  const block = formatArtifact('pnpm test', TESTS_OUTPUT, 0, { id, commit: head })
+  const id = artifactId('pnpm test', head, output)
+  const block = formatArtifact('pnpm test', output, 0, { id, commit: head })
   const fp = sourceFingerprint(dir, ['review.md', 'evidence.local.md'])
   if ('unverifiable' in fp) throw new Error(fp.unverifiable)
   publishRun(dir, {
@@ -44,7 +44,7 @@ function sealTests(dir: string): { id: string; block: string } {
     source: fp.fingerprint,
     excluded: ['evidence.local.md', 'review.md'],
     bundle: '# Evidence bundle\n\n' + block + '\n',
-    artifacts: [{ id, command: 'pnpm test', exitCode: 0, output: TESTS_OUTPUT }],
+    artifacts: [{ id, command: 'pnpm test', exitCode: 0, output }],
   })
   return { id, block }
 }
@@ -207,6 +207,27 @@ describe('stop - the seal', () => {
     const stale = stop(dir)
     expect(stale.action).toBe('block')
     if (stale.action === 'block') expect(stale.reason).toContain('src/a.js')
+  })
+
+  it('lets a review, and a final reply, keep citing an earlier run after a re-gather that changed nothing', () => {
+    const dir = repo()
+    start(dir)
+    const first = sealTests(dir)
+    // Gathered again "to be safe": the same files, another timing in the output, so a new id.
+    const second = sealTests(dir, 'ok, a little slower\n[SUMMARY tests: passed=3 failed=0 skipped=0 todo=0]')
+    expect(second.id).not.toBe(first.id)
+    writeFileSync(join(dir, 'review.md'), receiptFor(dir) + backedReview(first))
+    const reply = '**Claim**: the suite ran 3 passing tests.\n**Grounding**: VERIFIED[' + first.id + ': exit=0, passed>=3]\n'
+    const decision = stop(dir, {}, { message: reply })
+    expect(decision).toMatchObject({ action: 'allow', outcome: 'checked', level: 'pass' })
+    expect(decision.findings.filter((f) => f.code === 'seal/earlier-run').map((f) => f.file).sort()).toEqual(['final message', 'review.md'])
+
+    // Once the code changes, that earlier run is of other files: stale, and blocked.
+    writeFileSync(join(dir, 'src/a.js'), 'edited after both gathers\n')
+    writeFileSync(join(dir, 'review.md'), receiptFor(dir) + backedReview(first) + '\n')
+    const stale = stop(dir)
+    expect(stale.action).toBe('block')
+    if (stale.action === 'block') expect(stale.reason).toContain('an earlier gather, and the code has changed since that run')
   })
 
   it('says a review with claims and no Access Receipt was not checked for its commit - unverifiable, not skipped', () => {
