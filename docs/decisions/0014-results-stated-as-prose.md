@@ -97,7 +97,7 @@ To be decided by the maintainer. The roadmap's order: **O1 now** (shipped),
 then **O4**, then **O3** by default - and O3 only when both hold:
 
 1. DEC-0010's C3 and C4 have shipped, so the honest fix after an edit is one
-   command.
+   command. (They ship in 0.20.0.)
 2. Thirty stops journalled with `claims/unclaimed-result` have been tagged by
    hand (`journal tag <id> real|false --gate`), and at most three are false.
 
