@@ -59,7 +59,10 @@ check('the CLI exits 2 on an unknown command and 0 on --help', () => {
 
 check('governance runs against the fixture with no configuration', () => {
   const fixture = join(root, 'examples', 'plain-node-project')
-  const result = cli(['governance', '--repo', fixture, '--decisions', join(fixture, 'docs', 'decisions'), '--no-json'])
+  // `--no-journal`: the fixture lives inside this repository's history, so
+  // recording that history's Missed-By trailers would write a journal.jsonl
+  // into the example - which it did, the first time a commit here carried one.
+  const result = cli(['governance', '--repo', fixture, '--decisions', join(fixture, 'docs', 'decisions'), '--no-json', '--no-journal'])
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /is reachable from a wired trigger/)
 })
