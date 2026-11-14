@@ -61,6 +61,8 @@ export const LOCAL_JOBS = [
 /** CI jobs with nothing here to stand for them, and why. Reported as `unverifiable`, never as a pass. */
 export const NOT_REPRODUCED: Record<string, string> = {
   'action-from-npm': 'fetches the published package from npm - it checks the last release, not this checkout',
+  'pr-evidence':
+    'gathers this branch\'s evidence at the pull request\'s head and uploads the bundle - `pnpm evidence --base origin/master` is that gather, and run here it would replace this checkout\'s sealed run',
 }
 
 type JobName = (typeof LOCAL_JOBS)[number]['name']
