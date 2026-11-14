@@ -340,6 +340,19 @@ function checkReview(ctx: StopContext, path: string): CodedFinding[] {
   const suggestFrom = 'run' in ctx.current ? ctx.current.run.bundle : undefined
   const findings = lintClaims(markdown, path, { expectedHeadSha: receipt.headSha, suggestFrom })
   if (receipt.headSha !== undefined) findings.push(...checkReceipt(receipt, markdown, ctx.root))
+  else if (hasClaims(markdown)) {
+    // Said, not skipped. A review with no receipt used to lose the receipt
+    // check and nothing else, so leaving it out was the cheap path; since
+    // 0.20.0 the gatherer writes the receipt, and keeping it is free.
+    findings.push({
+      level: 'unverifiable',
+      code: 'receipt/absent',
+      claim: 'the review says which commit it is about',
+      detail: 'no Access Receipt - nothing here says which commit, base or diff the review describes, so none of that was checked',
+      fix: 'copy the "Suggested access receipt" section from the evidence bundle into the review, and set how many files you opened',
+      file: path,
+    })
+  }
   findings.push(...sealFindings(ctx, markdown, path, { fromBundle: false }))
   return findings
 }

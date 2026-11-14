@@ -56,6 +56,7 @@ export const CODES = {
   'claims/provenance-unchecked': 'the review cites artifact blocks, and neither a seal nor a bundle was given to hold them to',
 
   // receipt - was this review written against a real, correctly-based checkout
+  'receipt/absent': 'the review has claims and no Access Receipt, so which commit it is about went unchecked',
   'receipt/missing-field': 'the Access Receipt lacks a required field',
   'receipt/no-sample': 'the Access Receipt has no Sample integrity line',
   'receipt/malformed-head': 'the HEAD SHA is not a full 40-character commit id',

@@ -81,6 +81,7 @@
     "gatherCommandFor",
     "gatherEvidence",
     "generateClaimSkeleton",
+    "generateReceiptSkeleton",
     "generateSampleSkeleton",
     "git",
     "gitCapture",

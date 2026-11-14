@@ -63,7 +63,7 @@ import { existsSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { WORK_SUMMARY_KEYS, artifactId, artifactKind, formatArtifact, formatWorkSummary } from './artifact'
 import type { StopReason, WorkKind, WorkSummary } from './artifact'
-import { generateClaimSkeleton, generateSampleSkeleton } from './skeleton'
+import { generateClaimSkeleton, generateReceiptSkeleton, generateSampleSkeleton } from './skeleton'
 import type { SkeletonArtifact } from './skeleton'
 import { gatherCommandFor, packageManagerFor } from './gather-command'
 import type { PackageManager } from './gather-command'
@@ -549,6 +549,27 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   if (claimSkeleton.trim() !== '') {
     parts.push('## Suggested claims', '', claimSkeleton, '')
   }
+
+  // The receipt's facts, read from git so nobody types them. The target is
+  // the branch on origin the base names; the base is the merge-base with it,
+  // which is what `receipt` holds it to - not the base as given, which may be
+  // a local branch that has fallen behind.
+  const target = opts.base.replace(/^(?:refs\/remotes\/)?origin\//, '')
+  const onOrigin = gitCapture(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + target], opts.repo) !== null
+  const mergeBase = onOrigin ? gitCapture(['merge-base', 'origin/' + target, headSha], opts.repo) : null
+  const inReceiptDiff = mergeBase ? gitCapture(['diff', '--name-only', '-z', mergeBase + '...' + headSha], opts.repo) : null
+  const branch = gitCapture(['rev-parse', '--abbrev-ref', 'HEAD'], opts.repo)
+  parts.push(
+    '## Suggested access receipt',
+    '',
+    generateReceiptSkeleton({
+      branch: !branch || branch === 'HEAD' ? '(detached)' : branch,
+      headSha,
+      gatheredAgainst: opts.base,
+      ...(mergeBase && inReceiptDiff !== null && { targetBranch: target, baseSha: mergeBase, filesInDiff: nul(inReceiptDiff).length }),
+    }),
+    '',
+  )
 
   // Quotes are read at the reviewed commit, which is where `receipt` checks
   // them - so only committed files can be quoted.

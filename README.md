@@ -171,6 +171,10 @@ non-blank line in a code span, `|` escaped as `\|`:
 | `src/a.ts` | `import { b } from './b'` |
 ```
 
+The gatherer writes the receipt's fields into the bundle, read from git, so
+keeping one is leaving a block in place; `Files opened during review` starts
+at 0 until the writer says otherwise.
+
 The one-line form from 0.1.x (`` **Sample integrity**: `path` -> `line` ``) is
 still read, so existing reviews keep verifying.
 
@@ -710,7 +714,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **624 tests** across **42 files**, and that sentence is checked
+The suite is **627 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

@@ -52,6 +52,17 @@ function sealTests(dir: string): { id: string; block: string } {
 const backedReview = (b: { id: string; block: string }) =>
   '# Review\n\n**Claim**: the suite ran 3 passing tests.\n**Grounding**: VERIFIED[' + b.id + ': exit=0, passed>=3]\n\n' + b.block + '\n'
 
+/** An Access Receipt that holds for `repo()` at its one commit, with `origin/main` put there to be the base. */
+function receiptFor(dir: string): string {
+  sh(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+  const head = sh(dir, 'rev-parse', 'HEAD')
+  return [
+    '**Branch**: work', '**HEAD SHA**: ' + head, '**Target branch**: main', '**Base SHA**: ' + head,
+    '**Files in diff**: 0', '**Files opened during review**: 0', '',
+    '| File | First non-blank line |', '|---|---|', '| `src/a.js` | `a` |', '', 'Read `src/a.js:1`.', '', '',
+  ].join('\n')
+}
+
 const gateJournal = (dir: string) => readJournal(join(stateDir(dir)!, 'journal.jsonl'))
 
 describe('session-start', () => {
@@ -188,7 +199,7 @@ describe('stop - the seal', () => {
     const dir = repo()
     start(dir)
     const sealed = sealTests(dir)
-    writeFileSync(join(dir, 'review.md'), backedReview(sealed))
+    writeFileSync(join(dir, 'review.md'), receiptFor(dir) + backedReview(sealed))
     expect(stop(dir)).toMatchObject({ action: 'allow', outcome: 'checked', level: 'pass' })
 
     writeFileSync(join(dir, 'src/a.js'), 'edited after the tests ran\n')
@@ -196,6 +207,20 @@ describe('stop - the seal', () => {
     const stale = stop(dir)
     expect(stale.action).toBe('block')
     if (stale.action === 'block') expect(stale.reason).toContain('src/a.js')
+  })
+
+  it('says a review with claims and no Access Receipt was not checked for its commit - unverifiable, not skipped', () => {
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), backedReview(sealTests(dir)))
+    const decision = stop(dir)
+    expect(decision).toMatchObject({ action: 'allow', outcome: 'checked', level: 'unverifiable' })
+    const absent = decision.findings.filter((f) => f.code === 'receipt/absent')
+    expect(absent).toHaveLength(1)
+    expect(absent[0]!.fix).toContain('Suggested access receipt')
+    // Asked for the stricter trade, a check that was not made blocks.
+    writeFileSync(join(dir, 'review.md'), backedReview(sealTests(dir)) + '\n')
+    expect(stop(dir, { strict: true }).action).toBe('block')
   })
 
   it('blocks a block that was edited after it was gathered', () => {

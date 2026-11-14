@@ -303,6 +303,14 @@ So the baseline is checked by **equality** against
 still an ancestor of the mainline, so an ancestry check waves it straight
 through.
 
+The gatherer writes the receipt (since 0.20.0 - before that it was typed by
+hand, and the sentence below this one said otherwise): the branch, the head,
+the target, the merge-base and the size of the diff, read from git, under
+*Suggested access receipt* in the bundle. `Files opened during review` starts
+at 0, which is true until the writer says what they opened. A review with
+claims and no receipt is `receipt/absent` at the runtime gate - `unverifiable`,
+since which commit it describes was not checked.
+
 There are no checked-in fixtures for this one, and that is not an oversight: a
 receipt names commits, so a fixture would either pin this repository's history
 forever or start failing the first time it moved. Generate a real one instead -
@@ -311,7 +319,7 @@ made:
 
 ```bash
 pnpm evidence --base origin/master        # writes evidence.local.md, receipt included
-pnpm check:receipt evidence.local.md      # clean, against the tree you are standing on
+pnpm check:receipt evidence.local.md      # no error, against the tree you are standing on
 ```
 
 Then break it on purpose: edit the `**Baseline**` line to a commit from further
@@ -546,6 +554,7 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `claims/success-without-effect` | a success word with no stated effect |
 | `claims/sycophancy` | agreement offered in place of evidence |
 | `claims/provenance-unchecked` | the review cites artifact blocks, and neither a seal nor a bundle was given to hold them to |
+| `receipt/absent` | the review has claims and no Access Receipt, so which commit it is about went unchecked |
 | `receipt/missing-field` | the Access Receipt lacks a required field |
 | `receipt/no-sample` | the Access Receipt has no Sample integrity line |
 | `receipt/malformed-head` | the HEAD SHA is not a full 40-character commit id |

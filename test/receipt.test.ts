@@ -1,7 +1,9 @@
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { gatherEvidence } from '../src/core/gather'
 import { checkDiffCount, checkReceipt, checkSamples, citedPaths, parseReceipt } from '../src/core/receipt'
+import { generateReceiptSkeleton } from '../src/core/skeleton'
 import { sh, tempRepo } from './helpers/git'
 
 const RECEIPT_ONE_SAMPLE = [
@@ -160,5 +162,31 @@ describe('checkDiffCount - the diff the receipt describes is the diff git comput
   it('says nothing when the base is not a commit here - the base check speaks to that', () => {
     const { dir, head } = twoFileChange()
     expect(checkDiffCount(parseReceipt(receipt(head, 'e'.repeat(40), '1')), dir)).toEqual([])
+  })
+})
+
+describe('the receipt the gatherer writes', () => {
+  it('holds as it stands: receipt on a fresh bundle reports no error, only that no file was opened yet', async () => {
+    const dir = tempRepo('el-receipt-', { 'a.js': 'a\n' })
+    sh(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    writeFileSync(join(dir, 'a.js'), 'a2\n')
+    writeFileSync(join(dir, 'b.js'), 'b\n')
+    sh(dir, 'add', '-A')
+    sh(dir, 'commit', '-qm', 'change')
+    const out = join(dir, 'evidence.local.md')
+    await gatherEvidence({ repo: dir, base: 'origin/main', out, seal: false, skip: ['lint', 'typecheck', 'lockfile', 'test'] })
+    const bundle = readFileSync(out, 'utf8')
+    expect(bundle).toContain('## Suggested access receipt')
+    const receipt = parseReceipt(bundle)
+    expect(receipt).toMatchObject({ targetBranch: 'main', filesInDiff: 2, filesOpened: 0, headSha: sh(dir, 'rev-parse', 'HEAD') })
+    const findings = checkReceipt(receipt, bundle, dir)
+    expect(findings.filter((f) => f.level === 'error')).toEqual([])
+    expect(findings.find((f) => f.code === 'receipt/files-unopened')?.detail).toBe('0 opened of 2 in the diff')
+  }, 30_000)
+
+  it('writes no field at all, and says why, when the base it was given is no branch on origin - half a receipt would be errors', () => {
+    const text = generateReceiptSkeleton({ branch: 'work', headSha: 'a'.repeat(40), gatheredAgainst: 'HEAD~3' })
+    expect(parseReceipt(text)).toMatchObject({ branch: undefined, headSha: undefined, filesOpened: undefined })
+    expect(text).toContain('gathered against HEAD~3, which is not a branch on origin')
   })
 })
