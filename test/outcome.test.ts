@@ -8,7 +8,8 @@ import {
   workDone,
 } from '../src/core/artifact'
 import type { StopReason } from '../src/core/artifact'
-import { lintClaims, outcomeProblem, readsAsIncomplete, readsAsSuccess } from '../src/core/claims'
+import { failingRunProblem, lintClaims, outcomeProblem, readsAsFailure, readsAsIncomplete, readsAsSuccess } from '../src/core/claims'
+import { admitsFailure, parsePredicates } from '../src/core/predicates'
 import { generateClaimSkeleton } from '../src/core/skeleton'
 
 const F = '`'.repeat(3)
@@ -32,6 +33,51 @@ describe('a run whose command the patterns do not know', () => {
     expect(errorsOf(block('tests-abcdef'))[0]?.detail).toContain('checked nothing')
     // Gathered before 0.20.0, as `cmd`: nothing says what it was, so nothing is held to it.
     expect(errorsOf(block('cmd-abcdef'))).toEqual([])
+  })
+})
+
+describe('a failing run backs only a claim that says it failed', () => {
+  const FAILED = '3 failing\n' + formatWorkSummary('tests', { passed: 2, failed: 3 })
+  const cite = (claim: string, tag: string) =>
+    ['**Claim**: ' + claim, '**Grounding**: VERIFIED[' + tag + ']', '', formatArtifact('pnpm test', FAILED, 1, { id: 'tests-abcdef' })].join('\n')
+  const codes = (md: string) => errorsOf(md).map((f) => f.code)
+
+  it('fails a claim about something else over it - the sentence is no success claim, and used to pass', () => {
+    const [finding] = errorsOf(cite('The new parser handles unicode input.', 'tests-abcdef'))
+    expect(finding).toMatchObject({ code: 'claims/failing-run' })
+    expect(finding!.detail).toContain('exited 1')
+    // The fix keeps the sentence: only the tag changes, to the run's own predicates.
+    expect(finding!.fix).toContain('**Grounding**: VERIFIED[tests-abcdef: exit=1, passed>=2, failed=3]')
+    expect(finding!.fix).toContain('replace the grounding')
+  })
+
+  it('passes once the tag admits the failure, or the sentence says it', () => {
+    expect(codes(cite('The new test reproduces the bug before the fix.', 'tests-abcdef: exit=1'))).toEqual([])
+    expect(codes(cite('The new test reproduces the bug before the fix.', 'tests-abcdef: failed>=1'))).toEqual([])
+    expect(codes(cite('The test suite reports failures.', 'tests-abcdef'))).toEqual([])
+    expect(codes(cite('The suite does not pass on this branch.', 'tests-abcdef'))).toEqual([])
+  })
+
+  it('is not talked round by a predicate a clean run would satisfy, or by "no failures"', () => {
+    expect(codes(cite('The retry logic is covered.', 'tests-abcdef: exit>=0'))).toEqual(['claims/failing-run'])
+    expect(admitsFailure(parsePredicates('exit>=0, passed>=2').predicates)).toBe(false)
+    expect(admitsFailure(parsePredicates('exit!=0').predicates)).toBe(true)
+    expect(readsAsFailure('reports no failures')).toBe(false)
+    expect(readsAsFailure('exits 1')).toBe(true)
+    expect(readsAsFailure('exits 0')).toBe(false)
+  })
+
+  it('leaves a success claim to the outcome rule, a stopped run to its own, and a clean run alone', () => {
+    expect(codes(cite('Tests pass.', 'tests-abcdef'))).toEqual(['claims/outcome-mismatch'])
+    expect(failingRunProblem({ command: 'pnpm test', output: '', exitCode: 124, stopped: 'timeout' }, 'anything')).toBeNull()
+    expect(failingRunProblem({ command: 'pnpm test', output: '', exitCode: 0 }, 'anything')).toBeNull()
+  })
+
+  it('accepts every failure claim the skeleton writes, unmodified', () => {
+    for (const command of ['pnpm test', 'pnpm lint', 'pnpm typecheck', 'pnpm install --frozen-lockfile', 'pnpm audit', 'pnpm fingerprint', 'node build.js']) {
+      const skeleton = generateClaimSkeleton([{ command, output: 'x', exitCode: 1, id: 'cmd-abcdef', commit: 'f8ae76a' }])
+      expect(errorsOf(skeleton), command).toEqual([])
+    }
   })
 })
 

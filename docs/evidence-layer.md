@@ -526,6 +526,7 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `claims/wrong-commit` | the cited artifact was collected at a different commit than the review is about |
 | `claims/bad-predicate` | a predicate in a `VERIFIED[id: ...]` tag cannot be checked |
 | `claims/outcome-mismatch` | the cited artifact's exit code or summary contradicts what the claim says |
+| `claims/failing-run` | the cited run exited non-zero, and nothing in the claim says it failed |
 | `claims/predicate-unmet` | the cited artifact does not satisfy a predicate the claim states |
 | `claims/kind-mismatch` | the claim names a kind of run - tests, lint, typecheck - and cites a run of another kind |
 | `claims/count-mismatch` | a count the claim states is not the count the cited run's work summary carries |

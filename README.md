@@ -226,8 +226,12 @@ says it is done.
 `claims` reads the outcome of every artifact a VERIFIED claim cites, and three
 rules are mechanical enough to check without reading the output for sense:
 
-- **A failing run backs no success claim.** "Tests pass" over `exit: 1` is an
-  error.
+- **A failing run backs only a claim that says it failed.** "Tests pass" over
+  `exit: 1` is an error, and so is "the new parser handles unicode" over it -
+  a sentence about something else, which a word list for success never
+  caught (`claims/failing-run`). The claim says it in the tag, with a
+  predicate a clean run would not satisfy (`exit=1`, `failed>=1` - the
+  skeleton writes them), or in words.
 - **A stopped run backs only "did not complete".** The exit line names why it
   stopped (`exit: 124 (timeout)`, `exit: 1 (overflow)`, `exit: 137 (killed
   SIGKILL)`), so "Typecheck reports errors" over a run the time limit killed is
@@ -706,7 +710,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **619 tests** across **42 files**, and that sentence is checked
+The suite is **624 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

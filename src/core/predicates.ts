@@ -151,6 +151,19 @@ function holds(actual: number | string, op: PredicateOp, expected: number | stri
   }
 }
 
+const FAILURE_KEYS = new Set(['exit', 'failed', 'errors'])
+
+/**
+ * Whether the predicates say outright that the run failed: one on `exit`,
+ * `failed` or `errors` that a clean run would not satisfy - `exit=1`,
+ * `exit!=0`, `failed>=1`. `exit>=0` holds for a clean run too, and admits
+ * nothing. Whether the predicate holds for *this* run is `evaluatePredicates`'
+ * question; this asks only what the writer said.
+ */
+export function admitsFailure(predicates: Predicate[]): boolean {
+  return predicates.some((p) => FAILURE_KEYS.has(p.key) && !holds(0, p.op, p.value))
+}
+
 /**
  * Every predicate that does not hold against the artifact, as one sentence
  * each - empty when they all do. A summary key on an artifact whose summary is

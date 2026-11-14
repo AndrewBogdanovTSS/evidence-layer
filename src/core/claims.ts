@@ -42,8 +42,9 @@
  * has no lines below it to borrow, so its citation or reasoning must be in its
  * own text.
  *
- * It does check the outcome, where the outcome is mechanical: a claim that
- * reads as success cannot rest on a run that exited non-zero, a run that was
+ * It does check the outcome, where the outcome is mechanical: a run that
+ * exited non-zero backs only a claim that says it failed (`failingRunProblem`),
+ * a claim that reads as success cannot rest on one at all, a run that was
  * stopped before it finished backs only "did not complete", and a lint or test
  * run whose work summary shows it checked nothing backs no success claim - see
  * `outcomeProblem`. Two more rules read the claim's words against the run it
@@ -71,7 +72,8 @@
 import { ARTIFACT_ID_RE, artifactKind, fencedLineNumbers, findArtifactBlocks, parseWorkSummary, workDone } from './artifact'
 import type { ArtifactBlock, StopReason } from './artifact'
 import type { CodedFinding } from './codes'
-import { evaluatePredicates, parsePredicates, suggestPredicates } from './predicates'
+import { admitsFailure, evaluatePredicates, parsePredicates, suggestPredicates } from './predicates'
+import type { Predicate } from './predicates'
 import { suggestedClaim } from './skeleton'
 
 /** How far below a legacy (unaddressed) VERIFIED tag its artifact block is allowed to sit. */
@@ -240,6 +242,37 @@ export function outcomeProblem(artifact: OutcomeArtifact, claimText: string, opt
   const found = kind === 'lint' ? summary.counts.errors! + summary.counts.warnings! : summary.counts.failed!
   if (found > 0) return 'asserts success, but the work summary in ' + cmd + ' reports problems (' + counts + ')'
   return null
+}
+
+// A failure, said in words - the skeleton's own failure sentences ("reports
+// failures", "reports violations", "is out of sync", "exits 1") and their
+// common rephrasings. `NEGATED_FAILURE_RE` is checked first, as in
+// `readsAsSuccess`: "no failures" is not an admission of one.
+const FAILURE_RE =
+  /\b(?:fail(?:s|ed|ing|ures?)?|errors?|violations?|vulnerabilit(?:y|ies)|broken|out of sync|non-?zero|(?:exits?|exited)(?: with)?(?: code)? [1-9]\d*|(?:does|did) not pass|(?:doesn't|didn't) pass)\b/i
+
+/** Whether a claim sentence says its run failed. Narrow, like `readsAsSuccess`; a predicate says it without the English. */
+export function readsAsFailure(text: string): boolean {
+  return !NEGATED_FAILURE_RE.test(text) && FAILURE_RE.test(text)
+}
+
+/**
+ * Why a failing run cannot back this claim as it stands, or `null`. Before
+ * 0.20.0 a non-zero exit was held only against a claim that read as success,
+ * so "the new parser handles unicode input" over a run with three failures
+ * passed: it was not a success sentence the word list knew. The rule is now
+ * the other way round, and needs no word list to be safe - **a failing run
+ * backs only a claim that says it failed**: by a predicate a clean run would
+ * not satisfy (`exit=1`, `failed>=1`), which the skeleton writes, or in
+ * words. A stopped run is `outcomeProblem`'s, and is not asked twice.
+ */
+export function failingRunProblem(artifact: OutcomeArtifact, claimText: string, predicates: Predicate[] = []): string | null {
+  if (artifact.stopped || artifact.exitCode === 0) return null
+  if (admitsFailure(predicates) || readsAsFailure(claimText)) return null
+  return (
+    'cites `' + artifact.command + '`, which exited ' + artifact.exitCode + ', and nothing in the claim says it failed - a failing run ' +
+    'backs only a claim that says so. If the failure is what the claim rests on, say it in the tag: `exit=' + artifact.exitCode + '`'
+  )
 }
 
 // What a claim says it is about, by the words it uses for a kind of run. Each
@@ -622,6 +655,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     claimText: string,
     inline: boolean | undefined,
     commit: string | undefined,
+    predicates: Predicate[] = [],
   ): Omit<CodedFinding, 'claim'> | null => {
     const ownFix = fixes.ready(artifact, inline) ?? 'mark the claim UNVERIFIED'
     const kind = kindProblem(artifact, claimText)
@@ -640,6 +674,10 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     }
     const outcome = outcomeProblem(artifact, claimText, opts)
     if (outcome) return { level: 'error', code: 'claims/outcome-mismatch', detail: outcome, fix: ownFix }
+    // The fix keeps the sentence and offers the run's own predicates: what
+    // the claim says may be exactly right, and only unsaid about the exit.
+    const failing = failingRunProblem(artifact, claimText, predicates)
+    if (failing) return { level: 'error', code: 'claims/failing-run', detail: failing, fix: fixes.grounding(artifact, inline) ?? 'mark the claim UNVERIFIED' }
     const count = countProblem(artifact, claimText)
     if (count) return { level: 'error', code: 'claims/count-mismatch', detail: count.detail, expected: count.expected, observed: count.observed, fix: ownFix }
     return null
@@ -748,7 +786,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
         })
         return
       }
-      const mismatch = citedProblem(artifact, claimText, claim.inline, opts.expectedHeadSha)
+      const mismatch = citedProblem(artifact, claimText, claim.inline, opts.expectedHeadSha, parsed?.predicates)
       if (mismatch) {
         findings.push({ ...mismatch, detail: 'VERIFIED[' + claim.gradeId + '] ' + mismatch.detail, claim: claim.text, ...where })
         return
@@ -1001,6 +1039,7 @@ const DOWNGRADED = new Set<string>([
   'claims/bad-predicate',
   'claims/kind-mismatch',
   'claims/outcome-mismatch',
+  'claims/failing-run',
   'claims/count-mismatch',
   'claims/predicate-unmet',
   'claims/no-nearby-artifact',
