@@ -228,6 +228,18 @@ are pinned to documentation "read 2026-10-17" and fixtures written from the
 schema, as the README says plainly. Nothing brings that date back up for
 review, and nothing has yet run against a live host.
 
+**C6. The gatherer writes no Access Receipt.** *Reproduced; found
+2026-11-14, while checking this document's own item 1.6.* The tour says
+`pnpm evidence` "writes evidence.local.md, receipt included" and that
+`check:receipt evidence.local.md` is then clean. A gathered bundle carries a
+`- Head:` line and a Sample integrity table, and no receipt: `receipt` on it
+fails on six missing fields. So the receipt - two 40-character SHAs among
+them - is typed by hand, which makes it the most expensive honest step in the
+layer, and explains A3 better than anything said there: a review omits the
+receipt because writing one is all cost. The first version of this roadmap
+proposed making its absence `unverifiable` on the grounds that "the gatherer
+already writes the receipt, so keeping it is free". It does not.
+
 ### D. Reach and robustness
 
 **D1. The gate is absent exactly where sessions start fresh.** *Observed in
@@ -241,11 +253,15 @@ consumer wired by `init claude`, the hook command is
 plugin's launcher explains itself. Ephemeral sessions are where an unreviewed
 agent summary is most likely to be the only thing a person reads.
 
-**D2. Windows is written for and never run.** *Read.* There is process-tree
-killing through `taskkill`, `cmd.exe` quoting and a separate Codex command for
-Windows; every CI job is `ubuntu-latest`, and the suite's two skipped tests
-are the two that exercise the Windows quoting. `mise.toml` pins Node 26.8.1
-for development; CI tests 22 and 24.
+**D2. Windows is written for, and no CI runs it.** *Read; corrected
+2026-11-14.* There is process-tree killing through `taskkill`, `cmd.exe`
+quoting and a separate Codex command for Windows; every CI job is
+`ubuntu-latest`. The first version of this finding said Windows was "never
+run", from the two tests Linux skips. That was wrong: the maintainer develops
+on Windows and the suite passes there (588 passed, 6 skipped, at 0.18.0). What
+is true is narrower - nothing a pull request triggers runs it, so a Windows
+break is found on one machine or not at all. `mise.toml` pins Node 26.8.1 for
+development; CI tests 22 and 24.
 
 **D3. Captured output is published as it came.** *Read.* A step's output goes
 verbatim into the bundle, from there into a CI artifact and, with `fold`, into
@@ -270,87 +286,154 @@ the file is the one CI's gather job produced is the workflow author's word.
 
 ## Roadmap
 
-Ordered by what most improves the declared goal per unit of work. One
-ordering principle is taken from the tour itself: *a gate switched on before
-its report is clean teaches people to route around it.* So each tightening
-comes after the measurement that shows its cost and the change that makes the
-honest path cheap - record first, cheapen second, enforce third.
+*Revised 2026-11-14, after Phase 0 shipped and the roadmap was itself
+reviewed. What that review found, and what changed here because of it:*
 
-Each item is done when a fixture that fails on purpose exists for it - the
-project's own standard.
+- *It had no measure of outcome - every "done when" was a fixture. There is
+  now one number, below, and a stated way to collect it.*
+- *It contradicted itself: Phase 0 was headed "no semantics change" and three
+  of its items can turn a clean run red; item 1.8 was done when the journal
+  was non-empty, while the checks that would fill it were scheduled a phase
+  later; item 1.6 rested on a receipt the gatherer does not write (C6).*
+- *One finding was overstated (D2, corrected above).*
+- *Its own standard - a fixture that fails on purpose - stopped at Phase 1.
+  Phase 2 now has it; Phase 3 is labelled as what it is.*
+- *It only added. Each phase now carries something to remove, and the public
+  surface is pinned so that growing it is a decision.*
+- *It did not say which items break a consumer. They are marked, and there is
+  a compatibility rule.*
+- *Two items were under-sized and are split: prose detection (a decision
+  first, and observation before any block) and "run the loop here" (blocked
+  on a decision this document cannot make).*
+- *Secret redaction was ranked below correctness fixes. It is the one item
+  that can do harm outside the tool, and has moved up.*
 
-### Phase 0 - make the record true (0.18.x; days)
+One ordering principle is taken from the tour itself: *a gate switched on
+before its report is clean teaches people to route around it.* So each
+tightening comes after the measurement that shows its cost and the change
+that makes the honest path cheap - record first, cheapen second, enforce
+third.
 
-No semantics change. Everything here either removes a false statement or
-makes an existing silence visible.
+### What this is measured by
 
-*Status, 2026-11-09: implemented for 0.19.0 - see
-[the release notes](../releases/v0.19.0.md). Two departures from the table:
-0.9 keeps bare `VERIFIED` a warning and puts the date in code with a test
-that fails from it, rather than naming a version, since which release comes
-after 2026-12-06 is not known yet; and 0.2's action summary comes from
-`--format github`, which the action already runs, rather than from
-`action/run.mjs`.*
+**Of the stops the gate saw, how many checked something** -
+`journal report --include-gate`, since 0.19.0. Today, for a session that
+reports in prose, it is 0. Every item in Phase 1 should move it or make the
+honest path that moves it cheaper; an item that does neither needs a reason
+to be here.
+
+It is a number per checkout: the gate's journal lives in `.git`, nothing
+reports it anywhere, and nothing will. So it is collected by reading it - in
+this repository's own checkouts first, which is one more reason for item
+1.10. Two decisions below wait on it, with the thresholds written down now
+rather than when they are convenient:
+
+- **Prose detection may block (1.5b)** once 30 stops journalled as
+  `unclaimed-result` have been tagged by hand (`journal tag <id> real|false
+  --gate`) and at most 3 are false.
+- **DEC-0010's C1** is worth building if more than 1 in 10 blocks is on a
+  review the turn did not touch.
+
+### Compatibility
+
+From 0.20.0, [`docs/compatibility.md`](../compatibility.md): what a consumer
+may build on, and what a release must say when it changes it. In the tables
+below, **⚠** marks an item that can turn a run that passed into one that
+fails, or changes an artifact id; each ships in a minor release, with what to
+do about it first in the notes.
+
+### Phase 0 - make the record true (0.19.0) - done
+
+Shipped in [0.19.0](../releases/v0.19.0.md). Its heading here said "no
+semantics change", which was not true of three items: `claims --strict` with
+no seal or bundle (0.3), a receipt's diff count (0.4) and a proposed record
+with no `decide_by` (0.10) can each fail a run that passed. The release notes
+say so; this document did not. Two departures from the table: 0.9 keeps bare
+`VERIFIED` a warning and puts the date in code with a test that fails from
+it, since which release follows 2026-12-06 is not known; and 0.2's action
+summary comes from `--format github`, which the action already runs.
+
+It also took the reason codes from 79 to 86 and the package's exports from
+128 to 135 - the opposite direction from D5. Item 1.0 is the answer to that.
+
+| # | Item | From |
+|---|---|---|
+| 0.1 | Every stop journalled; "N of M stops checked something" | A1 |
+| 0.2 | Grade mix in every `claims` report; JSON schema 6 | A2 |
+| 0.3 | `claims/provenance-unchecked` ⚠ under `--strict` | A4 |
+| 0.4 | `receipt/diff-count-mismatch` ⚠ | C1 |
+| 0.5 | Zero-config plan uses the project's scripts, or skips them | B3 |
+| 0.6 | Length-aware fences; the seal holds only produced artifacts | B5 |
+| 0.7 | `governance/no-manifest` instead of a crash | C3 |
+| 0.8 | Links checked in every document; stale statements fixed | C4 |
+| 0.9 | Bare `VERIFIED` cutover as a dated constant and test | C4 |
+| 0.10 | `decide_by` for proposed records ⚠ | C4 |
+
+### Phase 1 - close the free exits (0.20 - 0.21)
+
+In the order they should land. *Status* is as of this revision.
+
+| # | Item | From | Size | Done when | Status |
+|---|---|---|---|---|---|
+| 1.0 | **A compatibility rule, and the exports pinned.** `docs/compatibility.md` says what is stable. The package's export list is a fixture a test holds it to, so an addition is a line someone wrote on purpose. | D5 | S | Adding an export without the fixture fails the suite. | 0.20.0 |
+| 1.1 | **The step says what an unrecognised command is.** ⚠ ids. The gatherer knows which step it ran; when `classifyCommand` does not recognise the command, the step's kind is the artifact's - `tests-...` for a test step running `npm run check`. A reader takes the kind from the id. A command it does recognise keeps its kind, and so its id: a project whose lint step is its typechecker still gets one artifact. | B2 | M | The B2 probe: a `tests-` id, the test rules apply, freshness blocks. | 0.20.0 |
+| 1.2 | **A failing run backs only a claim that says it failed.** ⚠ A non-zero exit needs a predicate that admits it (`exit=1`, `exit!=0`, `failed>=1`) or wording that does; otherwise `claims/failing-run`, and the fix is the grounding line with the run's own predicates - the sentence stays. The skeleton already writes them. | B1 | M | The B1 probe is an error; the skeleton's failure claim passes; "the new test reproduces the bug" passes with `exit=1`. | 0.20.0 |
+| 1.3 | **The gatherer writes the Access Receipt.** Branch, head, target, merge-base and the diff's size, read from git, in the bundle beside the Sample integrity table. `Files opened` starts at 0, which is true until the writer says otherwise. | C6 | S | `receipt` on a fresh bundle reports no error. | 0.20.0 |
+| 1.4 | **A review with claims and no receipt** is `receipt/absent`, `unverifiable`, at the gate - only now that 1.3 makes keeping one free. | A3 | S | Fixture: receipt removed, the gate says so and offers the bundle's. | 0.20.0 |
+| 1.5a | **Result language outside a claim line - observed.** Decision first: [DEC-0014](../decisions/0014-results-stated-as-prose.md), proposed. A sentence that names a kind of run and reads as its outcome, with no `**Claim**:`, is `claims/unclaimed-result`: a warning in a review file, and in a final reply a journal entry - nothing said to the agent, nothing blocked. This reverses a stated limit ("prose is never graded"), on English word lists, so it ships as measurement. | A1, A2 | M | The A1 probe is journalled `unclaimed-result`; a corpus of ordinary prose stays silent. | 0.20.0 |
+| 1.5b | **... and acted on.** ⚠ A notice with the ready claims, then one block per episode. Not before DEC-0014 is accepted and the threshold above is met. | A1 | S | DEC-0014's invariants. | waits on data |
+| 1.6 | **Captured output is redacted before it is hashed.** The values of secret-shaped environment variables are masked in every block; a `redact` option for the rest. | D3 | M | A step that prints a token in its environment leaves no trace of it in the bundle or the seal. | 0.20.0 |
+| 1.7 | **A `fix:` commit says what missed it.** `check:ladder` warns on a `fix:` with no `Missed-By:`; `Missed-By: none` is the explicit answer for a bug no review let through, and is not journalled as a miss. | C2 | S | A `fix:` commit with no trailer warns. | 0.20.0 |
+| 1.8 | **Decide DEC-0010.** This document recommends accepting C3 and C4: a citation from an earlier kept run that saw the same files passes, and `restamp` moves a review onto the current run in one command. They are what makes the honest path cheap after the first edit. The decision is the maintainer's, by 2026-12-31. | DEC-0010 | L | DEC-0010's candidate invariants, each with a test. | not started |
+| 1.9 | **The gate on a fresh checkout.** One launcher for `init` and the plugin that says "inactive, run X" instead of failing with module-not-found. Needs a design: `init` would have to write a launcher file into the project. | D1 | M | A fresh clone's first session is told the gate is inactive, and how to change that. | not started |
+| 1.10 | **Run the loop here.** Gather in CI on every pull request and hold a review to the bundle - and journal what `claims` and `receipt` find there, which nothing does today. Blocked on a decision: who writes the review. A model step needs a key and a budget; a person needs a habit. | C2 | M | `journal:report` on `master` is non-empty. | needs a decision |
+| 1.11 | **Remove:** on the first release after 2026-12-06, bare `VERIFIED` becomes an error and the proximity mode behind it is deleted - `ARTIFACT_WINDOW`, positional consumption, the id-less `artifact` fence. | C4 | S | The dated test is replaced by one expecting the error. | dated |
+
+### Phase 2 - widen what can be claimed
+
+Not scheduled. Each is done when its fixture exists; none starts before 1.8
+and 1.10 are settled.
 
 | # | Item | From | Size | Done when |
 |---|---|---|---|---|
-| 0.1 | Journal every stop, including the ones with nothing to check, with why (`no-claims`, `no-changed-review`). `journal report --include-gate` prints stops checked out of stops seen. | A1 | S | The appendix's A1 probe leaves one journal entry, and the report shows 0 of 1 checked. |
-| 0.2 | Say the grade mix in every `claims` summary and in the JSON report (`verified`, `documented`, `inferred`, `unverified`, counts). The action's job summary leads with it. | A2 | S | The all-`UNVERIFIED` probe prints "0 of 3 verified". Exit codes unchanged. |
-| 0.3 | One `unverifiable` finding, new code `claims/provenance-unchecked`, when a review cites artifacts and neither `--seal` nor `--bundle` was given. | A4 | S | The A4 probe reports `1 unverifiable` and fails under `--strict`. |
-| 0.4 | `receipt`: compare `Files in diff` with the diff git computes; new code `receipt/diff-count-mismatch`. | C1 | S | The C1 probe is an error naming both numbers. |
-| 0.5 | Zero-config plan: use the project's package manager; skip a step whose script does not exist, with that reason in the bundle. | B3 | S | The B3 probe writes "Not run: no `lint` script" and suggests no lint claim. |
-| 0.6 | Artifact fences: write a fence longer than any backtick run in the body (as `formatCodeSpan` already does for spans), read fences by CommonMark length. Seal only the ids the gatherer produced. | B5 | M | Both B5 probes: the block round-trips; the printed block is not in the seal. |
-| 0.7 | `governance` without a `package.json`: `unverifiable`, not a crash. | C3 | S | The probe reports a finding and prints no stack trace. |
-| 0.8 | Docs: fix the four links, "six commands", "three outcomes", "one release", the plugin description, the README's gate sentence, the receipt's claim. Extend `check:docs` links and command count to `docs/**`. | C1, C4 | S | `check:docs` fails on the current tree before the fixes. |
-| 0.9 | Decide bare `VERIFIED` before 2026-12-06: an error from a named version, with the date in the code rather than in an archived record; the finding stops citing a path consumers do not have. | C4 | S | A test pinned to the date; the message names the version. |
-| 0.10 | A `proposed` decision record needs a `decide_by` date, held like `review_by`. Set one on DEC-0010. | C4 | S | A proposed record without one is an error under a new code. |
-
-### Phase 1 - close the free exits (0.19 - 0.20; two to three weeks)
-
-| # | Item | From | Size | Done when |
-|---|---|---|---|---|
-| 1.1 | **Declared kind.** The gatherer records each artifact's step, and the kind comes from the step - `tests-...` for the test step whatever its command. `classifyCommand` stays as the fallback for blocks built by hand. | B2 | M | The B2 probe: `npm run check` as the test step yields a `tests-` id, the test rules apply, freshness blocks. |
-| 1.2 | **A failing run backs only a claim that says it failed.** Non-zero exit or `failed>0` requires a predicate that admits it (`exit!=0`, `failed>=1`) or failure wording; otherwise new code `claims/failing-run`. The skeleton already writes those predicates, so the honest path costs nothing. | B1 | M | The B1 probe is an error; the skeleton's own failure claim still passes. |
-| 1.3 | **Decide DEC-0010: accept C3 and C4.** A citation from an earlier kept run that saw the same files passes; `restamp` moves a review onto the current run in one command. These are what make the honest path cheap *after the first edit* - the precondition for 1.4. | DEC-0010 | L | DEC-0010's own candidate invariants, each with a test. |
-| 1.4 | **Result language outside a claim line.** In the final message, and in a changed review's prose: a sentence that names a kind of run (`kindsNamed`) and reads as its outcome (`readsAsSuccess`, a stated count) with no `**Claim**:` is new code `claims/unclaimed-result`. The reason hands over the ready claims, so the fix is a paste. Ships as a notice plus journal entry; becomes one block per episode once 0.1's numbers show how often it fires and how often it is wrong. Reuses the existing word lists - no new judgement. Record the decision as the missing "C7". | A1, A2 | M | The A1 probe is journalled as `unclaimed-result`; a fixture of ordinary prose ("this adds 3 tests") stays silent. |
-| 1.5 | Unify the prose rule's word list with `SUCCESS_VERB_RE`. | A2 | S | "Tests pass." in review prose is found. |
-| 1.6 | A changed review with claims and no Access Receipt: `unverifiable` in the gate, and the action notes it. The gatherer already writes the receipt, so keeping it is free. | A3 | S | Fixture: receipt removed, gate says so. |
-| 1.7 | The gate on a fresh checkout: one launcher for `init` and the plugin that says "inactive, run X" instead of failing; this repository's session-start hook builds when `dist/` is missing. | D1 | S | A fresh clone's first session reports the gate active. |
-| 1.8 | **Run the loop here.** Every pull request to this repository: gather in CI, a review file held to the bundle with the action, findings journalled. `check:ladder` asks a `fix:` commit for `Missed-By:` or an explicit `Missed-By: none`. | C2 | M | `journal:report` on `master` is non-empty; a `fix:` commit with neither trailer warns. |
-
-### Phase 2 - widen what can be claimed (0.21 onward; a month or more)
-
-| # | Item | From | Size |
-|---|---|---|---|
-| 2.1 | Custom steps: `steps: [{ name, kind, command, summarise }]`, sealed like the built-in four. Work summaries for more kinds through adapters - typecheck error counts, coverage percentages, a project's own keys - with predicates reading whatever the declared kind carries. | B4 | L |
-| 2.2 | `evidence-layer gather`, driven by an `evidenceLayer` block in `package.json` or a small config file: commands as strings, report readers by name. The library call stays for projects that need code. `init` scaffolds the config, the script entry and a CI workflow; `doctor` says what is missing. | D4 | L |
-| 2.3 | An invariant names its test - a file or a tagged title - and governance holds it to the suite's own report: that test ran and passed. Reachability skips comments, flags `if: false` and manual-only triggers, and reads Makefile, justfile and tox targets where there is no `package.json`. | C3 | L |
-| 2.4 | A read log from the host: record the files the session opened (a post-tool-use hook) and hold a receipt's cited files to it. This is the version of "I read the code" that can actually be wrong. | C1 | M |
-| 2.5 | Journal `claims` and `receipt` findings from CI runs, or delete the sentences that say they are. | C2 | M |
-| 2.6 | A Windows CI leg for the suite; Node 26 in the matrix. | D2 | S |
-| 2.7 | Redaction before hashing: a `redact` option and a default that masks the values of secret-shaped environment variables. | D3 | M |
-| 2.8 | Host protocols get a `review_by`, held by `check:docs`, and a script that records fixtures from a live session per host release. | C5 | M |
+| 2.1 | Custom steps - `steps: [{ name, kind, command, summarise }]` - sealed like the built-in four, and work summaries for more kinds (typecheck error counts, coverage). | B4 | L | A build step's block is sealed and a claim cites it with a predicate. |
+| 2.2 | `evidence-layer gather`, driven by an `evidenceLayer` block: commands as strings, report readers by name. `init` scaffolds it. | D4 | L | A Python fixture gathers with no `.mjs` file. |
+| 2.3 | An invariant names its test, and governance holds it to the suite's report. Reachability skips comments and flags `if: false`. | C3 | L | The C3 probe is not `reached`; deleting an invariant's test fails governance. |
+| 2.4 | A `path:line` citation may carry a quote, checked against that line. With a read log from the host where one exists. | C1 | M | A citation quoting the wrong line fails. |
+| 2.5 | Citations with paths the pattern does not read today - `app/[id]/page.tsx`, `Makefile`, an upper-case extension. | C1 | S | Each is found and checked. |
+| 2.6 | A Windows CI leg; Node 26 in the matrix. | D2 | S | The four Windows-only tests run on a pull request. |
+| 2.7 | Host protocols get a `review_by`, and fixtures recorded from a live session. | C5 | M | `check:docs` fails when the date passes. |
+| 2.8 | **Remove:** `SkeletonArtifact.timedOut`, deprecated since 0.4.0; the colon-named command aliases. | D5 | S | Neither is in the export fixture or the CLI. |
 
 ### Phase 3 - towards 1.0
 
-- Declare the stable surface: the CLI and its exit codes, the reason codes,
-  the artifact grammar, the JSON report with a published schema and golden
-  fixtures, the seal layout. Mark the rest of the 128 exports internal. (D5)
-- Bind a bundle to the run that produced it with the platform's own
-  attestation (GitHub artifact attestations), verified by the action - rung
-  3, not a signing stack of this package's own. (D6)
+A direction, not a plan - nothing here is sized or has a fixture yet.
+
+- Shrink the stable surface in `docs/compatibility.md` to what a consumer
+  needs, and mark the rest internal. (D5)
+- A published JSON Schema for the report, with golden fixtures.
+- A bundle bound to the run that produced it by the platform's own
+  attestation, verified by the action. (D6)
 - The adversarial fixture corpus from the strategy document, grown from the
   appendix here.
-- A first case study written from the journal 1.8 fills.
-- Further hosts, each under the existing rule: an adapter and recorded inputs
-  first.
+- A first case study written from the journal 1.10 fills.
+
+### Not covered
+
+This roadmap follows what the review read. The process runner (`proc.ts`),
+the Codex adapter, the GitHub and Azure output escaping, `action/run.mjs`,
+the release script and `check-ladder` were not reviewed in depth, so they
+have no items - which is the absence of a review, not of problems. And it
+has no evidence about users: it was derived from the code. If the binding
+constraint is that few projects adopt the layer, 2.2 belongs ahead of most
+of Phase 1; nothing measured here says which is true.
 
 ## On the two plans already in the repository
 
 **DEC-0010** is right about the problem and should be decided rather than
-left open: C3 and C4 belong in Phase 1 (item 1.3), C5 after them, and C1 once
-0.1 shows how often an old review actually blocks an unrelated turn. Its
-deferred "C7" is item 1.4.
+left open: C3 and C4 belong in Phase 1 (item 1.8), C5 after them, and C1 once
+the journal shows how often an old review actually blocks an unrelated turn.
+Its deferred "C7" is item 1.5, and now a record of its own, DEC-0014.
 
 **The development strategy** looks outward - a protocol, schemas, an adapter
 SDK, attestations, bridges to neighbouring projects. Most of it is sound, and

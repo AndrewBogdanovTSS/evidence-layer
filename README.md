@@ -704,7 +704,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **613 tests** across **42 files**, and that sentence is checked
+The suite is **614 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
@@ -776,6 +776,8 @@ wrong during the first release of this package.
   invariants each record claims are enforced
 - [`docs/governance-exceptions.md`](docs/governance-exceptions.md) - how an
   exception gets an expiry date instead of becoming permanent
+- [`docs/compatibility.md`](docs/compatibility.md) - what a project may build
+  on before 1.0, and what a release says when it changes it
 - [`demo/`](demo) - the five demos the talk runs, in slide order, with the
   receipt fixtures and the stale-baseline refs they need
 - [`examples/plain-node-project/`](examples/plain-node-project) - a project set
