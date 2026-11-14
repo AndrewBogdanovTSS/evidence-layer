@@ -129,14 +129,19 @@ describe('evidence-layer init codex', () => {
 
   it('writes a command that runs as Codex runs it - `sh -lc`, from a subdirectory of the project', () => {
     const dir = tempRepo('el-codex-sh-', { 'src/a.js': 'a\n' })
+    spawnSync(process.execPath, [BIN, 'init', 'codex', '--repo', dir], { encoding: 'utf8' })
+    const hooks = JSON.parse(readFileSync(join(dir, '.codex', 'hooks.json'), 'utf8'))
+    const command = hooks.hooks.SessionStart[0].hooks[0].command as string
+    expect(command).toBe(CODEX_LAUNCHER.command + ' session-start --host=codex')
+    const asCodex = () =>
+      spawnSync('sh', ['-lc', command], { cwd: join(dir, 'src'), input: fixture('session-start.json', { CWD: join(dir, 'src') }), encoding: 'utf8' })
+    // Nothing installed yet: said, in the protocol, rather than "Cannot find module".
+    const bare = asCodex()
+    expect(bare.status).toBe(0)
+    expect(JSON.parse(bare.stdout).hookSpecificOutput.additionalContext).toContain('inactive')
     mkdirSync(join(dir, 'node_modules'))
     symlinkSync(root, join(dir, 'node_modules', 'evidence-layer'))
-    const command = CODEX_LAUNCHER.command + ' session-start'
-    const res = spawnSync('sh', ['-lc', command], {
-      cwd: join(dir, 'src'),
-      input: fixture('session-start.json', { CWD: join(dir, 'src') }),
-      encoding: 'utf8',
-    })
+    const res = asCodex()
     expect(res.status).toBe(0)
     expect(JSON.parse(res.stdout).hookSpecificOutput.additionalContext).toContain('**Claim**')
   })

@@ -373,11 +373,11 @@ It also took the reason codes from 79 to 86 and the package's exports from
 
 In the order they should land. *Status* is as of this revision.
 
-*2026-11-14: 1.0 to 1.7 are implemented, for
+*2026-11-14: 1.0 to 1.7 and 1.9 are implemented, for
 [0.20.0](../releases/v0.20.0.md). The exports went from 135 to 145 doing it -
 ten names, each a line added to the fixture on purpose, which is what 1.0
 set out to make true; it does not make the surface smaller, and nothing in
-this phase did. 1.8 to 1.10 are not started, and each waits on a decision
+this phase did. 1.8 and 1.10 are not started, and each waits on a decision
 that is the maintainer's.*
 
 | # | Item | From | Size | Done when | Status |
@@ -392,7 +392,7 @@ that is the maintainer's.*
 | 1.6 | **Captured output is redacted before it is hashed.** The values of secret-shaped environment variables are masked in every block; a `redact` option for the rest. | D3 | M | A step that prints a token in its environment leaves no trace of it in the bundle or the seal. | 0.20.0 |
 | 1.7 | **A `fix:` commit says what missed it.** `check:ladder` warns on a `fix:` with no `Missed-By:`; `Missed-By: none` is the explicit answer for a bug no review let through, and is not journalled as a miss. | C2 | S | A `fix:` commit with no trailer warns. | 0.20.0 |
 | 1.8 | **Decide DEC-0010.** This document recommends accepting C3 and C4: a citation from an earlier kept run that saw the same files passes, and `restamp` moves a review onto the current run in one command. They are what makes the honest path cheap after the first edit. The decision is the maintainer's, by 2026-12-31. | DEC-0010 | L | DEC-0010's candidate invariants, each with a test. | not started |
-| 1.9 | **The gate on a fresh checkout.** One launcher for `init` and the plugin that says "inactive, run X" instead of failing with module-not-found. Needs a design: `init` would have to write a launcher file into the project. | D1 | M | A fresh clone's first session is told the gate is inactive, and how to change that. | not started |
+| 1.9 | **The gate on a fresh checkout.** One launcher for `init` and the plugin that says "inactive, run X" instead of failing with module-not-found. The design: `init` writes the plugin's launcher into the project, beside the configuration, carried in the build as text. | D1 | M | A fresh clone's first session is told the gate is inactive, and how to change that. | 0.20.0 - except Codex on Windows |
 | 1.10 | **Run the loop here.** Gather in CI on every pull request and hold a review to the bundle - and journal what `claims` and `receipt` find there, which nothing does today. Blocked on a decision: who writes the review. A model step needs a key and a budget; a person needs a habit. | C2 | M | `journal:report` on `master` is non-empty. | needs a decision |
 | 1.11 | **Remove:** on the first release after 2026-12-06, bare `VERIFIED` becomes an error and the proximity mode behind it is deleted - `ARTIFACT_WINDOW`, positional consumption, the id-less `artifact` fence. | C4 | S | The dated test is replaced by one expecting the error. | dated |
 

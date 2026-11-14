@@ -37,7 +37,12 @@ The runtime gate runs here too: `.claude/settings.json` (written by
 `evidence-layer init claude`, which notices it is in its own repository) runs
 the plugin's launcher, which runs this checkout's `dist/`. So the gate is the
 code of the last `pnpm build`, not of the working tree, and a fresh clone says
-the gate is inactive until it is built.
+the gate is inactive until it is built. That launcher,
+`plugins/evidence-layer/scripts/run-hook.mjs`, is also what `init` writes into
+a project: the build carries it as text, and the two copies under
+`examples/plain-node-project/` are held to it byte for byte by
+`test/hook.test.ts`. Change it, then run `init claude` and `init codex` in the
+example again.
 
 `pnpm check:docs` (part of `check:all`) compares the README's sentence "The
 suite is **N tests** across **M files**" with the real suite. When you add or

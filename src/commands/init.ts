@@ -15,13 +15,24 @@
  * an upgrade, or with different flags - leaves one entry per event, and the
  * same input gives the same file byte for byte.
  *
+ * The hooks do not run the package straight out of `node_modules`. They run
+ * a launcher this command writes beside the configuration
+ * (`evidence-layer-hook.mjs` - the file the Claude Code plugin runs, carried
+ * in the build as text), which finds the installed package and, when there
+ * is none, says so through the hook protocol. Before 0.20.0 the command was
+ * `node .../node_modules/evidence-layer/dist/bin/evidence-layer.mjs hook ...`,
+ * and on a fresh clone - every cloud or CI agent session before its install
+ * step - that was "Cannot find module" and exit 1: a broken hook to the
+ * host, an ungated session to everyone else, and nothing said to either.
+ *
  * Claude Code gives a hook `$CLAUDE_PROJECT_DIR`; Codex gives none, runs the
  * command through `$SHELL -lc` (`cmd.exe /C` on Windows) in the session's
  * working directory, and its documentation resolves the repository with
- * `git rev-parse --show-toplevel` - so that is what the Codex command does.
- * `cmd.exe` has no `$(...)`, so the Windows form (`commandWindows`) uses
- * `npx --no-install`, which finds the installed package from any directory
- * inside the project at the cost of a slower start.
+ * `git rev-parse --show-toplevel` - so that is how the Codex command finds
+ * the launcher. `cmd.exe` has no `$(...)`, so the Windows form
+ * (`commandWindows`) still uses `npx --no-install`, which finds the installed
+ * package from any directory inside the project at the cost of a slower
+ * start - and, with nothing installed, still fails rather than explains.
  *
  * Run in this package's own repository, it wires this checkout's build
  * instead of `node_modules/evidence-layer`, which a package never has of
@@ -30,6 +41,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { EXIT, help, parseArgs, usage } from '../core/cli'
 
 const HELP = `
@@ -54,20 +66,40 @@ type HookEntry = { type: string; command: string; timeout?: number; [key: string
 type MatcherGroup = { matcher?: string; hooks: HookEntry[]; [key: string]: unknown }
 type Settings = { hooks?: Record<string, MatcherGroup[]>; [key: string]: unknown }
 
-/** An entry is this package's when its command runs this package's hook for a host - nothing looser. */
+/**
+ * An entry is this package's when its command runs this package's hook for a
+ * host - nothing looser: the launcher `init` writes, the plugin's, or the
+ * package's own `hook` command, which is what `init` wrote before 0.20.0 and
+ * still writes for Codex on Windows.
+ */
 export const OWNED_COMMAND_RE =
-  /(?:evidence-layer(?:\.mjs)?["']?\s+hook\s+(?:claude|codex)|evidence-layer\/scripts\/run-hook\.mjs["']?)\s+(?:session-start|pre-tool-use|stop)\b/
+  /(?:evidence-layer(?:\.mjs)?["']?\s+hook\s+(?:claude|codex)|evidence-layer\/scripts\/run-hook\.mjs["']?|evidence-layer-hook\.mjs["']?)\s+(?:session-start|pre-tool-use|stop)\b/
+
+/** The launcher's file name, beside the configuration `init` writes: `.claude/` or `.codex/`. */
+export const HOOK_FILE = 'evidence-layer-hook.mjs'
+
+declare const __EVIDENCE_LAYER_LAUNCHER__: string | undefined
+
+/**
+ * The launcher's text: substituted at build time from the file the plugin
+ * runs (see `tsdown.config.ts`), and read from that file when this runs from
+ * source, where nothing was substituted.
+ */
+export function launcherSource(): string {
+  if (typeof __EVIDENCE_LAYER_LAUNCHER__ === 'string') return __EVIDENCE_LAYER_LAUNCHER__
+  return readFileSync(fileURLToPath(new URL('../../plugins/evidence-layer/scripts/run-hook.mjs', import.meta.url)), 'utf8')
+}
 
 /** What `--review` may hold: paths a shell has no reason to touch - no spaces, quotes, `$`, backticks or separators. */
 export const REVIEW_PATHS_RE = /^[\w./,@+-]+$/
 
 /** Everything in the hook command before the event name. */
-export const LAUNCHER = 'node "$CLAUDE_PROJECT_DIR/node_modules/evidence-layer/dist/bin/evidence-layer.mjs" hook claude'
+export const LAUNCHER = 'node "$CLAUDE_PROJECT_DIR/.claude/' + HOOK_FILE + '"'
 export const SELF_LAUNCHER = 'node "$CLAUDE_PROJECT_DIR/plugins/evidence-layer/scripts/run-hook.mjs"'
 
 /** The Codex hook command, POSIX shell and `cmd.exe` forms, before the event name. */
 export const CODEX_LAUNCHER = {
-  command: 'node "$(git rev-parse --show-toplevel)/node_modules/evidence-layer/dist/bin/evidence-layer.mjs" hook codex',
+  command: 'node "$(git rev-parse --show-toplevel)/.codex/' + HOOK_FILE + '"',
   commandWindows: 'npx --no-install evidence-layer hook codex',
 }
 export const CODEX_SELF_LAUNCHER = {
@@ -126,9 +158,12 @@ export function mergeClaudeSettings(settings: Settings, flags: string[], launche
 
 /** Merges the gate's hooks into a Codex `hooks.json`, returning a new object. */
 export function mergeCodexHooks(settings: Settings, flags: string[], launcher = CODEX_LAUNCHER): Settings {
+  // The launcher is told which host it speaks for; a command that already
+  // names one - this repository's own, the Windows form - is not.
+  const host = launcher.command.endsWith(HOOK_FILE + '"') ? ['--host=codex'] : []
   return mergeHooks(settings, CODEX_EVENTS, (e) => ({
     type: 'command',
-    command: [launcher.command, e.arg, ...flags].join(' '),
+    command: [launcher.command, e.arg, ...host, ...flags].join(' '),
     commandWindows: [launcher.commandWindows, e.arg, ...flags].join(' '),
     timeout: e.timeout,
   }))
@@ -175,18 +210,22 @@ export function run(argv: string[]): void {
       ? mergeClaudeSettings(settings, flags, own ? SELF_LAUNCHER : LAUNCHER)
       : mergeCodexHooks(settings, flags, own ? CODEX_SELF_LAUNCHER : CODEX_LAUNCHER)
   const text = JSON.stringify(merged, null, 2) + '\n'
+  // This package's own repository runs the plugin's copy, where it already is.
+  const hookFile = own ? null : join(dir, HOOK_FILE)
   if (args['dry-run'] === true) {
-    console.log('would write ' + file + ':\n')
+    console.log('would write ' + file + (hookFile ? ', and the launcher it runs to ' + hookFile : '') + ':\n')
     console.log(text)
     process.exit(EXIT.ok)
   }
   mkdirSync(dir, { recursive: true })
   writeFileSync(file, text, 'utf8')
+  if (hookFile) writeFileSync(hookFile, launcherSource(), 'utf8')
   console.log('wrote ' + file + ': SessionStart, PreToolUse and Stop now run evidence-layer\'s gate')
+  if (hookFile) console.log('wrote ' + hookFile + ': the launcher those hooks run - commit it with the configuration')
   console.log(
     own
       ? 'this is evidence-layer\'s own repository: the gate runs the dist/ of the last pnpm build'
-      : 'it needs evidence-layer installed in this project (npm install --save-dev evidence-layer)',
+      : 'it needs evidence-layer installed in this project (npm install --save-dev evidence-layer); until it is, a session is told the gate is inactive',
   )
   if (host === 'codex') {
     // Codex skips a project hook nobody has reviewed, and re-asks whenever its

@@ -63,7 +63,11 @@ exit 0 = clean, 1 = at least one error, 2 = bad usage
 `
 
 const SOURCE = /\.(?:[cm]?js|[cm]?ts)$/
-const IGNORED = /(?:^|\/)(?:node_modules|dist)\//
+// `evidence-layer-hook.mjs` is the launcher `init` writes into a project: a
+// copy by construction, of `plugins/evidence-layer/scripts/run-hook.mjs`, and
+// `test/hook.test.ts` holds every copy in this repository to that file byte
+// for byte - which is a stronger check than "not a renamed clone".
+const IGNORED = /(?:^|\/)(?:node_modules|dist)\/|(?:^|\/)evidence-layer-hook\.mjs$/
 /** Below this, two functions agreeing says more about the language than about copying. */
 const MIN_TOKENS = 12
 

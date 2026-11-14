@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/node_modules/evidence-layer/dist/bin/evidence-layer.mjs\" hook codex session-start",
+            "command": "node \"$(git rev-parse --show-toplevel)/.codex/evidence-layer-hook.mjs\" session-start --host=codex",
             "commandWindows": "npx --no-install evidence-layer hook codex session-start",
             "timeout": 10
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/node_modules/evidence-layer/dist/bin/evidence-layer.mjs\" hook codex pre-tool-use",
+            "command": "node \"$(git rev-parse --show-toplevel)/.codex/evidence-layer-hook.mjs\" pre-tool-use --host=codex",
             "commandWindows": "npx --no-install evidence-layer hook codex pre-tool-use",
             "timeout": 10
           }
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/node_modules/evidence-layer/dist/bin/evidence-layer.mjs\" hook codex stop",
+            "command": "node \"$(git rev-parse --show-toplevel)/.codex/evidence-layer-hook.mjs\" stop --host=codex",
             "commandWindows": "npx --no-install evidence-layer hook codex stop",
             "timeout": 120
           }

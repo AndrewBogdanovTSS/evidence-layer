@@ -26,7 +26,7 @@ It exists twice over.
    | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | gathers in CI - the suite runs once, inside the gather - and uploads the bundle; checks governance alongside; on a pull request, a model reviews from the bundle and its review is held to that bundle - see [below](#in-ci-gather-review-verify) |
    | [`azure-pipelines.yml`](azure-pipelines.yml), [`scripts/azure-pr.mjs`](scripts/azure-pr.mjs) | the same jobs for Azure Pipelines, each posting the pull request status a branch policy can require - see [below](#in-azure-pipelines) |
    | [`scripts/ci-local.mjs`](scripts/ci-local.mjs) | `npm run ci:local`: the workflow's jobs - or the Azure pipeline's - run locally the way CI runs them - see [below](#before-you-push-npm-run-cilocal) |
-   | [`.claude/settings.json`](.claude/settings.json), [`.codex/hooks.json`](.codex/hooks.json) | the runtime gate, written by `evidence-layer init claude` and `init codex` |
+   | [`.claude/settings.json`](.claude/settings.json), [`.codex/hooks.json`](.codex/hooks.json) | the runtime gate, written by `evidence-layer init claude` and `init codex` - each with the launcher its hooks run, `evidence-layer-hook.mjs`, beside it |
    | [`scripts/standalone.mjs`](scripts/standalone.mjs) | `npm run standalone`: copies this project out as a repository of its own - see below. Not part of the setup; the copy leaves it behind |
    | [`docs/decisions/0001-example.md`](docs/decisions/0001-example.md) | two invariants, one enforced by a command and one by "a human" |
 

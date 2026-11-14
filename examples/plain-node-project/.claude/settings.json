@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/node_modules/evidence-layer/dist/bin/evidence-layer.mjs\" hook claude session-start",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/evidence-layer-hook.mjs\" session-start",
             "timeout": 10
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/node_modules/evidence-layer/dist/bin/evidence-layer.mjs\" hook claude pre-tool-use",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/evidence-layer-hook.mjs\" pre-tool-use",
             "timeout": 10
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/node_modules/evidence-layer/dist/bin/evidence-layer.mjs\" hook claude stop",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/evidence-layer-hook.mjs\" stop",
             "timeout": 120
           }
         ]

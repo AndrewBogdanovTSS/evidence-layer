@@ -135,7 +135,11 @@ describe('evidence-layer init claude', () => {
     expect(JSON.stringify(twice)).toBe(JSON.stringify(once))
     const strict = mergeClaudeSettings(twice, ['--strict'])
     expect(strict.hooks!.Stop).toHaveLength(1)
-    expect(strict.hooks!.Stop![0]!.hooks[0]!.command).toMatch(/hook claude stop --strict$/)
+    expect(strict.hooks!.Stop![0]!.hooks[0]!.command).toMatch(/evidence-layer-hook\.mjs" stop --strict$/)
+    // What `init` wrote before 0.20.0 - the package straight out of node_modules - is still its own, and replaced.
+    const old = 'node "$CLAUDE_PROJECT_DIR/node_modules/evidence-layer/dist/bin/evidence-layer.mjs" hook claude stop'
+    const upgraded = mergeClaudeSettings({ hooks: { Stop: [{ hooks: [{ type: 'command', command: old }] }] } }, [])
+    expect(upgraded.hooks!.Stop!.flatMap((g) => g.hooks.map((h) => h.command))).toEqual([strict.hooks!.Stop![0]!.hooks[0]!.command.replace(' --strict', '')])
   })
 
   it('does not claim a hook that merely mentions evidence-layer', () => {
@@ -162,6 +166,39 @@ describe('evidence-layer init claude', () => {
       expect(commands).toHaveLength(1)
       expect(commands[0]!.startsWith(SELF_LAUNCHER + ' ')).toBe(true)
       expect(OWNED_COMMAND_RE.test(commands[0]!)).toBe(true)
+    }
+  })
+
+  it('writes the launcher the hooks run, so a project with nothing installed is told the gate is inactive instead of failing', () => {
+    const dir = repo()
+    const init = spawnSync(process.execPath, [BIN, 'init', 'claude', '--repo', dir], { encoding: 'utf8' })
+    expect(init.stdout).toContain('evidence-layer-hook.mjs')
+    const written = join(dir, '.claude', 'evidence-layer-hook.mjs')
+    // One source: what a project gets is the file the plugin runs, byte for byte.
+    expect(readFileSync(written, 'utf8')).toBe(readFileSync(LAUNCHER, 'utf8'))
+    const settings = JSON.parse(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8'))
+    const command = settings.hooks.SessionStart[0].hooks[0].command as string
+    expect(command).toBe('node "$CLAUDE_PROJECT_DIR/.claude/evidence-layer-hook.mjs" session-start')
+
+    // A fresh clone: the configuration and the launcher are there, node_modules is not.
+    const run = (event: string, stdin: string) =>
+      spawnSync(process.execPath, [written, event], { input: stdin, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: dir } })
+    const started = run('session-start', fixture('session-start.json', { CWD: dir }))
+    expect(started.status).toBe(0)
+    expect(started.stderr).toBe('')
+    expect(JSON.parse(started.stdout).hookSpecificOutput.additionalContext).toContain('npm install --save-dev evidence-layer')
+    expect(run('stop', fixture('stop.json', { CWD: dir, MESSAGE: 'x' }))).toMatchObject({ status: 0, stdout: '' })
+
+    // Installed: the same file runs the gate.
+    mkdirSync(join(dir, 'node_modules'))
+    symlinkSync(root, join(dir, 'node_modules', 'evidence-layer'))
+    expect(JSON.parse(run('session-start', fixture('session-start.json', { CWD: dir })).stdout).hookSpecificOutput.additionalContext).toContain('**Claim**')
+  })
+
+  it('keeps the copies the example project carries identical to the launcher - a stale copy is a gate that behaves like last release', () => {
+    for (const host of ['.claude', '.codex']) {
+      const copy = join(root, 'examples', 'plain-node-project', host, 'evidence-layer-hook.mjs')
+      expect(readFileSync(copy, 'utf8'), copy + ' - run `evidence-layer init` in the example again').toBe(readFileSync(LAUNCHER, 'utf8'))
     }
   })
 

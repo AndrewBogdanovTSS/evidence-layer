@@ -483,9 +483,15 @@ npx evidence-layer init claude            # or --local for .claude/settings.loca
 ```
 
 writes the three hooks into `.claude/settings.json`, keeps every hook that is
-not its own, and replaces its own in place when run again. Or install the
-Claude Code plugin from this repository, which finds the package the project
-installed and says the gate is inactive when there is none:
+not its own, and replaces its own in place when run again. Beside it goes
+`.claude/evidence-layer-hook.mjs`, the launcher those hooks run - commit both.
+The launcher finds the package the project installed, and where there is none
+- a fresh clone, a cloud or CI session before its install step - it tells the
+agent the gate is inactive and how to change that, instead of the hook
+failing with "Cannot find module" and the session going on ungated, unsaid.
+Run `init` again after upgrading, to refresh it. Or install the Claude Code
+plugin from this repository, which runs the same launcher from its own
+directory:
 
 ```text
 /plugin marketplace add AndrewBogdanovTSS/evidence-layer
@@ -498,13 +504,15 @@ For Codex:
 npx evidence-layer init codex             # writes .codex/hooks.json
 ```
 
-merges the same three hooks into `.codex/hooks.json` the same way. Codex runs a
+merges the same three hooks into `.codex/hooks.json` the same way, with the
+same launcher beside it. Codex runs a
 project's hooks only once they are trusted, so approve them in `/hooks` - and
 again after `init` runs with different flags, since a changed command is a new
 hook to Codex. Codex gives a hook no project-directory variable, so the command
-finds the package from `git rev-parse --show-toplevel`, as Codex's
+finds the launcher from `git rev-parse --show-toplevel`, as Codex's
 documentation does; on Windows, where hooks run under `cmd.exe`, it uses
-`npx --no-install` instead. Codex edits files with `apply_patch`, so the
+`npx --no-install` instead - which, with nothing installed, still fails
+rather than explains. Codex edits files with `apply_patch`, so the
 pre-write guard reads every path the patch adds, updates, deletes or moves a
 file to.
 
@@ -725,7 +733,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **650 tests** across **42 files**, and that sentence is checked
+The suite is **652 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
