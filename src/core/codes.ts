@@ -53,6 +53,7 @@ export const CODES = {
   'claims/vague-comparison': 'a comparison that says neither to what nor measured how',
   'claims/success-without-effect': 'a success word with no stated effect',
   'claims/sycophancy': 'agreement offered in place of evidence',
+  'claims/unclaimed-result': 'a sentence reports what a run showed outside any `**Claim**:` line, where nothing checks it',
   'claims/provenance-unchecked': 'the review cites artifact blocks, and neither a seal nor a bundle was given to hold them to',
 
   // receipt - was this review written against a real, correctly-based checkout

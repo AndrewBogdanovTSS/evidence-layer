@@ -947,7 +947,26 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     }
   }
 
-  if (opts.prose !== false) findings.push(...lintProse(lines, fenced, file))
+  if (opts.prose !== false) {
+    const prose = lintProse(lines, fenced, file)
+    findings.push(...prose)
+    // A warning, where the prose rules above are errors: it is an
+    // observation (DEC-0014). Not said twice on a line they already failed.
+    const failed = new Set(prose.filter((f) => f.level === 'error').map((f) => f.line))
+    for (const result of unclaimedResults(markdown)) {
+      if (failed.has(result.line)) continue
+      findings.push({
+        level: 'warning',
+        code: 'claims/unclaimed-result',
+        claim: '"' + (result.sentence.length > 100 ? result.sentence.slice(0, 100) + '...' : result.sentence) + '"',
+        detail: 'reports a result about ' + result.kinds.map(kindName).join(' and ') + ' outside any `**Claim**:` line, where nothing checks it',
+        fix:
+          'state it as a claim - a `**Claim**:` line with a `**Grounding**:` line under it: VERIFIED[<id>] citing a run from the evidence bundle, or UNVERIFIED',
+        file,
+        line: result.line,
+      })
+    }
+  }
   return findings
 }
 
@@ -1101,6 +1120,64 @@ export function downgradeClaims(markdown: string, findings: CodedFinding[], grad
     downgraded.push({ line: claim.line + 1, from: found[0], code })
   }
   return { markdown: lines.join(eol), downgraded: downgraded.reverse() }
+}
+
+// A sentence that asks, plans or instructs is not a report of what a run
+// showed: "make sure the tests pass", "the tests should pass once this
+// lands", "do the tests pass?".
+const NOT_A_REPORT_RE =
+  /\b(?:should|must|will|shall|need(?:s|ed)? to|have to|make sure|ensure|please|todo|once|when|before|after|so that|in order to|going to|expect(?:s|ed)? to|want(?:s|ed)? to|try(?:ing)? to|let's)\b|\?\s*$/i
+// Lines that are structure, not prose: a heading, a table row, a quote, a
+// shell line, an HTML comment. A table's grammar is the project's
+// (`LintOptions.inlineClaims`), and a quote is someone else's sentence.
+const NOT_PROSE_RE = /^\s*(?:#|\||>|\$ |<!--)/
+
+/** A result a text states outside any claim: where, and the sentence. */
+export interface UnclaimedResult {
+  /** 1-based line. */
+  line: number
+  sentence: string
+  /** The kinds of run it names, by `artifactKind`'s names. */
+  kinds: string[]
+}
+
+/**
+ * Sentences that report what a run showed without being a claim: one that
+ * names a kind of run - tests, lint, typecheck - and reads as its outcome
+ * ("all 12 tests pass", "lint is clean") or states a count of it ("ran 71
+ * tests"). The same word lists the outcome rules read, and no judgement
+ * beyond them: "it works now" names no run and is not one; neither is a
+ * question, a plan or an instruction.
+ *
+ * Observation, not a verdict - see DEC-0014. It is English and it is a
+ * pattern over prose, so it is wrong in both directions; what it is for is
+ * counting how often a result is reported where nothing checks it.
+ *
+ * A `**Claim**:` line and everything down to the next blank line is the
+ * claim's own - its grounding, its numbered chain - and is not read here.
+ */
+export function unclaimedResults(markdown: string): UnclaimedResult[] {
+  const lines = markdown.split(/\r?\n/)
+  const fenced = fencedLineNumbers(lines)
+  const found: UnclaimedResult[] = []
+  let inClaim = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!
+    if (fenced.has(i)) continue
+    if (line.trim() === '') {
+      inClaim = false
+      continue
+    }
+    if (CLAIM_RE.test(line)) inClaim = true
+    if (inClaim || GRADE_RE.test(line) || NOT_PROSE_RE.test(line)) continue
+    for (const sentence of line.split(/(?<=[.!?;])\s+/)) {
+      const kinds = kindsNamed(sentence)
+      if (kinds.length === 0 || HYPOTHETICAL_RE.test(sentence) || NOT_A_REPORT_RE.test(sentence)) continue
+      if (!readsAsSuccess(sentence) && statedCounts(sentence).length === 0) continue
+      found.push({ line: i + 1, sentence: sentence.trim(), kinds })
+    }
+  }
+  return found
 }
 
 /**

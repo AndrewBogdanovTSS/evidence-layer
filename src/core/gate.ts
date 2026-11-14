@@ -43,14 +43,14 @@ import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fencedLineNumbers, findArtifactBlocks } from './artifact'
-import { findClaims, lintClaims } from './claims'
+import { findClaims, lintClaims, unclaimedResults } from './claims'
 import { formatFix } from './cli'
 import type { Finding, Level } from './cli'
 import type { CodedFinding } from './codes'
 import { gateFailure, journalOutcome, levelOf } from './gate-decision'
 import type { GateDecision, GateEvent, GateOptions, GateOutcome } from './gate-decision'
 import { cliCommandFor, gatherCommandFor } from './gather-command'
-import { appendEntry } from './journal'
+import { UNCLAIMED_PREFIX, appendEntry } from './journal'
 import { gitCapture } from './proc'
 import { decidePreWrite } from './protect'
 import { checkReceipt, parseReceipt } from './receipt'
@@ -552,7 +552,10 @@ function stop(event: Extract<GateEvent, { kind: 'stop' }>, opts: GateOptions): G
   const reviews = opts.reviewPaths ?? DEFAULT_REVIEWS
   const path = sessionPath(state, event.sessionId)
   const session = readSession(path)
-  const where: JournalWhere = { root, state, opts, started }
+  // Counted on every stop's journal entry, and nothing else: no finding, no
+  // message, no block. See DEC-0014 for what it may become.
+  const unclaimed = event.message !== undefined ? unclaimedResults(event.message).map((u) => u.sentence) : []
+  const where: JournalWhere = { root, state, opts, started, unclaimed }
   const now = () => new Date().toISOString()
 
   // What this session wrote: review files whose bytes moved since it started,
@@ -711,6 +714,8 @@ interface JournalWhere {
   state: string
   opts: GateOptions
   started: number
+  /** Sentences in the final reply that reported a result outside any claim. */
+  unclaimed: string[]
 }
 
 function journal(
@@ -732,7 +737,10 @@ function journal(
       check,
       commit: gitCapture(['rev-parse', 'HEAD'], where.root) ?? 'unborn',
       outcome: entryOutcome,
-      findings: findings.filter((f) => f.level !== 'pass').map((f) => f.claim + ': ' + f.detail.slice(0, MAX_DETAIL)),
+      findings: [
+        ...findings.filter((f) => f.level !== 'pass').map((f) => f.claim + ': ' + f.detail.slice(0, MAX_DETAIL)),
+        ...where.unclaimed.map((sentence) => UNCLAIMED_PREFIX + clip(sentence, MAX_DETAIL)),
+      ],
       gate: {
         event: check.slice('gate:'.length),
         outcome,
@@ -740,6 +748,7 @@ function journal(
         reviews,
         ...(runId && { runId }),
         elapsedMs: Date.now() - where.started,
+        ...(where.unclaimed.length > 0 && { unclaimed: where.unclaimed.length }),
       },
     })
   } catch {

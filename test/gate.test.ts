@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { artifactId, formatArtifact } from '../src/core/artifact'
 import { decide, isProtected, journalOutcome, levelOf } from '../src/core/gate'
 import type { GateDecision, GateOptions } from '../src/core/gate'
-import { readJournal, summariseGate } from '../src/core/journal'
+import { readJournal, summariseGate, untaggedBlocks } from '../src/core/journal'
 import { publishRun, sourceFingerprint, stateDir } from '../src/core/seal'
 import { sh } from './helpers/git'
 
@@ -307,6 +307,23 @@ describe('the gate journal', () => {
     expect(entries[0]!.findings![0]).toContain('the final message has no **Claim** line')
     expect(entries[1]!.findings![0]).toContain('there was no final message')
     expect(summariseGate(entries)).toMatchObject({ stops: 2, checkedStops: 0, nothingToCheck: 2, degradedAllows: 0 })
+  })
+
+  it('counts a result reported as prose on the stop\'s entry, and says and blocks nothing over it', () => {
+    const dir = repo()
+    start(dir)
+    const decision = stop(dir, {}, { message: 'Done. I ran the full test suite and all 12 tests pass. Lint is clean.' })
+    expect(decision).toMatchObject({ action: 'allow', outcome: 'nothing-to-check' })
+    expect('message' in decision && decision.message).toBeFalsy()
+    stop(dir, {}, { message: 'All done, see the diff.' })
+    const entries = gateJournal(dir)
+    expect(entries.map((e) => e.gate?.unclaimed)).toEqual([2, undefined])
+    expect(summariseGate(entries)).toMatchObject({ unclaimedStops: 1, realUnclaimed: 0, falseUnclaimed: 0 })
+    // Listed for a person to tag, by id, with the sentence - what DEC-0014's threshold is counted from.
+    expect(untaggedBlocks(entries, 'unclaimed').map((b) => b.finding)).toEqual([
+      expect.stringContaining('I ran the full test suite and all 12 tests pass.'),
+    ])
+    expect(untaggedBlocks(entries)).toEqual([])
   })
 
   it('maps outcomes onto the five levels without inventing a pass', () => {

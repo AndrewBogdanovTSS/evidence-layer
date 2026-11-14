@@ -63,6 +63,12 @@ export interface JournalEntry {
     reviews: string[]
     runId?: string
     elapsedMs: number
+    /**
+     * How many sentences in the final reply reported what a run showed
+     * outside any `**Claim**:` line (`unclaimedResults`). Observed, never
+     * acted on - see DEC-0014. Absent when there were none. Since 0.20.0.
+     */
+    unclaimed?: number
   }
 }
 
@@ -258,6 +264,10 @@ export interface GateSummary {
   checkedStops: number
   /** Stops with no changed review and no `**Claim**:` line in the final message: let through, nothing checked. */
   nothingToCheck: number
+  /** Stops whose final reply reported a result outside any claim, and how many of those were tagged real or false. */
+  unclaimedStops: number
+  realUnclaimed: number
+  falseUnclaimed: number
   /** Median time a decision took, in ms, over the entries that recorded one. */
   medianMs: number | null
 }
@@ -273,6 +283,7 @@ export function summariseGate(entries: JournalEntry[]): GateSummary {
   // An allow with nothing checked is not a degraded allow either: it is in `nothingToCheck`.
   const allows = gate.filter((e) => e.gate!.action === 'allow' && e.gate!.outcome !== 'nothing-to-check')
   const stops = gate.filter((e) => e.gate!.event === 'stop')
+  const unclaimed = stops.filter((e) => (e.gate!.unclaimed ?? 0) > 0)
   const times = gate.map((e) => e.gate!.elapsedMs).filter((t) => t > 0).sort((a, b) => a - b)
   return {
     blocks: blocks.length,
@@ -287,6 +298,9 @@ export function summariseGate(entries: JournalEntry[]): GateSummary {
     stops: stops.length,
     checkedStops: stops.filter((e) => e.gate!.outcome === 'checked' || e.gate!.outcome === 'retry-exhausted').length,
     nothingToCheck: stops.filter((e) => e.gate!.outcome === 'nothing-to-check').length,
+    unclaimedStops: unclaimed.length,
+    realUnclaimed: unclaimed.filter((e) => e.verified === 'real').length,
+    falseUnclaimed: unclaimed.filter((e) => e.verified === 'false').length,
     medianMs: times.length > 0 ? times[Math.floor(times.length / 2)]! : null,
   }
 }
@@ -308,10 +322,19 @@ const UNTAGGED_FINDING_CHARS = 120
  * person reading the report, so tagging one never means reading the JSONL by
  * hand - and never shown to the agent, whose blocks these are.
  */
-export function untaggedBlocks(entries: JournalEntry[]): UntaggedBlock[] {
+export function untaggedBlocks(entries: JournalEntry[], which: 'blocks' | 'unclaimed' = 'blocks'): UntaggedBlock[] {
   const cut = (text: string) => (text.length > UNTAGGED_FINDING_CHARS ? text.slice(0, UNTAGGED_FINDING_CHARS - 3) + '...' : text)
+  // `unclaimed`: the stops whose reply reported a result outside any claim,
+  // which a person tags the same way - real, or a sentence the pattern
+  // misread - so DEC-0014's threshold has something to be counted from.
+  const wanted = (e: JournalEntry) => (which === 'blocks' ? e.gate?.action === 'block' : (e.gate?.unclaimed ?? 0) > 0)
+  const shown = (e: JournalEntry) =>
+    (which === 'blocks' ? e.findings?.[0] : e.findings?.find((f) => f.startsWith(UNCLAIMED_PREFIX))) ?? '(no finding recorded)'
   return entries
-    .filter((e) => e.gate?.action === 'block' && (e.verified === undefined || e.verified === null))
+    .filter((e) => wanted(e) && (e.verified === undefined || e.verified === null))
     .reverse()
-    .map((e) => ({ id: e.id, ts: e.ts, scope: e.gate!.reviews.join(', '), finding: cut(e.findings?.[0] ?? '(no finding recorded)') }))
+    .map((e) => ({ id: e.id, ts: e.ts, scope: e.gate!.reviews.join(', ') || 'final message', finding: cut(shown(e)) }))
 }
+
+/** How a gate journal entry's findings list opens the line for a result reported outside any claim. */
+export const UNCLAIMED_PREFIX = 'unclaimed result: '

@@ -424,8 +424,11 @@ usage, never a pass.
 CI checks a review after a person can already read it. The gate runs the same
 checks at the moment the agent says it is done, so an unbacked "tests pass"
 stated as a claim is caught by the agent that wrote it. One stated as prose is
-not graded yet: the stop goes through, and is journalled as having had nothing
-to check, so it is counted rather than missing:
+not graded: the stop goes through, and the sentence is counted on the stop's
+journal entry - a warning, `claims/unclaimed-result`, when it is in a review
+file. Whether it should ever block is
+[DEC-0014](docs/decisions/0014-results-stated-as-prose.md)'s question, and
+waits on those counts:
 
 - **When the session starts**, it shows the agent the claim grammar as a
   filled-in example rather than a template of placeholders, lists the claims
@@ -714,7 +717,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **627 tests** across **42 files**, and that sentence is checked
+The suite is **645 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

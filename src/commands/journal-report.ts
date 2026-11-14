@@ -98,7 +98,18 @@ export function run(argv: string[]): void {
         console.log('\nNot yet tagged, newest first (id, time, scope, first finding):')
         for (const b of untagged) console.log(b.id + '  ' + b.ts + '  ' + b.scope + '  ' + b.finding)
       }
-      console.log('\nTag a block with: evidence-layer journal tag <id> real|false --gate')
+      if (g.unclaimedStops > 0) {
+        console.log(
+          '\n' + g.unclaimedStops + ' stop(s) reported a result outside any **Claim** line (' + g.realUnclaimed + ' tagged real, ' +
+            g.falseUnclaimed + ' false) - observed only; DEC-0014 says what the tags are for',
+        )
+        const open = untaggedBlocks(entries, 'unclaimed')
+        if (open.length > 0) {
+          console.log('Not yet tagged, newest first (id, time, scope, the sentence):')
+          for (const b of open) console.log(b.id + '  ' + b.ts + '  ' + b.scope + '  ' + b.finding)
+        }
+      }
+      console.log('\nTag a block or a reported result with: evidence-layer journal tag <id> real|false --gate')
     }
     console.log('')
   }

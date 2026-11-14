@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BARE_VERIFIED_CUTOVER, formatGradeMix, gradeMix, lintClaims } from '../src/core/claims'
+import { BARE_VERIFIED_CUTOVER, formatGradeMix, gradeMix, lintClaims, unclaimedResults } from '../src/core/claims'
 import { artifactId, formatArtifact } from '../src/core/artifact'
 
 const F = '`'.repeat(3)
@@ -187,5 +187,59 @@ describe('the bare VERIFIED cutover', () => {
       Date.now() < Date.parse(BARE_VERIFIED_CUTOVER + 'T00:00:00Z'),
       'the bare VERIFIED cutover has passed: make claims/bare-verified an error, in a release with notes',
     ).toBe(true)
+  })
+})
+
+// DEC-0014: observed, never acted on. The two lists below are the corpus -
+// add the sentence that surprised you to the side it belongs on.
+describe('a result reported outside any claim', () => {
+  const REPORTS = [
+    'Done. I added mul(), ran the full test suite and all 12 tests pass.',
+    'Lint is clean and the typecheck passes.',
+    'All 71 tests pass and lint is clean.',
+    'I ran 71 tests.',
+    'The suite ran and 3 tests failed.',
+    'Typecheck reports no errors.',
+  ]
+  const NOT_REPORTS = [
+    'It works now and is much cleaner.',
+    'This adds 3 tests for the parser.',
+    'Make sure the tests pass before merging.',
+    'The tests should pass once the fixture lands.',
+    'Do the tests pass on Windows?',
+    'If the tests pass, merge it.',
+    'This will be hard to maintain.',
+    'I touched 12 files and renamed the lint config.',
+    'The build is green.',
+  ]
+
+  it.each(REPORTS)('reads as one: %s', (sentence) => {
+    expect(unclaimedResults(sentence).map((u) => u.line)).toContain(1)
+  })
+
+  it.each(NOT_REPORTS)('does not: %s', (sentence) => {
+    expect(unclaimedResults(sentence)).toEqual([])
+  })
+
+  it('leaves a claim alone - its line, its grounding and its numbered chain - and anything fenced, tabled or quoted', () => {
+    const md = [
+      '**Claim**: All 12 tests pass.', '**Grounding**: INFERRED', '1. the tests pass locally', '2. lint is clean too', '',
+      '```', 'all 12 tests pass', '```', '',
+      '| check | result |', '|---|---|', '| tests | all 12 tests pass |', '',
+      '> all 12 tests pass', '',
+      'Typecheck passes too.',
+    ].join('\n')
+    expect(unclaimedResults(md).map((u) => [u.line, u.kinds])).toEqual([[16, ['types']]])
+  })
+
+  it('is a warning in a review, with the fix, and is not said twice where a prose rule already failed the line', () => {
+    const quiet = lintClaims('**Claim**: x.\n**Grounding**: UNVERIFIED\n\nAll 12 tests pass and lint is clean.\n', 'r.md')
+    expect(quiet.filter((f) => f.code === 'claims/unclaimed-result').map((f) => [f.level, f.line])).toEqual([['warning', 4]])
+    expect(quiet.find((f) => f.code === 'claims/unclaimed-result')!.fix).toContain('**Claim**:')
+    // "passes" with no Effect is already claims/success-without-effect, an error, on that line.
+    const twice = lintClaims('**Claim**: x.\n**Grounding**: UNVERIFIED\n\nTypecheck passes.\n', 'r.md').filter((f) => f.line === 4)
+    expect(twice.map((f) => f.code)).toEqual(['claims/success-without-effect'])
+    // A conversational reply is not linted for prose at all: the gate only counts.
+    expect(lintClaims('All 12 tests pass.', 'final message', { prose: false })).toEqual([])
   })
 })

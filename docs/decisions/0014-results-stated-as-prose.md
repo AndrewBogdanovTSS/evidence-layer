@@ -48,8 +48,10 @@ reads as its outcome** - "all 12 tests pass", "lint is clean", "ran 71 tests"
 
 - in a review file, a `warning` on its line, with the fix: state it as a
   claim;
-- in a final reply, one finding on the stop's journal entry. Nothing is said
-  to the agent and nothing is blocked.
+- in a final reply, a count on the stop's journal entry (`gate.unclaimed`)
+  with the sentences beside it. Nothing is said to the agent and nothing is
+  blocked; `journal report --include-gate` lists the entries by id for a
+  person to tag `real` or `false`.
 
 It reuses the word lists the outcome rules already read (`kindsNamed`,
 `readsAsSuccess`, the stated counts) and adds no judgement of its own. A

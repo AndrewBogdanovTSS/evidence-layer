@@ -553,6 +553,7 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `claims/vague-comparison` | a comparison that says neither to what nor measured how |
 | `claims/success-without-effect` | a success word with no stated effect |
 | `claims/sycophancy` | agreement offered in place of evidence |
+| `claims/unclaimed-result` | a sentence reports what a run showed outside any `**Claim**:` line, where nothing checks it |
 | `claims/provenance-unchecked` | the review cites artifact blocks, and neither a seal nor a bundle was given to hold them to |
 | `receipt/absent` | the review has claims and no Access Receipt, so which commit it is about went unchecked |
 | `receipt/missing-field` | the Access Receipt lacks a required field |
