@@ -634,6 +634,7 @@ The table is checked against `src/core/codes.ts` by `check:docs`, both ways.
 | `.githooks/pre-push`, after `pnpm hooks:install` | `check:all --fast --enforce` |
 | the GitHub Action, `uses: ./` in the same workflow | `claims` over a fixture review, with this commit's build |
 | the GitHub Action, in a job with nothing installed | the same action fetching the published package through `npx`, on a review that passes and one that fails |
+| `pr-evidence`, on every pull request | this repository's own evidence, gathered by CI at the pull request's head and uploaded as an artifact. No review is held to it yet, and the summary says so: CI's ids are not the author's, and a committed review cannot name its own commit |
 | `example-evidence`, then `example-review`, in the same workflow | the example project's handoff on a standalone copy: gathered on one runner, the bundle carried as an artifact, the review held to it with `bundle:` on another |
 
 The workflow is not merely a place to run the commands. It settles a conflict of

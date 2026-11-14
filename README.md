@@ -766,7 +766,10 @@ CI runs the suite on Node 22 and 24 and, in a separate job with no package
 manager and no install, takes the `dist/` the build job produced and runs it on
 bare `node` - 22.0.0, the oldest `engines` allows, as well as 22 and 24. If that
 job passes, "zero runtime dependencies" is a checked fact for everything the
-smoke script loads, rather than a sentence on this page. Two more jobs run the
+smoke script loads, rather than a sentence on this page. On every pull request CI
+gathers this repository's own evidence at the pull request's head and uploads
+the bundle - the independent party's copy; no review is held to it yet, and
+the job's summary says so. Two more jobs run the
 example project's CI handoff, which GitHub would not run from inside this
 repository: one gathers in a standalone copy and uploads the bundle, the other
 downloads it and holds a review to it with the action's `bundle:` input.

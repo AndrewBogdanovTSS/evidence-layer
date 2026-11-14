@@ -373,12 +373,14 @@ It also took the reason codes from 79 to 86 and the package's exports from
 
 In the order they should land. *Status* is as of this revision.
 
-*2026-11-14: 1.0 to 1.7 and 1.9 are implemented, for
-[0.20.0](../releases/v0.20.0.md). The exports went from 135 to 145 doing it -
-ten names, each a line added to the fixture on purpose, which is what 1.0
+*2026-11-14: 1.0 to 1.10 are implemented except 1.5b, for
+[0.20.0](../releases/v0.20.0.md). The exports went from 135 to 148 doing it -
+thirteen names, each a line added to the fixture on purpose, which is what 1.0
 set out to make true; it does not make the surface smaller, and nothing in
-this phase did. 1.8 and 1.10 are not started, and each waits on a decision
-that is the maintainer's.*
+this phase did. The maintainer then decided 1.8 and 1.10: DEC-0010's C3 and
+C4 are accepted and implemented, and CI gathers this repository's evidence on
+every pull request. What is left of Phase 1 is 1.5b, which waits on counts;
+1.11, which waits on a date; and the half of 1.10 that waits on C5.*
 
 | # | Item | From | Size | Done when | Status |
 |---|---|---|---|---|---|
@@ -393,7 +395,7 @@ that is the maintainer's.*
 | 1.7 | **A `fix:` commit says what missed it.** `check:ladder` warns on a `fix:` with no `Missed-By:`; `Missed-By: none` is the explicit answer for a bug no review let through, and is not journalled as a miss. | C2 | S | A `fix:` commit with no trailer warns. | 0.20.0 |
 | 1.8 | **Decide DEC-0010.** This document recommends accepting C3 and C4: a citation from an earlier kept run that saw the same files passes, and `restamp` moves a review onto the current run in one command. They are what makes the honest path cheap after the first edit. The decision was the maintainer's, and was made on 2026-11-14. | DEC-0010 | L | DEC-0010's invariants, each with a test. | 0.20.0 - C3 and C4 accepted 2026-11-14; C1 and C5 left open |
 | 1.9 | **The gate on a fresh checkout.** One launcher for `init` and the plugin that says "inactive, run X" instead of failing with module-not-found. The design: `init` writes the plugin's launcher into the project, beside the configuration, carried in the build as text. | D1 | M | A fresh clone's first session is told the gate is inactive, and how to change that. | 0.20.0 - except Codex on Windows |
-| 1.10 | **Run the loop here.** Gather in CI on every pull request and hold a review to the bundle - and journal what `claims` and `receipt` find there, which nothing does today. Blocked on a decision: who writes the review. A model step needs a key and a budget; a person needs a habit. | C2 | M | `journal:report` on `master` is non-empty. | needs a decision |
+| 1.10 | **Run the loop here.** Gather in CI on every pull request and hold a review to the bundle. The maintainer chose bundle-only (2026-11-14): no model step, no key. **Half of that works.** CI gathers at the pull request's head and uploads the bundle (`pr-evidence`). Holding a *committed* review to it does not, and no step pretends to: CI's ids are not the author's - an id hashes output, and test output carries timings - and a review that is part of a commit cannot name that commit in its receipt. The first is what `restamp` answers inside one checkout; the second is DEC-0010's C5. Until C5, or a review that lives outside the commit (the pull request's description, read by CI), a review here is held to a bundle only by a person. | C2 | M | `journal:report` on `master` is non-empty - true since the first `Missed-By:` trailer; CI findings are still not journalled. | 0.20.0 - gather and upload only; the rest waits on C5 |
 | 1.11 | **Remove:** on the first release after 2026-12-06, bare `VERIFIED` becomes an error and the proximity mode behind it is deleted - `ARTIFACT_WINDOW`, positional consumption, the id-less `artifact` fence. | C4 | S | The dated test is replaced by one expecting the error. | dated |
 
 ### Phase 2 - widen what can be claimed

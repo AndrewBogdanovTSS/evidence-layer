@@ -31,6 +31,12 @@ and reports them the way CI would. What it cannot run - the Node matrices,
 to the workflow must be added to `scripts/ci-local.ts` too, or said there to be
 out of reach; `test/ci-local.test.ts` fails until it is.
 
+On a pull request, CI's `pr-evidence` job gathers this branch's evidence at
+its head and uploads the bundle as an artifact. It holds no review to it - a
+committed review cannot be held to CI's run yet (the ids differ from a local
+run's, and a review cannot name the commit it is part of) - so the bundle is
+what a reviewer reads a pull request's claims against, by hand.
+
 `pnpm hooks:install` wires the same fast checks into a pre-push hook.
 
 The runtime gate runs here too: `.claude/settings.json` (written by
