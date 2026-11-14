@@ -11,6 +11,7 @@ import {
   changedPaths,
   checkFreshness,
   checkProvenance,
+  freshnessMatters,
   publishRun,
   readCurrentRun,
   sourceFingerprint,
@@ -276,6 +277,14 @@ describe('runs', () => {
     expect(() =>
       buildSeal({ headSha: 'x', source: fp(dir), excluded: [], bundle: a.text + '\n\n' + forged, artifacts: produced([a]) }, '20261018T000000000Z-000000'),
     ).toThrow(/share the id/)
+  })
+})
+
+describe('freshnessMatters', () => {
+  it('reads the kind from the sealed id, so a test run under an unrecognised command still goes stale', () => {
+    expect(freshnessMatters('npm run check', 'tests-a3f91c')).toBe(true)
+    expect(freshnessMatters('npm run check')).toBe(false)
+    expect(freshnessMatters('git diff --stat a...b', 'diff-a3f91c')).toBe(false)
   })
 })
 

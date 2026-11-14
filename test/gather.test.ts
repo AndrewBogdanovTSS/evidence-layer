@@ -94,12 +94,32 @@ describe('gatherEvidence - the zero-config plan in a project', () => {
   }, 30_000)
 })
 
+describe('gatherEvidence - what kind of run a step is', () => {
+  it('names a test step under a command it does not recognise a test run, and suggests the test claim for it', async () => {
+    const dir = gatherableRepo('el-gather-')
+    const out = join(dir, 'evidence.local.md')
+    const result = await gatherEvidence({
+      repo: dir,
+      base: 'HEAD',
+      out,
+      seal: false,
+      skip: ['lint', 'typecheck', 'lockfile'],
+      // Stands in for `make check` or `npm run check`: nothing in its text says "test".
+      plan: { testCommand: () => 'node -e "console.log(1)"' },
+      summaries: { test: () => ({ kind: 'tests', counts: { passed: 4, failed: 0, skipped: 0, todo: 0 } }) },
+    })
+    expect(result.steps[3]).toMatchObject({ name: 'test', id: expect.stringMatching(/^tests-[0-9a-f]{6}$/) })
+    expect(readFileSync(out, 'utf8')).toContain('**Claim**: The test suite ran 4 passing tests and reports no failures.')
+  }, 30_000)
+})
+
 describe('gatherEvidence - how every step ended', () => {
   it('records each planned step in order, a skip with its reason, and a failure that stepFailed reads', async () => {
     const { result } = await gatherOneStep(gatherableRepo('el-gather-'), printAndExit('two problems', 1))
     expect(result.steps.map((s) => s.name)).toEqual(['lint', 'typecheck', 'lockfile', 'test'])
     expect(result.steps[1]).toEqual({ name: 'typecheck', command: 'pnpm typecheck', skipReason: 'skipped by --skip' })
-    expect(result.steps[0]).toMatchObject({ name: 'lint', exitCode: 1, id: expect.stringMatching(/^cmd-[0-9a-f]{6}$/) })
+    // `node -e ...` is no command the patterns know, so the step says what it is.
+    expect(result.steps[0]).toMatchObject({ name: 'lint', exitCode: 1, id: expect.stringMatching(/^lint-[0-9a-f]{6}$/) })
     expect(result.steps.filter(stepFailed).map((s) => s.name)).toEqual(['lint'])
   })
 

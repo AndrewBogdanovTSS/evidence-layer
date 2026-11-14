@@ -398,7 +398,7 @@ function sealFindings(ctx: StopContext, text: string, file: string, opts: { from
   const freshness = ctx.freshness()
   const matters = ids.some((id) => {
     const sealed = run.seal.artifacts[id]
-    return sealed !== undefined && freshnessMatters(sealed.command)
+    return sealed !== undefined && freshnessMatters(sealed.command, id)
   })
   findings.push(freshness.level === 'error' && !matters ? { ...freshness, level: 'warning', file } : { ...freshness, file })
   return findings

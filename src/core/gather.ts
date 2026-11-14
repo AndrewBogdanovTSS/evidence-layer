@@ -61,7 +61,7 @@
  */
 import { existsSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { WORK_SUMMARY_KEYS, artifactId, classifyCommand, formatArtifact, formatWorkSummary } from './artifact'
+import { WORK_SUMMARY_KEYS, artifactId, artifactKind, formatArtifact, formatWorkSummary } from './artifact'
 import type { StopReason, WorkKind, WorkSummary } from './artifact'
 import { generateClaimSkeleton, generateSampleSkeleton } from './skeleton'
 import type { SkeletonArtifact } from './skeleton'
@@ -205,6 +205,13 @@ export interface StepRun {
  * prints the reason: a missing summary is said, not silently left out.
  */
 export type Summariser = (run: StepRun) => WorkSummary | { unavailable: string }
+
+/**
+ * What kind of run each planned step is, for a command `classifyCommand` does
+ * not recognise - `make check` as the test step is a test run, and its
+ * artifact is `tests-...`, held to the test rules.
+ */
+const STEP_KIND: Record<string, string> = { lint: 'lint', typecheck: 'types', lockfile: 'lockfile', test: 'tests' }
 
 /** Which work kind each summarisable step must report. */
 const SUMMARY_KIND: Record<string, WorkKind> = { lint: 'lint', test: 'tests' }
@@ -498,7 +505,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
       if ('line' in summary) res.output = (res.output.trimEnd() === '' ? '' : res.output.trimEnd() + '\n') + summary.line
       else noSummary = summary.unavailable
     }
-    const id = artifactId(res.command, headSha, res.output)
+    const id = artifactId(res.command, headSha, res.output, STEP_KIND[step.name])
     runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
     steps.push({ name: step.name, command: res.command, id, exitCode: res.exitCode, ...(res.stopped && { stopped: res.stopped }) })
     const artifact: SkeletonArtifact = { command: res.command, output: res.output, exitCode: res.exitCode, id, commit: headSha, stopped: res.stopped }
@@ -506,7 +513,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     if (noSummary) parts.push('_No work summary: ' + noSummary + '._', '')
     // Two steps running one command (a project whose lint is its typecheck)
     // give one artifact, and one claim for it.
-    if (classifyCommand(res.command) !== 'diff' && !claimArtifacts.some((a) => a.id === id)) claimArtifacts.push(artifact)
+    if (artifactKind(artifact) !== 'diff' && !claimArtifacts.some((a) => a.id === id)) claimArtifacts.push(artifact)
     if (step.name === 'test') testOutput = res.output
     console.log('  ' + step.name + ': exit ' + res.exitCode + (res.stopped ? ' (' + res.stopped + ')' : ''))
   }

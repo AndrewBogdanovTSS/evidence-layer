@@ -24,6 +24,17 @@ function review(claim: string, command: string, output: string, exitCode: number
 const errorsOf = (md: string, opts?: { requireWorkSummary?: boolean }) =>
   lintClaims(md, 'review.md', opts).filter((f) => f.level === 'error')
 
+describe('a run whose command the patterns do not know', () => {
+  const block = (id: string) =>
+    ['**Claim**: All tests pass.', '**Grounding**: VERIFIED[' + id + ']', '', formatArtifact('npm run check', formatWorkSummary('tests', { skipped: 5 }), 0, { id })].join('\n')
+
+  it('is held to the test rules once its id says it is a test run', () => {
+    expect(errorsOf(block('tests-abcdef'))[0]?.detail).toContain('checked nothing')
+    // Gathered before 0.20.0, as `cmd`: nothing says what it was, so nothing is held to it.
+    expect(errorsOf(block('cmd-abcdef'))).toEqual([])
+  })
+})
+
 describe('exit line grammar', () => {
   it('writes the stop reason after the code', () => {
     expect(formatExitLine(124, 'timeout')).toBe('exit: 124 (timeout)')

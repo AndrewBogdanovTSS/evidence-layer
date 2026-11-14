@@ -23,7 +23,7 @@
  * make: a writer who cannot work out the right sentence and the right
  * predicates is given them, read off the run.
  */
-import { classifyCommand, formatArtifact, formatExitLine, parseWorkSummary } from './artifact'
+import { artifactKind, formatArtifact, formatExitLine, parseWorkSummary } from './artifact'
 import type { StopReason } from './artifact'
 import { suggestPredicates } from './predicates'
 import { formatCodeSpan } from './receipt'
@@ -118,8 +118,7 @@ function stoppedBecause(stopped: StopReason): string {
 }
 
 /** One plausible claim sentence per command kind. Never asserts success when exitCode says otherwise. */
-function claimSentence(command: string, exitCode: number, stopped?: StopReason, output = ''): string | null {
-  const kind = classifyCommand(command)
+function claimSentence(kind: string, exitCode: number, stopped?: StopReason, output = ''): string | null {
   // Context, not a claim someone would grade VERIFIED - neither the diff
   // summary nor the working-tree status asserts anything a reader would
   // ask "could this be wrong?" about. Checked first, so a slow diff that
@@ -223,7 +222,7 @@ export interface SuggestedClaim {
  * the run, never from what the writer hoped it showed.
  */
 export function suggestedClaim(artifact: ClaimableArtifact): SuggestedClaim | null {
-  const sentence = claimSentence(artifact.command, artifact.exitCode, artifact.stopped, artifact.output)
+  const sentence = claimSentence(artifactKind(artifact), artifact.exitCode, artifact.stopped, artifact.output)
   if (!sentence) return null
   return {
     claim: '**Claim**: ' + sentence,

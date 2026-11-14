@@ -57,7 +57,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { classifyCommand, fencedLineNumbers, findArtifactBlocks } from './artifact'
+import { artifactKind, fencedLineNumbers, findArtifactBlocks } from './artifact'
 import type { ArtifactBlock, FencedBlock, StopReason } from './artifact'
 import { findClaims } from './claims'
 import type { CodedFinding } from './codes'
@@ -687,8 +687,8 @@ function summarisePaths(paths: string[]): string {
   return paths.length <= 5 ? paths.join(', ') : paths.slice(0, 5).join(', ') + ' and ' + (paths.length - 5) + ' more'
 }
 
-/** Whether a sealed artifact is one whose success a stale tree undermines: lint, types, tests. */
-export function freshnessMatters(command: string): boolean {
-  const kind = classifyCommand(command)
+/** Whether a sealed artifact is one whose success a stale tree undermines: lint, types, tests. `id` is its key in the seal. */
+export function freshnessMatters(command: string, id?: string): boolean {
+  const kind = artifactKind({ command, ...(id !== undefined && { id }) })
   return kind === 'lint' || kind === 'types' || kind === 'tests'
 }

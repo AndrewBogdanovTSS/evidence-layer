@@ -68,7 +68,7 @@
  * guarantees only that the artifact exists, was collected here, and was
  * pointed at on purpose rather than left nearby.
  */
-import { ARTIFACT_ID_RE, classifyCommand, fencedLineNumbers, findArtifactBlocks, parseWorkSummary, workDone } from './artifact'
+import { ARTIFACT_ID_RE, artifactKind, fencedLineNumbers, findArtifactBlocks, parseWorkSummary, workDone } from './artifact'
 import type { ArtifactBlock, StopReason } from './artifact'
 import type { CodedFinding } from './codes'
 import { evaluatePredicates, parsePredicates, suggestPredicates } from './predicates'
@@ -175,6 +175,8 @@ export function readsAsIncomplete(text: string): boolean {
 /** The parts of an artifact the outcome rules read. `ArtifactBlock` satisfies it. */
 export interface OutcomeArtifact {
   command: string
+  /** The block's id, when it has one: its kind half says what sort of run this was. */
+  id?: string
   output: string
   exitCode: number
   stopped?: StopReason
@@ -220,7 +222,7 @@ export function outcomeProblem(artifact: OutcomeArtifact, claimText: string, opt
       'that something passed. State what it actually showed, or re-run it'
     )
   }
-  const kind = classifyCommand(artifact.command)
+  const kind = artifactKind(artifact)
   if (kind !== 'lint' && kind !== 'tests') return null
   const summary = parseWorkSummary(artifact.output)
   if (!summary) {
@@ -241,7 +243,7 @@ export function outcomeProblem(artifact: OutcomeArtifact, claimText: string, opt
 }
 
 // What a claim says it is about, by the words it uses for a kind of run. Each
-// kind is one `classifyCommand` returns. Narrow and English, like the outcome
+// kind is one `artifactKind` returns. Narrow and English, like the outcome
 // rules: a word that fires on ordinary prose would fail a claim citing the
 // right run. So "types" and "suite" are not here ("this type of change", "the
 // lint suite"), and neither is a bare "audit" or "vulnerability" - "the XSS
@@ -254,7 +256,7 @@ const KIND_WORDS: readonly (readonly [kind: string, name: string, words: RegExp]
   ['audit', 'audit', /\b(?:dependency|npm|pnpm|yarn|bun|pip|cargo|security) audit\b|\baudit reports?\b/i],
 ]
 
-/** The kinds of run a claim sentence names, by `classifyCommand`'s names. */
+/** The kinds of run a claim sentence names, by `artifactKind`'s names. */
 export function kindsNamed(text: string): string[] {
   return KIND_WORDS.filter(([, , words]) => words.test(text)).map(([kind]) => kind)
 }
@@ -359,7 +361,7 @@ function statedCounts(text: string): StatedCount[] {
  * nothing in the sentence to compare.
  */
 export function kindProblem(artifact: OutcomeArtifact, claimText: string): { detail: string; named: string[] } | null {
-  const kind = classifyCommand(artifact.command)
+  const kind = artifactKind(artifact)
   const named = kindsNamed(claimText)
   if (!KIND_WORDS.some(([k]) => k === kind) || named.length === 0 || named.includes(kind)) return null
   return {
@@ -962,7 +964,7 @@ function fixer(resolvable: ArtifactBlock[], suggestable: ArtifactBlock[]): Fixes
     ofKind: (kinds, commit) =>
       [...runs.values()]
         .map((r) => r.block)
-        .filter((b) => backsAClaim(b) && kinds.includes(classifyCommand(b.command)) && (!commit || !b.commit || commit.startsWith(b.commit))),
+        .filter((b) => backsAClaim(b) && kinds.includes(artifactKind(b)) && (!commit || !b.commit || commit.startsWith(b.commit))),
     ready: (block, inline) => {
       if (block.id === undefined) return undefined
       const pair = suggestedClaim({ ...block, id: block.id })

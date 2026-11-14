@@ -246,7 +246,9 @@ mechanically:
 
 - **A claim cites a run of the kind it names.** "Lint reports no violations"
   over a typecheck block is the wrong block - `claims/kind-mismatch` - whatever
-  that typecheck showed. The kinds are `classifyCommand`'s: tests, lint,
+  that typecheck showed. The kind is the one in the block's id - the gatherer
+  writes down which step it ran, so `make check` as the test step is
+  `tests-...` whatever its text says: tests, lint,
   typecheck, lockfile, audit ("dependency audit", not a bare "audit" or
   "vulnerability", which are ordinary words in a security fix's claims). A
   claim that names none, or names several including the run's, is held to
@@ -704,7 +706,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **614 tests** across **42 files**, and that sentence is checked
+The suite is **619 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
