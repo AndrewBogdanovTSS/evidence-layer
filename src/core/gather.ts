@@ -69,6 +69,7 @@ import { gatherCommandFor, packageManagerFor } from './gather-command'
 import type { PackageManager } from './gather-command'
 import { packageScripts } from './governance'
 import { gitCapture, run, runAsync } from './proc'
+import { redactSecrets } from './redact'
 import { changedPaths, publishRun, repoRoot, sameSource, sourceFingerprint, toRootRelative } from './seal'
 import type { RunArtifact, SourceFingerprint } from './seal'
 
@@ -294,6 +295,15 @@ export interface GatherOptions {
    */
   gatherCommand?: string
   /**
+   * Takes out of a command's captured output whatever must not be published,
+   * after the default has run: the values of environment variables whose
+   * names say they are secret are always replaced with `[REDACTED:<NAME>]`
+   * (see `redact.ts`). This is for the rest - a secret read from a file, a
+   * customer's name in a fixture. Applied before the artifact id is computed,
+   * so the id addresses what the bundle shows.
+   */
+  redact?: (output: string) => string
+  /**
    * How long a planned step may run, in ms: one number for every step, or one
    * per step name (`{ test: 900_000 }`). A step past it is stopped and
    * recorded as stopped, never as a result. Default 300 000.
@@ -399,6 +409,16 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     checkpoint = next.fingerprint
   }
   const runArtifacts: RunArtifact[] = []
+  // Every captured output goes through this before it is summarised, hashed
+  // into an id, written to the bundle or sealed.
+  // The command line as well: one assembled with a token in it is printed
+  // as the block's first line, and hashed into the id.
+  const redact = (text: string): string => (opts.redact ? opts.redact(redactSecrets(text)) : redactSecrets(text))
+  const publishable = <T extends { command: string; output: string }>(result: T): T => {
+    result.command = redact(result.command)
+    result.output = redact(result.output)
+    return result
+  }
   const baseSha = gitCapture(['rev-parse', '--verify', '--end-of-options', opts.base + '^{commit}'], opts.repo)
   if (!baseSha) throw new Error('could not resolve --base ' + opts.base)
 
@@ -444,7 +464,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   const diffs = [{ heading: 'diff', command: 'git diff --stat ' + range }]
   if (edited.length > 0) diffs.push({ heading: 'uncommitted', command: 'git diff --stat HEAD' })
   for (const diff of skip.includes('diff') ? [] : diffs) {
-    const stat = run(diff.command, { cwd: opts.repo, timeoutMs: 60_000 })
+    const stat = publishable(run(diff.command, { cwd: opts.repo, timeoutMs: 60_000 }))
     const id = artifactId(stat.command, headSha, stat.output)
     runArtifacts.push({ id, command: stat.command, commit: headSha.slice(0, 7), exitCode: stat.exitCode, output: stat.output })
     parts.push('## ' + diff.heading, '', formatArtifact(stat.command, stat.output, stat.exitCode, { id, commit: headSha }), '')
@@ -457,7 +477,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   // is no pass/fail here to gate on, only something for a reader to see.
   let treeClean = true
   if (!skip.includes('tree')) {
-    const status = run('git status --porcelain=v1 --untracked-files=all', { cwd: opts.repo, timeoutMs: 30_000 })
+    const status = publishable(run('git status --porcelain=v1 --untracked-files=all', { cwd: opts.repo, timeoutMs: 30_000 }))
     treeClean = status.output.trim() === ''
     const id = artifactId(status.command, headSha, status.output)
     runArtifacts.push({ id, command: status.command, commit: headSha.slice(0, 7), exitCode: status.exitCode, output: status.output })
@@ -492,7 +512,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
       continue
     }
     const startedAt = Date.now()
-    const res = await runAsync(step.command, { cwd: opts.repo, timeoutMs: stepTimeout(step.name, opts.timeoutMs) })
+    const res = publishable(await runAsync(step.command, { cwd: opts.repo, timeoutMs: stepTimeout(step.name, opts.timeoutMs) }))
     observe(step.name)
     const summarise = opts.summaries?.[step.name as 'lint' | 'test']
     let noSummary: string | undefined
@@ -527,7 +547,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   }
 
   if (opts.audit) {
-    const res = await runAsync('pnpm audit', { cwd: opts.repo, timeoutMs: 60_000 })
+    const res = publishable(await runAsync('pnpm audit', { cwd: opts.repo, timeoutMs: 60_000 }))
     observe('dependency audit')
     const id = artifactId(res.command, headSha, res.output)
     runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })

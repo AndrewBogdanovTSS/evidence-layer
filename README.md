@@ -364,6 +364,14 @@ git does not look (`reports/` in `.gitignore`), or the gather will say,
 correctly, that the tree changed while it ran. A directory of reports, as
 Surefire writes, is summed.
 
+What a step printed is redacted before it is hashed, sealed or written: the
+value of any environment variable whose name says it is a secret - a
+`_`-separated `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIALS`, or a trailing
+`_KEY` - becomes `[REDACTED:<NAME>]` wherever it appears in a command line or
+its output, and `gatherEvidence({ redact })` takes out the rest. It knows a
+secret by the name the environment gave it, as a CI runner's own log masking
+does, never by its shape.
+
 `runAsync` is the runner for those steps. A timeout kills the whole process
 tree - a process group on POSIX, `taskkill /T` on Windows - rather than only
 the direct child, and it reports within a grace period even when some process
@@ -717,7 +725,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **645 tests** across **42 files**, and that sentence is checked
+The suite is **648 tests** across **42 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.

@@ -2,6 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { gatherEvidence, planStepsDefault, stepFailed } from '../src/core/gather'
+import { redactSecrets, secretValues } from '../src/core/redact'
+import { readCurrentRun } from '../src/core/seal'
 import { sh } from './helpers/git'
 import { gatherOneStep, gatherableRepo, printAndExit } from './helpers/gather'
 
@@ -129,5 +131,51 @@ describe('gatherEvidence - how every step ended', () => {
     expect(stopped.steps[0]).toMatchObject({ stopped: 'timeout' })
     expect(stepFailed(stopped.steps[0]!)).toBe(true)
     expect((await gatherOneStep(dir)).result.steps.some(stepFailed)).toBe(false)
+  }, 30_000)
+})
+
+describe('captured output is redacted before anything hashes or publishes it', () => {
+  it('masks a value by the name its variable has, whole parts only, and leaves short settings alone', () => {
+    const env = {
+      GITHUB_TOKEN: 'ghp_0123456789abcdef',
+      DB_PASSWORD: 'correct horse battery',
+      OPENAI_API_KEY: 'sk-live-0123456789',
+      GIT_AUTHOR_NAME: 'Someone Long Enough',
+      TOKENIZER_PATH: '/usr/share/tokenizers',
+      AWS_ACCESS_KEY_ID: 'AKIA0123456789',
+      DEBUG_TOKEN: 'true',
+    }
+    expect(secretValues(env).map((s) => s.name).sort()).toEqual(['DB_PASSWORD', 'GITHUB_TOKEN', 'OPENAI_API_KEY'])
+    expect(redactSecrets('curl -H "Bearer ghp_0123456789abcdef" by Someone Long Enough, DEBUG_TOKEN=true', env)).toBe(
+      'curl -H "Bearer [REDACTED:GITHUB_TOKEN]" by Someone Long Enough, DEBUG_TOKEN=true',
+    )
+  })
+
+  it('leaves no trace of a secret a step printed - not in the bundle, not in the sealed run - and applies the caller\'s redact after', async () => {
+    const dir = gatherableRepo('el-gather-')
+    const secret = 'el-test-secret-0123456789'
+    process.env.EL_GATHER_TEST_TOKEN = secret
+    try {
+      const out = join(dir, 'evidence.local.md')
+      const result = await gatherEvidence({
+        repo: dir,
+        base: 'HEAD',
+        out,
+        skip: ['typecheck', 'lockfile', 'test'],
+        plan: { lintCommand: () => 'node -e "console.log(process.env.EL_GATHER_TEST_TOKEN, \'customer-acme\')"' },
+        redact: (output) => output.replaceAll('customer-acme', '[customer]'),
+      })
+      const bundle = readFileSync(out, 'utf8')
+      expect(bundle).toContain('[REDACTED:EL_GATHER_TEST_TOKEN] [customer]')
+      const run = readCurrentRun(dir)
+      const kept = 'run' in run ? run.run.bundle + JSON.stringify(run.run.seal) : ''
+      expect(result.sealed).toBe(true)
+      for (const text of [bundle, kept]) {
+        expect(text).not.toContain(secret)
+        expect(text).not.toContain('customer-acme')
+      }
+    } finally {
+      delete process.env.EL_GATHER_TEST_TOKEN
+    }
   }, 30_000)
 })
