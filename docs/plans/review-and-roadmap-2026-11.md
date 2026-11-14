@@ -373,6 +373,13 @@ It also took the reason codes from 79 to 86 and the package's exports from
 
 In the order they should land. *Status* is as of this revision.
 
+*2026-11-14: 1.0 to 1.7 are implemented, for
+[0.20.0](../releases/v0.20.0.md). The exports went from 135 to 145 doing it -
+ten names, each a line added to the fixture on purpose, which is what 1.0
+set out to make true; it does not make the surface smaller, and nothing in
+this phase did. 1.8 to 1.10 are not started, and each waits on a decision
+that is the maintainer's.*
+
 | # | Item | From | Size | Done when | Status |
 |---|---|---|---|---|---|
 | 1.0 | **A compatibility rule, and the exports pinned.** `docs/compatibility.md` says what is stable. The package's export list is a fixture a test holds it to, so an addition is a line someone wrote on purpose. | D5 | S | Adding an export without the fixture fails the suite. | 0.20.0 |
