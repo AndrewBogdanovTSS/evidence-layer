@@ -68,14 +68,19 @@ jobs:
       # account of it, written later, by someone who was not looking. A
       # version that changes what users must do can carry its own notes in
       # `docs/releases/<tag>.md`, committed with the release and reviewed with
-      # it; they go first, and the commit history still follows them.
+      # it; they go first, and the commit history still follows them. Their
+      # links are relative to `docs/releases/`, which a Release page is not,
+      # so the copy handed to it links to the files at the tag
+      # (`scripts/release-notes.ts`); the file in the repository keeps its
+      # relative links.
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           notes="docs/releases/${GITHUB_REF_NAME}.md"
           if [ -f "$notes" ]; then
-            gh release create "$GITHUB_REF_NAME" --verify-tag --notes-file "$notes" --generate-notes
+            pnpm exec tsx scripts/release-notes.ts "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+            gh release create "$GITHUB_REF_NAME" --verify-tag --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
           else
             gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
           fi
