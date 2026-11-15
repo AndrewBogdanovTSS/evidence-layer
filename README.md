@@ -539,7 +539,7 @@ package's `2` (bad usage) is their "block".
 
 ```yaml
 - uses: actions/checkout@v5
-- uses: AndrewBogdanovTSS/evidence-layer@v0.19.0
+- uses: AndrewBogdanovTSS/evidence-layer@v0.20.0
   with:
     claims: review.md            # comma- or newline-separated
     # receipt: review.md         # needs fetch-depth: 0 and the target branch
