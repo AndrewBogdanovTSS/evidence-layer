@@ -11,6 +11,14 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
   version: string
 }
 
+/**
+ * The gate's launcher goes into the bundle the same way, as text: `init`
+ * writes it into a project, and the tarball carries `dist/` and nothing else.
+ * One source - the file the plugin runs - so the copy a project gets cannot
+ * drift from it; `test/hook.test.ts` holds what `init` writes to that file.
+ */
+const launcher = readFileSync(new URL('./plugins/evidence-layer/scripts/run-hook.mjs', import.meta.url), 'utf8')
+
 export default defineConfig({
   // Named entries, so the published paths are the ones `package.json` promises
   // in `exports` - not whatever a common-root calculation happens to produce.
@@ -31,7 +39,7 @@ export default defineConfig({
   // reading a stack trace should not have to check this package's `type` field
   // to know what they are looking at.
   outExtensions: () => ({ js: '.mjs', dts: '.d.mts' }),
-  define: { __EVIDENCE_LAYER_VERSION__: JSON.stringify(pkg.version) },
+  define: { __EVIDENCE_LAYER_VERSION__: JSON.stringify(pkg.version), __EVIDENCE_LAYER_LAUNCHER__: JSON.stringify(launcher) },
   // The package's own shape is a claim too: publint checks the manifest against
   // what is actually in the tarball, attw checks the types resolve for the
   // consumers `exports` says are supported. attw at `error`, because its

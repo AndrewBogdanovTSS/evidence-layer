@@ -253,8 +253,14 @@ Read `bad-claims.md` and `good-claims.md` side by side. The repaired one is
 longer, hedges more and sounds less confident - and it is the only one of the
 two that could be proved wrong.
 
-`--seal` holds every cited block to the run this checkout gathered, and so
-works only where the gather ran. `--bundle <file>` holds it to a bundle file
+`--seal` holds every cited block to a run this checkout gathered, and so
+works only where the gather ran. The current run, or an earlier kept one that
+saw the files as they are now (`seal/earlier-run`) - gathering again mints
+new ids even when nothing changed, and must not break every citation. After a
+real change, `evidence-layer restamp <review.md>` moves the review onto the
+new run: blocks replaced from the current bundle, ids rewritten in the grade
+tags, never a sentence or a predicate
+([DEC-0010](decisions/0010-gate-scope-and-run-identity.md)). `--bundle <file>` holds it to a bundle file
 instead - in CI, the one a gather job uploaded, wherever the review was then
 written: every cited block must be, canonically, the one the bundle carries
 under its id. Without one of the two, `claims` cannot tell a gathered block
@@ -303,6 +309,14 @@ So the baseline is checked by **equality** against
 still an ancestor of the mainline, so an ancestry check waves it straight
 through.
 
+The gatherer writes the receipt (since 0.20.0 - before that it was typed by
+hand, and the sentence below this one said otherwise): the branch, the head,
+the target, the merge-base and the size of the diff, read from git, under
+*Suggested access receipt* in the bundle. `Files opened during review` starts
+at 0, which is true until the writer says what they opened. A review with
+claims and no receipt is `receipt/absent` at the runtime gate - `unverifiable`,
+since which commit it describes was not checked.
+
 There are no checked-in fixtures for this one, and that is not an oversight: a
 receipt names commits, so a fixture would either pin this repository's history
 forever or start failing the first time it moved. Generate a real one instead -
@@ -311,7 +325,7 @@ made:
 
 ```bash
 pnpm evidence --base origin/master        # writes evidence.local.md, receipt included
-pnpm check:receipt evidence.local.md      # clean, against the tree you are standing on
+pnpm check:receipt evidence.local.md      # no error, against the tree you are standing on
 ```
 
 Then break it on purpose: edit the `**Baseline**` line to a commit from further
@@ -526,6 +540,7 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `claims/wrong-commit` | the cited artifact was collected at a different commit than the review is about |
 | `claims/bad-predicate` | a predicate in a `VERIFIED[id: ...]` tag cannot be checked |
 | `claims/outcome-mismatch` | the cited artifact's exit code or summary contradicts what the claim says |
+| `claims/failing-run` | the cited run exited non-zero, and nothing in the claim says it failed |
 | `claims/predicate-unmet` | the cited artifact does not satisfy a predicate the claim states |
 | `claims/kind-mismatch` | the claim names a kind of run - tests, lint, typecheck - and cites a run of another kind |
 | `claims/count-mismatch` | a count the claim states is not the count the cited run's work summary carries |
@@ -544,7 +559,9 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `claims/vague-comparison` | a comparison that says neither to what nor measured how |
 | `claims/success-without-effect` | a success word with no stated effect |
 | `claims/sycophancy` | agreement offered in place of evidence |
+| `claims/unclaimed-result` | a sentence reports what a run showed outside any `**Claim**:` line, where nothing checks it |
 | `claims/provenance-unchecked` | the review cites artifact blocks, and neither a seal nor a bundle was given to hold them to |
+| `receipt/absent` | the review has claims and no Access Receipt, so which commit it is about went unchecked |
 | `receipt/missing-field` | the Access Receipt lacks a required field |
 | `receipt/no-sample` | the Access Receipt has no Sample integrity line |
 | `receipt/malformed-head` | the HEAD SHA is not a full 40-character commit id |
@@ -575,6 +592,8 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `seal/not-gathered` | the current run produced no artifact with this id - naming the kept run that did, and the current id for the same command, when there are ones |
 | `seal/edited` | the cited block differs from the one the run wrote |
 | `seal/provenance` | the cited block is the one the run wrote |
+| `seal/earlier-run` | the cited block is the one an earlier kept run wrote, of the files as they are now |
+| `seal/disagreeing-runs` | the cited run and the current run ran the same command over the same files and ended differently |
 | `seal/unhashable` | the working directory cannot be fingerprinted here |
 | `seal/stale` | the code changed after the evidence was gathered |
 | `seal/partial-coverage` | what was hashed is unchanged, but part of the tree could not be hashed |
@@ -615,6 +634,7 @@ The table is checked against `src/core/codes.ts` by `check:docs`, both ways.
 | `.githooks/pre-push`, after `pnpm hooks:install` | `check:all --fast --enforce` |
 | the GitHub Action, `uses: ./` in the same workflow | `claims` over a fixture review, with this commit's build |
 | the GitHub Action, in a job with nothing installed | the same action fetching the published package through `npx`, on a review that passes and one that fails |
+| `pr-evidence`, on every pull request | this repository's own evidence, gathered by CI at the pull request's head and uploaded as an artifact. No review is held to it yet, and the summary says so: CI's ids are not the author's, and a committed review cannot name its own commit |
 | `example-evidence`, then `example-review`, in the same workflow | the example project's handoff on a standalone copy: gathered on one runner, the bundle carried as an artifact, the review held to it with `bundle:` on another |
 
 The workflow is not merely a place to run the commands. It settles a conflict of

@@ -1,31 +1,44 @@
 #!/usr/bin/env node
 /**
- * The plugin's launcher: finds the evidence-layer installed in the project and
+ * The gate's launcher: finds the evidence-layer installed in the project and
  * hands it the hook, in the same process.
  *
- * The plugin ships no copy of the package. The project installs it, at the
- * version the project chose, and this file only has to find it - walking up
- * from the project directory, which covers pnpm workspaces and worktrees
- * inside a repository. A directory whose own package.json is evidence-layer is
- * the package too: that is how this repository runs its own gate, from the
- * `dist/` its last build left. Dependency-free, because it has to work in
- * exactly the case where nothing is installed.
+ * One file, two places. The Claude Code plugin runs it from the plugin's own
+ * directory; `evidence-layer init` writes a copy into the project
+ * (`.claude/evidence-layer-hook.mjs`, `.codex/evidence-layer-hook.mjs`) and
+ * points the hooks at that. Either way it carries no copy of the package: the
+ * project installs it, at the version the project chose, and this only has to
+ * find it - walking up from the project directory, which covers pnpm
+ * workspaces, worktrees and a session started in a subdirectory. A directory
+ * whose own package.json is evidence-layer is the package too: that is how
+ * its repository runs its own gate, from the `dist/` its last build left.
+ * Dependency-free, because it has to work in exactly the case where nothing
+ * is installed.
  *
- * When the package is missing, or too old to know the hook protocol (it must
- * declare `"evidenceLayer": { "hookProtocol": 1 }` - a capability, not a
- * version comparison), the gate cannot run. That is said through the hook
- * protocol, never through an exit code: SessionStart tells the agent the gate
- * is inactive, and every other event stays out of the way - unless the hook
- * was configured `--fail-closed` or `--strict`, in which case a Stop is
- * blocked, because a strict gate that silently disappears when its package
- * does is not strict.
+ * That case is the reason it exists. A hook that runs the package straight
+ * out of `node_modules` fails with "Cannot find module" on a fresh clone -
+ * which the host reads as a broken hook, not as a decision, so the session
+ * goes on ungated and nobody is told. Here, when the package is missing, or
+ * too old to know the hook protocol (it must declare
+ * `"evidenceLayer": { "hookProtocol": 1 }` - a capability, not a version
+ * comparison), that is said through the hook protocol, never through an exit
+ * code: SessionStart tells the agent the gate is inactive and how to change
+ * that, and every other event stays out of the way - unless the hook was
+ * configured `--fail-closed` or `--strict`, in which case a Stop is blocked,
+ * because a strict gate that silently disappears when its package does is
+ * not strict.
+ *
+ * `--host=codex` after the event name says which host's protocol the package
+ * is asked to speak; without it, Claude Code's.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const HOOK_PROTOCOL = 1
-const [event, ...flags] = process.argv.slice(2)
+const [event, ...rest] = process.argv.slice(2)
+const host = rest.includes('--host=codex') ? 'codex' : 'claude'
+const flags = rest.filter((flag) => !flag.startsWith('--host='))
 const strict = flags.includes('--fail-closed') || flags.includes('--strict')
 
 function isThisPackage(manifest) {
@@ -77,10 +90,10 @@ try {
 if (!manifestPath || !manifest) {
   inactive('evidence-layer is not installed (npm install --save-dev evidence-layer)')
 } else if (manifest.evidenceLayer?.hookProtocol !== HOOK_PROTOCOL) {
-  inactive('the installed evidence-layer ' + (manifest.version ?? '') + ' is too old for this plugin - upgrade it')
+  inactive('the installed evidence-layer ' + (manifest.version ?? '') + ' is too old for this hook - upgrade it')
 } else {
   const bin = join(dirname(manifestPath), manifest.bin?.['evidence-layer'] ?? 'dist/bin/evidence-layer.mjs')
-  process.argv = [process.argv[0], bin, 'hook', 'claude', event, ...flags]
+  process.argv = [process.argv[0], bin, 'hook', host, event, ...flags]
   try {
     await import(pathToFileURL(bin).href)
   } catch (error) {

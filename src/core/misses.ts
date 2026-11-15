@@ -11,6 +11,9 @@
  *
  *     Missed-By: demo/reviews/good-claims.md
  *
+ * or, for a bug no review let through, `Missed-By: none` - which is read as
+ * an answer and recorded as nothing.
+ *
  * - and this file extracts that line straight from git history into the same
  * journal `findings` use, so one reader and one format serve both questions.
  * The reference goes in a commit-message template, not left as a discipline
@@ -27,6 +30,25 @@ import { git } from './proc'
 const RECORD_SEP = '\x02'
 const FIELD_SEP = '\x01'
 const MISSED_BY_RE = /^Missed-By:\s*(.+)$/m
+
+/**
+ * What a commit message says about the review that missed its bug: the
+ * review or PR its `Missed-By:` trailer names, `'none'` when the trailer says
+ * outright that no review let it through, or `undefined` when there is no
+ * trailer. `none` exists so that a `fix:` commit can answer the question
+ * either way - sixteen fixes went into this repository without one trailer,
+ * and an empty journal could not tell "nothing was missed" from "nobody said".
+ */
+export function readMissedBy(message: string): string | undefined {
+  const ref = MISSED_BY_RE.exec(message)?.[1]?.trim()
+  if (ref === undefined) return undefined
+  return /^none\b/i.test(ref) ? 'none' : ref
+}
+
+/** Whether a commit's subject says it fixes a bug, by the conventional prefix: `fix:`, `fix(scope):`, `fix!:`. */
+export function isFixCommit(message: string): boolean {
+  return /^fix(?:\([^)]*\))?!?:/.test(message)
+}
 
 export interface ExtractedMiss {
   commit: string
@@ -49,11 +71,12 @@ export function parseMissesFromLog(rawLog: string): ExtractedMiss[] {
     const fields = record.split(FIELD_SEP)
     const [sha, date, body] = fields.length >= 3 ? fields : [fields[0], undefined, fields[1]]
     if (!sha || !body) continue
-    const match = MISSED_BY_RE.exec(body)
-    if (!match) continue
+    // `Missed-By: none` is an answer, not a miss: nothing got past a review.
+    const reviewRef = readMissedBy(body)
+    if (reviewRef === undefined || reviewRef === 'none') continue
     misses.push({
       commit: sha.trim(),
-      reviewRef: match[1]!.trim(),
+      reviewRef,
       subject: body.split('\n')[0]!.trim(),
       ...(date?.trim() ? { date: date.trim() } : {}),
     })

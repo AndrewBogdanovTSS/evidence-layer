@@ -30,6 +30,7 @@ evidence-layer <command> [options]
 
   claims <review.md>        is every claim in this review backed by evidence?
   receipt <review.md>       was this review written against this repository?
+  restamp <review.md>       after gathering again, move the review onto the new run
   ci-summary <file>         render captured check output as a CI summary
   governance                is anything actually running the checks?
   journal report            what the checks have actually found, over time
@@ -49,6 +50,7 @@ type Loader = () => Promise<Command>
 
 const claims: Loader = async () => (await import('../src/commands/claims')).run
 const receipt: Loader = async () => (await import('../src/commands/receipt')).run
+const restamp: Loader = async () => (await import('../src/commands/restamp')).run
 const ciSummary: Loader = async () => (await import('../src/commands/ci-summary')).run
 const governance: Loader = async () => (await import('../src/commands/governance')).run
 const journalReport: Loader = async () => (await import('../src/commands/journal-report')).run
@@ -59,6 +61,7 @@ const init: Loader = async () => (await import('../src/commands/init')).run
 const COMMANDS: Record<string, Loader> = {
   claims,
   receipt,
+  restamp,
   'ci-summary': ciSummary,
   governance,
   hook,

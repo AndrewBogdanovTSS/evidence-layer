@@ -2,6 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { gatherEvidence, planStepsDefault, stepFailed } from '../src/core/gather'
+import { redactSecrets, secretValues } from '../src/core/redact'
+import { readCurrentRun } from '../src/core/seal'
 import { sh } from './helpers/git'
 import { gatherOneStep, gatherableRepo, printAndExit } from './helpers/gather'
 
@@ -94,12 +96,32 @@ describe('gatherEvidence - the zero-config plan in a project', () => {
   }, 30_000)
 })
 
+describe('gatherEvidence - what kind of run a step is', () => {
+  it('names a test step under a command it does not recognise a test run, and suggests the test claim for it', async () => {
+    const dir = gatherableRepo('el-gather-')
+    const out = join(dir, 'evidence.local.md')
+    const result = await gatherEvidence({
+      repo: dir,
+      base: 'HEAD',
+      out,
+      seal: false,
+      skip: ['lint', 'typecheck', 'lockfile'],
+      // Stands in for `make check` or `npm run check`: nothing in its text says "test".
+      plan: { testCommand: () => 'node -e "console.log(1)"' },
+      summaries: { test: () => ({ kind: 'tests', counts: { passed: 4, failed: 0, skipped: 0, todo: 0 } }) },
+    })
+    expect(result.steps[3]).toMatchObject({ name: 'test', id: expect.stringMatching(/^tests-[0-9a-f]{6}$/) })
+    expect(readFileSync(out, 'utf8')).toContain('**Claim**: The test suite ran 4 passing tests and reports no failures.')
+  }, 30_000)
+})
+
 describe('gatherEvidence - how every step ended', () => {
   it('records each planned step in order, a skip with its reason, and a failure that stepFailed reads', async () => {
     const { result } = await gatherOneStep(gatherableRepo('el-gather-'), printAndExit('two problems', 1))
     expect(result.steps.map((s) => s.name)).toEqual(['lint', 'typecheck', 'lockfile', 'test'])
     expect(result.steps[1]).toEqual({ name: 'typecheck', command: 'pnpm typecheck', skipReason: 'skipped by --skip' })
-    expect(result.steps[0]).toMatchObject({ name: 'lint', exitCode: 1, id: expect.stringMatching(/^cmd-[0-9a-f]{6}$/) })
+    // `node -e ...` is no command the patterns know, so the step says what it is.
+    expect(result.steps[0]).toMatchObject({ name: 'lint', exitCode: 1, id: expect.stringMatching(/^lint-[0-9a-f]{6}$/) })
     expect(result.steps.filter(stepFailed).map((s) => s.name)).toEqual(['lint'])
   })
 
@@ -109,5 +131,51 @@ describe('gatherEvidence - how every step ended', () => {
     expect(stopped.steps[0]).toMatchObject({ stopped: 'timeout' })
     expect(stepFailed(stopped.steps[0]!)).toBe(true)
     expect((await gatherOneStep(dir)).result.steps.some(stepFailed)).toBe(false)
+  }, 30_000)
+})
+
+describe('captured output is redacted before anything hashes or publishes it', () => {
+  it('masks a value by the name its variable has, whole parts only, and leaves short settings alone', () => {
+    const env = {
+      GITHUB_TOKEN: 'ghp_0123456789abcdef',
+      DB_PASSWORD: 'correct horse battery',
+      OPENAI_API_KEY: 'sk-live-0123456789',
+      GIT_AUTHOR_NAME: 'Someone Long Enough',
+      TOKENIZER_PATH: '/usr/share/tokenizers',
+      AWS_ACCESS_KEY_ID: 'AKIA0123456789',
+      DEBUG_TOKEN: 'true',
+    }
+    expect(secretValues(env).map((s) => s.name).sort()).toEqual(['DB_PASSWORD', 'GITHUB_TOKEN', 'OPENAI_API_KEY'])
+    expect(redactSecrets('curl -H "Bearer ghp_0123456789abcdef" by Someone Long Enough, DEBUG_TOKEN=true', env)).toBe(
+      'curl -H "Bearer [REDACTED:GITHUB_TOKEN]" by Someone Long Enough, DEBUG_TOKEN=true',
+    )
+  })
+
+  it('leaves no trace of a secret a step printed - not in the bundle, not in the sealed run - and applies the caller\'s redact after', async () => {
+    const dir = gatherableRepo('el-gather-')
+    const secret = 'el-test-secret-0123456789'
+    process.env.EL_GATHER_TEST_TOKEN = secret
+    try {
+      const out = join(dir, 'evidence.local.md')
+      const result = await gatherEvidence({
+        repo: dir,
+        base: 'HEAD',
+        out,
+        skip: ['typecheck', 'lockfile', 'test'],
+        plan: { lintCommand: () => 'node -e "console.log(process.env.EL_GATHER_TEST_TOKEN, \'customer-acme\')"' },
+        redact: (output) => output.replaceAll('customer-acme', '[customer]'),
+      })
+      const bundle = readFileSync(out, 'utf8')
+      expect(bundle).toContain('[REDACTED:EL_GATHER_TEST_TOKEN] [customer]')
+      const run = readCurrentRun(dir)
+      const kept = 'run' in run ? run.run.bundle + JSON.stringify(run.run.seal) : ''
+      expect(result.sealed).toBe(true)
+      for (const text of [bundle, kept]) {
+        expect(text).not.toContain(secret)
+        expect(text).not.toContain('customer-acme')
+      }
+    } finally {
+      delete process.env.EL_GATHER_TEST_TOKEN
+    }
   }, 30_000)
 })

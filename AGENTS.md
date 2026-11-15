@@ -31,13 +31,24 @@ and reports them the way CI would. What it cannot run - the Node matrices,
 to the workflow must be added to `scripts/ci-local.ts` too, or said there to be
 out of reach; `test/ci-local.test.ts` fails until it is.
 
+On a pull request, CI's `pr-evidence` job gathers this branch's evidence at
+its head and uploads the bundle as an artifact. It holds no review to it - a
+committed review cannot be held to CI's run yet (the ids differ from a local
+run's, and a review cannot name the commit it is part of) - so the bundle is
+what a reviewer reads a pull request's claims against, by hand.
+
 `pnpm hooks:install` wires the same fast checks into a pre-push hook.
 
 The runtime gate runs here too: `.claude/settings.json` (written by
 `evidence-layer init claude`, which notices it is in its own repository) runs
 the plugin's launcher, which runs this checkout's `dist/`. So the gate is the
 code of the last `pnpm build`, not of the working tree, and a fresh clone says
-the gate is inactive until it is built.
+the gate is inactive until it is built. That launcher,
+`plugins/evidence-layer/scripts/run-hook.mjs`, is also what `init` writes into
+a project: the build carries it as text, and the two copies under
+`examples/plain-node-project/` are held to it byte for byte by
+`test/hook.test.ts`. Change it, then run `init claude` and `init codex` in the
+example again.
 
 `pnpm check:docs` (part of `check:all`) compares the README's sentence "The
 suite is **N tests** across **M files**" with the real suite. When you add or
@@ -117,7 +128,9 @@ is what notices it drifting.
   on your commit before you push it.
 - `Missed-By: <review or PR>` on a commit that fixes a bug a review let through.
   `governance` extracts these into `journal.jsonl`; that count is the layer's
-  only measure of what reviews miss.
+  only measure of what reviews miss. Every `fix:` commit answers the question:
+  `Missed-By: none` when no review let the bug through - read as an answer and
+  recorded as nothing. `check:ladder` warns on a `fix:` with neither.
 
 ## Decisions and plans
 

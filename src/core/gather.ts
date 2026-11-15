@@ -61,14 +61,15 @@
  */
 import { existsSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { WORK_SUMMARY_KEYS, artifactId, classifyCommand, formatArtifact, formatWorkSummary } from './artifact'
+import { WORK_SUMMARY_KEYS, artifactId, artifactKind, formatArtifact, formatWorkSummary } from './artifact'
 import type { StopReason, WorkKind, WorkSummary } from './artifact'
-import { generateClaimSkeleton, generateSampleSkeleton } from './skeleton'
+import { generateClaimSkeleton, generateReceiptSkeleton, generateSampleSkeleton } from './skeleton'
 import type { SkeletonArtifact } from './skeleton'
 import { gatherCommandFor, packageManagerFor } from './gather-command'
 import type { PackageManager } from './gather-command'
 import { packageScripts } from './governance'
 import { gitCapture, run, runAsync } from './proc'
+import { redactSecrets } from './redact'
 import { changedPaths, publishRun, repoRoot, sameSource, sourceFingerprint, toRootRelative } from './seal'
 import type { RunArtifact, SourceFingerprint } from './seal'
 
@@ -206,6 +207,13 @@ export interface StepRun {
  */
 export type Summariser = (run: StepRun) => WorkSummary | { unavailable: string }
 
+/**
+ * What kind of run each planned step is, for a command `classifyCommand` does
+ * not recognise - `make check` as the test step is a test run, and its
+ * artifact is `tests-...`, held to the test rules.
+ */
+const STEP_KIND: Record<string, string> = { lint: 'lint', typecheck: 'types', lockfile: 'lockfile', test: 'tests' }
+
 /** Which work kind each summarisable step must report. */
 const SUMMARY_KIND: Record<string, WorkKind> = { lint: 'lint', test: 'tests' }
 
@@ -286,6 +294,15 @@ export interface GatherOptions {
    * is how the runtime gate names both.
    */
   gatherCommand?: string
+  /**
+   * Takes out of a command's captured output whatever must not be published,
+   * after the default has run: the values of environment variables whose
+   * names say they are secret are always replaced with `[REDACTED:<NAME>]`
+   * (see `redact.ts`). This is for the rest - a secret read from a file, a
+   * customer's name in a fixture. Applied before the artifact id is computed,
+   * so the id addresses what the bundle shows.
+   */
+  redact?: (output: string) => string
   /**
    * How long a planned step may run, in ms: one number for every step, or one
    * per step name (`{ test: 900_000 }`). A step past it is stopped and
@@ -392,6 +409,16 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
     checkpoint = next.fingerprint
   }
   const runArtifacts: RunArtifact[] = []
+  // Every captured output goes through this before it is summarised, hashed
+  // into an id, written to the bundle or sealed.
+  // The command line as well: one assembled with a token in it is printed
+  // as the block's first line, and hashed into the id.
+  const redact = (text: string): string => (opts.redact ? opts.redact(redactSecrets(text)) : redactSecrets(text))
+  const publishable = <T extends { command: string; output: string }>(result: T): T => {
+    result.command = redact(result.command)
+    result.output = redact(result.output)
+    return result
+  }
   const baseSha = gitCapture(['rev-parse', '--verify', '--end-of-options', opts.base + '^{commit}'], opts.repo)
   if (!baseSha) throw new Error('could not resolve --base ' + opts.base)
 
@@ -437,9 +464,9 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   const diffs = [{ heading: 'diff', command: 'git diff --stat ' + range }]
   if (edited.length > 0) diffs.push({ heading: 'uncommitted', command: 'git diff --stat HEAD' })
   for (const diff of skip.includes('diff') ? [] : diffs) {
-    const stat = run(diff.command, { cwd: opts.repo, timeoutMs: 60_000 })
+    const stat = publishable(run(diff.command, { cwd: opts.repo, timeoutMs: 60_000 }))
     const id = artifactId(stat.command, headSha, stat.output)
-    runArtifacts.push({ id, command: stat.command, commit: headSha.slice(0, 7), exitCode: stat.exitCode, output: stat.output })
+    runArtifacts.push({ id, command: stat.command, commit: headSha.slice(0, 7), exitCode: stat.exitCode, output: stat.output, step: diff.heading })
     parts.push('## ' + diff.heading, '', formatArtifact(stat.command, stat.output, stat.exitCode, { id, commit: headSha }), '')
   }
 
@@ -450,10 +477,10 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   // is no pass/fail here to gate on, only something for a reader to see.
   let treeClean = true
   if (!skip.includes('tree')) {
-    const status = run('git status --porcelain=v1 --untracked-files=all', { cwd: opts.repo, timeoutMs: 30_000 })
+    const status = publishable(run('git status --porcelain=v1 --untracked-files=all', { cwd: opts.repo, timeoutMs: 30_000 }))
     treeClean = status.output.trim() === ''
     const id = artifactId(status.command, headSha, status.output)
-    runArtifacts.push({ id, command: status.command, commit: headSha.slice(0, 7), exitCode: status.exitCode, output: status.output })
+    runArtifacts.push({ id, command: status.command, commit: headSha.slice(0, 7), exitCode: status.exitCode, output: status.output, step: 'tree' })
     parts.push(
       '## working tree',
       '',
@@ -485,7 +512,7 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
       continue
     }
     const startedAt = Date.now()
-    const res = await runAsync(step.command, { cwd: opts.repo, timeoutMs: stepTimeout(step.name, opts.timeoutMs) })
+    const res = publishable(await runAsync(step.command, { cwd: opts.repo, timeoutMs: stepTimeout(step.name, opts.timeoutMs) }))
     observe(step.name)
     const summarise = opts.summaries?.[step.name as 'lint' | 'test']
     let noSummary: string | undefined
@@ -498,15 +525,15 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
       if ('line' in summary) res.output = (res.output.trimEnd() === '' ? '' : res.output.trimEnd() + '\n') + summary.line
       else noSummary = summary.unavailable
     }
-    const id = artifactId(res.command, headSha, res.output)
-    runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
+    const id = artifactId(res.command, headSha, res.output, STEP_KIND[step.name])
+    runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output, step: step.name })
     steps.push({ name: step.name, command: res.command, id, exitCode: res.exitCode, ...(res.stopped && { stopped: res.stopped }) })
     const artifact: SkeletonArtifact = { command: res.command, output: res.output, exitCode: res.exitCode, id, commit: headSha, stopped: res.stopped }
     parts.push(blockOrPointer(artifact), '')
     if (noSummary) parts.push('_No work summary: ' + noSummary + '._', '')
     // Two steps running one command (a project whose lint is its typecheck)
     // give one artifact, and one claim for it.
-    if (classifyCommand(res.command) !== 'diff' && !claimArtifacts.some((a) => a.id === id)) claimArtifacts.push(artifact)
+    if (artifactKind(artifact) !== 'diff' && !claimArtifacts.some((a) => a.id === id)) claimArtifacts.push(artifact)
     if (step.name === 'test') testOutput = res.output
     console.log('  ' + step.name + ': exit ' + res.exitCode + (res.stopped ? ' (' + res.stopped + ')' : ''))
   }
@@ -520,10 +547,10 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   }
 
   if (opts.audit) {
-    const res = await runAsync('pnpm audit', { cwd: opts.repo, timeoutMs: 60_000 })
+    const res = publishable(await runAsync('pnpm audit', { cwd: opts.repo, timeoutMs: 60_000 }))
     observe('dependency audit')
     const id = artifactId(res.command, headSha, res.output)
-    runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output })
+    runArtifacts.push({ id, command: res.command, commit: headSha.slice(0, 7), exitCode: res.exitCode, stopped: res.stopped, output: res.output, step: 'audit' })
     steps.push({ name: 'audit', command: res.command, id, exitCode: res.exitCode, ...(res.stopped && { stopped: res.stopped }) })
     const artifact: SkeletonArtifact = { command: res.command, output: res.output, exitCode: res.exitCode, id, commit: headSha, stopped: res.stopped }
     parts.push(
@@ -542,6 +569,27 @@ export async function gatherEvidence(opts: GatherOptions): Promise<GatherResult>
   if (claimSkeleton.trim() !== '') {
     parts.push('## Suggested claims', '', claimSkeleton, '')
   }
+
+  // The receipt's facts, read from git so nobody types them. The target is
+  // the branch on origin the base names; the base is the merge-base with it,
+  // which is what `receipt` holds it to - not the base as given, which may be
+  // a local branch that has fallen behind.
+  const target = opts.base.replace(/^(?:refs\/remotes\/)?origin\//, '')
+  const onOrigin = gitCapture(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + target], opts.repo) !== null
+  const mergeBase = onOrigin ? gitCapture(['merge-base', 'origin/' + target, headSha], opts.repo) : null
+  const inReceiptDiff = mergeBase ? gitCapture(['diff', '--name-only', '-z', mergeBase + '...' + headSha], opts.repo) : null
+  const branch = gitCapture(['rev-parse', '--abbrev-ref', 'HEAD'], opts.repo)
+  parts.push(
+    '## Suggested access receipt',
+    '',
+    generateReceiptSkeleton({
+      branch: !branch || branch === 'HEAD' ? '(detached)' : branch,
+      headSha,
+      gatheredAgainst: opts.base,
+      ...(mergeBase && inReceiptDiff !== null && { targetBranch: target, baseSha: mergeBase, filesInDiff: nul(inReceiptDiff).length }),
+    }),
+    '',
+  )
 
   // Quotes are read at the reviewed commit, which is where `receipt` checks
   // them - so only committed files can be quoted.

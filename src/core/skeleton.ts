@@ -23,7 +23,7 @@
  * make: a writer who cannot work out the right sentence and the right
  * predicates is given them, read off the run.
  */
-import { classifyCommand, formatArtifact, formatExitLine, parseWorkSummary } from './artifact'
+import { artifactKind, formatArtifact, formatExitLine, parseWorkSummary } from './artifact'
 import type { StopReason } from './artifact'
 import { suggestPredicates } from './predicates'
 import { formatCodeSpan } from './receipt'
@@ -118,8 +118,7 @@ function stoppedBecause(stopped: StopReason): string {
 }
 
 /** One plausible claim sentence per command kind. Never asserts success when exitCode says otherwise. */
-function claimSentence(command: string, exitCode: number, stopped?: StopReason, output = ''): string | null {
-  const kind = classifyCommand(command)
+function claimSentence(kind: string, exitCode: number, stopped?: StopReason, output = ''): string | null {
   // Context, not a claim someone would grade VERIFIED - neither the diff
   // summary nor the working-tree status asserts anything a reader would
   // ask "could this be wrong?" about. Checked first, so a slow diff that
@@ -223,12 +222,57 @@ export interface SuggestedClaim {
  * the run, never from what the writer hoped it showed.
  */
 export function suggestedClaim(artifact: ClaimableArtifact): SuggestedClaim | null {
-  const sentence = claimSentence(artifact.command, artifact.exitCode, artifact.stopped, artifact.output)
+  const sentence = claimSentence(artifactKind(artifact), artifact.exitCode, artifact.stopped, artifact.output)
   if (!sentence) return null
   return {
     claim: '**Claim**: ' + sentence,
     grounding: '**Grounding**: VERIFIED[' + artifact.id + ': ' + suggestPredicates(artifact) + ']',
   }
+}
+
+/** What the gatherer can read off git for an Access Receipt. The target and base are absent when the base it was given is no branch on `origin`. */
+export interface ReceiptFacts {
+  branch: string
+  headSha: string
+  targetBranch?: string
+  /** The merge-base of `origin/<targetBranch>` and the head - what `receipt` checks the base against. */
+  baseSha?: string
+  /** Files `git diff <baseSha>...<headSha>` names. */
+  filesInDiff?: number
+  /** The base as the gatherer was given it, for the note when no target could be derived. */
+  gatheredAgainst: string
+}
+
+/**
+ * The Access Receipt, with every field git can answer already filled in.
+ *
+ * Before 0.20.0 a receipt was typed by hand - two 40-character SHAs among its
+ * six fields - which made it the most expensive honest step in the layer, and
+ * the one a review most often left out: leaving it out cost nothing and
+ * removed a check. Written here, keeping it is leaving a block in place.
+ *
+ * `Files opened during review` starts at 0. The gatherer opened nothing on
+ * the reviewer's behalf, so 0 is true until the writer changes it - and
+ * `receipt` says "0 opened of N" until they do.
+ */
+export function generateReceiptSkeleton(facts: ReceiptFacts): string {
+  // All of it or none: half a receipt, pasted, is a receipt with missing
+  // fields - errors - where no receipt at all is only unverifiable. So when
+  // there is no target to name, this says why and writes no field.
+  if (facts.targetBranch === undefined || facts.baseSha === undefined || facts.filesInDiff === undefined) {
+    return (
+      '_No receipt written: this was gathered against ' + facts.gatheredAgainst + ', which is not a branch on origin, so there is no target ' +
+      'branch to take the base from. Gather against one (`origin/main`) to get a receipt._'
+    )
+  }
+  return [
+    '**Branch**: ' + facts.branch,
+    '**HEAD SHA**: ' + facts.headSha,
+    '**Target branch**: ' + facts.targetBranch,
+    '**Base SHA**: ' + facts.baseSha,
+    '**Files in diff**: ' + facts.filesInDiff,
+    '**Files opened during review**: 0',
+  ].join('\n')
 }
 
 /**

@@ -19,7 +19,8 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { EXIT, downgradeClaims, exitCodeFor, formatOf, gradeMix, help, lintClaims, parseArgs, parseReceipt, printFindings, usage } from '../index'
-import { checkFreshness, checkProvenance, compareCited, readCurrentRun } from '../core/seal'
+import { checkFreshness, checkProvenance, compareCited, readCurrentRun, readKeptRuns, restsOnCurrentRun, sourceFingerprint } from '../core/seal'
+import type { CurrentRun, FingerprintResult } from '../core/seal'
 import { checkBundle, readBundle } from '../core/bundle'
 import type { CodedFinding } from '../index'
 
@@ -75,6 +76,39 @@ function provenanceUnchecked(markdown: string, path: string): CodedFinding[] {
   ]
 }
 
+/**
+ * Every cited block held to this checkout's sealed runs, and the code to what
+ * the run was gathered from - what `--seal` adds, and what `restamp` checks
+ * its own output with. Asked for and not there is not a pass: nothing was
+ * checked.
+ */
+export function heldToSeal(markdown: string, path: string, repo: string, current: CurrentRun): CodedFinding[] {
+  if (!('run' in current)) {
+    return [
+      {
+        level: 'none' in current ? 'unverifiable' : 'error',
+        code: 'none' in current ? 'seal/no-run' : 'seal/broken',
+        claim: 'the cited blocks came from this checkout\'s gatherer',
+        detail: 'none' in current ? current.none : current.broken,
+      },
+    ]
+  }
+  // An id from an earlier kept run is judged against that run: a pass when
+  // it saw the files as they are now, stale when it did not (DEC-0010, C3).
+  const fingerprints = new Map<string, FingerprintResult>()
+  const fingerprint = (excluded: string[]): FingerprintResult => {
+    const key = JSON.stringify(excluded)
+    if (!fingerprints.has(key)) fingerprints.set(key, sourceFingerprint(repo, excluded))
+    return fingerprints.get(key)!
+  }
+  const provenance = checkProvenance(markdown, path, current.run, {
+    runs: readKeptRuns(repo, undefined, current.run.seal.runId),
+    fingerprint,
+    repo,
+  })
+  return restsOnCurrentRun(provenance) ? [...provenance, checkFreshness(repo, current.run, fingerprint(current.run.seal.excluded))] : provenance
+}
+
 export function run(argv: string[]): void {
   const args = parseArgs(argv)
   if (args.help) help(HELP)
@@ -106,18 +140,7 @@ export function run(argv: string[]): void {
     else if (given && 'broken' in given) {
       findings.push({ level: 'error', code: 'bundle/broken', claim: 'the cited blocks are the ones in ' + args.bundle, detail: given.broken })
     }
-    if (current === undefined) return findings
-    if ('run' in current) {
-      findings.push(...checkProvenance(markdown, path, current.run), checkFreshness(repo, current.run))
-    } else {
-      // Asked for and not there is not a pass: nothing was checked.
-      findings.push({
-        level: 'none' in current ? 'unverifiable' : 'error',
-        code: 'none' in current ? 'seal/no-run' : 'seal/broken',
-        claim: 'the cited blocks came from this checkout\'s gatherer',
-        detail: 'none' in current ? current.none : current.broken,
-      })
-    }
+    if (current !== undefined) findings.push(...heldToSeal(markdown, path, repo, current))
     return findings
   }
 

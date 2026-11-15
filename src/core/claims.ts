@@ -42,8 +42,9 @@
  * has no lines below it to borrow, so its citation or reasoning must be in its
  * own text.
  *
- * It does check the outcome, where the outcome is mechanical: a claim that
- * reads as success cannot rest on a run that exited non-zero, a run that was
+ * It does check the outcome, where the outcome is mechanical: a run that
+ * exited non-zero backs only a claim that says it failed (`failingRunProblem`),
+ * a claim that reads as success cannot rest on one at all, a run that was
  * stopped before it finished backs only "did not complete", and a lint or test
  * run whose work summary shows it checked nothing backs no success claim - see
  * `outcomeProblem`. Two more rules read the claim's words against the run it
@@ -68,10 +69,11 @@
  * guarantees only that the artifact exists, was collected here, and was
  * pointed at on purpose rather than left nearby.
  */
-import { ARTIFACT_ID_RE, classifyCommand, fencedLineNumbers, findArtifactBlocks, parseWorkSummary, workDone } from './artifact'
+import { ARTIFACT_ID_RE, artifactKind, fencedLineNumbers, findArtifactBlocks, parseWorkSummary, workDone } from './artifact'
 import type { ArtifactBlock, StopReason } from './artifact'
 import type { CodedFinding } from './codes'
-import { evaluatePredicates, parsePredicates, suggestPredicates } from './predicates'
+import { admitsFailure, evaluatePredicates, parsePredicates, suggestPredicates } from './predicates'
+import type { Predicate } from './predicates'
 import { suggestedClaim } from './skeleton'
 
 /** How far below a legacy (unaddressed) VERIFIED tag its artifact block is allowed to sit. */
@@ -175,6 +177,8 @@ export function readsAsIncomplete(text: string): boolean {
 /** The parts of an artifact the outcome rules read. `ArtifactBlock` satisfies it. */
 export interface OutcomeArtifact {
   command: string
+  /** The block's id, when it has one: its kind half says what sort of run this was. */
+  id?: string
   output: string
   exitCode: number
   stopped?: StopReason
@@ -220,7 +224,7 @@ export function outcomeProblem(artifact: OutcomeArtifact, claimText: string, opt
       'that something passed. State what it actually showed, or re-run it'
     )
   }
-  const kind = classifyCommand(artifact.command)
+  const kind = artifactKind(artifact)
   if (kind !== 'lint' && kind !== 'tests') return null
   const summary = parseWorkSummary(artifact.output)
   if (!summary) {
@@ -240,8 +244,39 @@ export function outcomeProblem(artifact: OutcomeArtifact, claimText: string, opt
   return null
 }
 
+// A failure, said in words - the skeleton's own failure sentences ("reports
+// failures", "reports violations", "is out of sync", "exits 1") and their
+// common rephrasings. `NEGATED_FAILURE_RE` is checked first, as in
+// `readsAsSuccess`: "no failures" is not an admission of one.
+const FAILURE_RE =
+  /\b(?:fail(?:s|ed|ing|ures?)?|errors?|violations?|vulnerabilit(?:y|ies)|broken|out of sync|non-?zero|(?:exits?|exited)(?: with)?(?: code)? [1-9]\d*|(?:does|did) not pass|(?:doesn't|didn't) pass)\b/i
+
+/** Whether a claim sentence says its run failed. Narrow, like `readsAsSuccess`; a predicate says it without the English. */
+export function readsAsFailure(text: string): boolean {
+  return !NEGATED_FAILURE_RE.test(text) && FAILURE_RE.test(text)
+}
+
+/**
+ * Why a failing run cannot back this claim as it stands, or `null`. Before
+ * 0.20.0 a non-zero exit was held only against a claim that read as success,
+ * so "the new parser handles unicode input" over a run with three failures
+ * passed: it was not a success sentence the word list knew. The rule is now
+ * the other way round, and needs no word list to be safe - **a failing run
+ * backs only a claim that says it failed**: by a predicate a clean run would
+ * not satisfy (`exit=1`, `failed>=1`), which the skeleton writes, or in
+ * words. A stopped run is `outcomeProblem`'s, and is not asked twice.
+ */
+export function failingRunProblem(artifact: OutcomeArtifact, claimText: string, predicates: Predicate[] = []): string | null {
+  if (artifact.stopped || artifact.exitCode === 0) return null
+  if (admitsFailure(predicates) || readsAsFailure(claimText)) return null
+  return (
+    'cites `' + artifact.command + '`, which exited ' + artifact.exitCode + ', and nothing in the claim says it failed - a failing run ' +
+    'backs only a claim that says so. If the failure is what the claim rests on, say it in the tag: `exit=' + artifact.exitCode + '`'
+  )
+}
+
 // What a claim says it is about, by the words it uses for a kind of run. Each
-// kind is one `classifyCommand` returns. Narrow and English, like the outcome
+// kind is one `artifactKind` returns. Narrow and English, like the outcome
 // rules: a word that fires on ordinary prose would fail a claim citing the
 // right run. So "types" and "suite" are not here ("this type of change", "the
 // lint suite"), and neither is a bare "audit" or "vulnerability" - "the XSS
@@ -254,7 +289,7 @@ const KIND_WORDS: readonly (readonly [kind: string, name: string, words: RegExp]
   ['audit', 'audit', /\b(?:dependency|npm|pnpm|yarn|bun|pip|cargo|security) audit\b|\baudit reports?\b/i],
 ]
 
-/** The kinds of run a claim sentence names, by `classifyCommand`'s names. */
+/** The kinds of run a claim sentence names, by `artifactKind`'s names. */
 export function kindsNamed(text: string): string[] {
   return KIND_WORDS.filter(([, , words]) => words.test(text)).map(([kind]) => kind)
 }
@@ -359,7 +394,7 @@ function statedCounts(text: string): StatedCount[] {
  * nothing in the sentence to compare.
  */
 export function kindProblem(artifact: OutcomeArtifact, claimText: string): { detail: string; named: string[] } | null {
-  const kind = classifyCommand(artifact.command)
+  const kind = artifactKind(artifact)
   const named = kindsNamed(claimText)
   if (!KIND_WORDS.some(([k]) => k === kind) || named.length === 0 || named.includes(kind)) return null
   return {
@@ -620,6 +655,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     claimText: string,
     inline: boolean | undefined,
     commit: string | undefined,
+    predicates: Predicate[] = [],
   ): Omit<CodedFinding, 'claim'> | null => {
     const ownFix = fixes.ready(artifact, inline) ?? 'mark the claim UNVERIFIED'
     const kind = kindProblem(artifact, claimText)
@@ -638,6 +674,10 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     }
     const outcome = outcomeProblem(artifact, claimText, opts)
     if (outcome) return { level: 'error', code: 'claims/outcome-mismatch', detail: outcome, fix: ownFix }
+    // The fix keeps the sentence and offers the run's own predicates: what
+    // the claim says may be exactly right, and only unsaid about the exit.
+    const failing = failingRunProblem(artifact, claimText, predicates)
+    if (failing) return { level: 'error', code: 'claims/failing-run', detail: failing, fix: fixes.grounding(artifact, inline) ?? 'mark the claim UNVERIFIED' }
     const count = countProblem(artifact, claimText)
     if (count) return { level: 'error', code: 'claims/count-mismatch', detail: count.detail, expected: count.expected, observed: count.observed, fix: ownFix }
     return null
@@ -746,7 +786,7 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
         })
         return
       }
-      const mismatch = citedProblem(artifact, claimText, claim.inline, opts.expectedHeadSha)
+      const mismatch = citedProblem(artifact, claimText, claim.inline, opts.expectedHeadSha, parsed?.predicates)
       if (mismatch) {
         findings.push({ ...mismatch, detail: 'VERIFIED[' + claim.gradeId + '] ' + mismatch.detail, claim: claim.text, ...where })
         return
@@ -907,7 +947,26 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     }
   }
 
-  if (opts.prose !== false) findings.push(...lintProse(lines, fenced, file))
+  if (opts.prose !== false) {
+    const prose = lintProse(lines, fenced, file)
+    findings.push(...prose)
+    // A warning, where the prose rules above are errors: it is an
+    // observation (DEC-0014). Not said twice on a line they already failed.
+    const failed = new Set(prose.filter((f) => f.level === 'error').map((f) => f.line))
+    for (const result of unclaimedResults(markdown)) {
+      if (failed.has(result.line)) continue
+      findings.push({
+        level: 'warning',
+        code: 'claims/unclaimed-result',
+        claim: '"' + (result.sentence.length > 100 ? result.sentence.slice(0, 100) + '...' : result.sentence) + '"',
+        detail: 'reports a result about ' + result.kinds.map(kindName).join(' and ') + ' outside any `**Claim**:` line, where nothing checks it',
+        fix:
+          'state it as a claim - a `**Claim**:` line with a `**Grounding**:` line under it: VERIFIED[<id>] citing a run from the evidence bundle, or UNVERIFIED',
+        file,
+        line: result.line,
+      })
+    }
+  }
   return findings
 }
 
@@ -962,7 +1021,7 @@ function fixer(resolvable: ArtifactBlock[], suggestable: ArtifactBlock[]): Fixes
     ofKind: (kinds, commit) =>
       [...runs.values()]
         .map((r) => r.block)
-        .filter((b) => backsAClaim(b) && kinds.includes(classifyCommand(b.command)) && (!commit || !b.commit || commit.startsWith(b.commit))),
+        .filter((b) => backsAClaim(b) && kinds.includes(artifactKind(b)) && (!commit || !b.commit || commit.startsWith(b.commit))),
     ready: (block, inline) => {
       if (block.id === undefined) return undefined
       const pair = suggestedClaim({ ...block, id: block.id })
@@ -999,6 +1058,7 @@ const DOWNGRADED = new Set<string>([
   'claims/bad-predicate',
   'claims/kind-mismatch',
   'claims/outcome-mismatch',
+  'claims/failing-run',
   'claims/count-mismatch',
   'claims/predicate-unmet',
   'claims/no-nearby-artifact',
@@ -1060,6 +1120,64 @@ export function downgradeClaims(markdown: string, findings: CodedFinding[], grad
     downgraded.push({ line: claim.line + 1, from: found[0], code })
   }
   return { markdown: lines.join(eol), downgraded: downgraded.reverse() }
+}
+
+// A sentence that asks, plans or instructs is not a report of what a run
+// showed: "make sure the tests pass", "the tests should pass once this
+// lands", "do the tests pass?".
+const NOT_A_REPORT_RE =
+  /\b(?:should|must|will|shall|need(?:s|ed)? to|have to|make sure|ensure|please|todo|once|when|before|after|so that|in order to|going to|expect(?:s|ed)? to|want(?:s|ed)? to|try(?:ing)? to|let's)\b|\?\s*$/i
+// Lines that are structure, not prose: a heading, a table row, a quote, a
+// shell line, an HTML comment. A table's grammar is the project's
+// (`LintOptions.inlineClaims`), and a quote is someone else's sentence.
+const NOT_PROSE_RE = /^\s*(?:#|\||>|\$ |<!--)/
+
+/** A result a text states outside any claim: where, and the sentence. */
+export interface UnclaimedResult {
+  /** 1-based line. */
+  line: number
+  sentence: string
+  /** The kinds of run it names, by `artifactKind`'s names. */
+  kinds: string[]
+}
+
+/**
+ * Sentences that report what a run showed without being a claim: one that
+ * names a kind of run - tests, lint, typecheck - and reads as its outcome
+ * ("all 12 tests pass", "lint is clean") or states a count of it ("ran 71
+ * tests"). The same word lists the outcome rules read, and no judgement
+ * beyond them: "it works now" names no run and is not one; neither is a
+ * question, a plan or an instruction.
+ *
+ * Observation, not a verdict - see DEC-0014. It is English and it is a
+ * pattern over prose, so it is wrong in both directions; what it is for is
+ * counting how often a result is reported where nothing checks it.
+ *
+ * A `**Claim**:` line and everything down to the next blank line is the
+ * claim's own - its grounding, its numbered chain - and is not read here.
+ */
+export function unclaimedResults(markdown: string): UnclaimedResult[] {
+  const lines = markdown.split(/\r?\n/)
+  const fenced = fencedLineNumbers(lines)
+  const found: UnclaimedResult[] = []
+  let inClaim = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!
+    if (fenced.has(i)) continue
+    if (line.trim() === '') {
+      inClaim = false
+      continue
+    }
+    if (CLAIM_RE.test(line)) inClaim = true
+    if (inClaim || GRADE_RE.test(line) || NOT_PROSE_RE.test(line)) continue
+    for (const sentence of line.split(/(?<=[.!?;])\s+/)) {
+      const kinds = kindsNamed(sentence)
+      if (kinds.length === 0 || HYPOTHETICAL_RE.test(sentence) || NOT_A_REPORT_RE.test(sentence)) continue
+      if (!readsAsSuccess(sentence) && statedCounts(sentence).length === 0) continue
+      found.push({ line: i + 1, sentence: sentence.trim(), kinds })
+    }
+  }
+  return found
 }
 
 /**

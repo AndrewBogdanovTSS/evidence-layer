@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   artifactId,
+  artifactKind,
   classifyCommand,
+  commandKind,
   fencedLineNumbers,
   findArtifactBlocks,
   findFencedBlocks,
@@ -119,6 +121,24 @@ describe('artifactId', () => {
 
   it('is prefixed with the classified kind', () => {
     expect(artifactId('pnpm test', 'abc123', 'ok')).toMatch(/^tests-[0-9a-f]{6}$/)
+  })
+})
+
+describe('the kind of a run', () => {
+  it('is the step\'s only when the command says nothing - a recognised command keeps its own', () => {
+    expect(commandKind('npm run check', 'tests')).toBe('tests')
+    expect(commandKind('make check')).toBe('cmd')
+    // A lint step that runs the typechecker is one typecheck run, not a lint run of `tsc`.
+    expect(commandKind('pnpm typecheck', 'lint')).toBe('types')
+    expect(artifactId('npm run check', 'abc123', 'ok', 'tests')).toMatch(/^tests-[0-9a-f]{6}$/)
+    // The hash half does not move: only the kind was ever wrong.
+    expect(artifactId('npm run check', 'abc123', 'ok', 'tests').slice(-6)).toBe(artifactId('npm run check', 'abc123', 'ok').slice(-6))
+  })
+
+  it('is read from the id, and from the command for a block with none or one gathered as cmd', () => {
+    expect(artifactKind({ command: 'npm run check', id: 'tests-a3f91c' })).toBe('tests')
+    expect(artifactKind({ command: 'npm run check' })).toBe('cmd')
+    expect(artifactKind({ command: 'pnpm test', id: 'cmd-a3f91c' })).toBe('tests')
   })
 })
 

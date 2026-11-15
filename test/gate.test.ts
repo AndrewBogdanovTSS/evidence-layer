@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { artifactId, formatArtifact } from '../src/core/artifact'
 import { decide, isProtected, journalOutcome, levelOf } from '../src/core/gate'
 import type { GateDecision, GateOptions } from '../src/core/gate'
-import { readJournal, summariseGate } from '../src/core/journal'
+import { readJournal, summariseGate, untaggedBlocks } from '../src/core/journal'
 import { publishRun, sourceFingerprint, stateDir } from '../src/core/seal'
 import { sh } from './helpers/git'
 
@@ -33,10 +33,10 @@ const HONEST = '# Review\n\n**Claim**: whether the suite passes.\n**Grounding**:
 const TESTS_OUTPUT = 'ok\n[SUMMARY tests: passed=3 failed=0 skipped=0 todo=0]'
 
 /** Gathers a sealed run holding one test artifact, the way gatherEvidence would. */
-function sealTests(dir: string): { id: string; block: string } {
+function sealTests(dir: string, output = TESTS_OUTPUT): { id: string; block: string } {
   const head = sh(dir, 'rev-parse', 'HEAD')
-  const id = artifactId('pnpm test', head, TESTS_OUTPUT)
-  const block = formatArtifact('pnpm test', TESTS_OUTPUT, 0, { id, commit: head })
+  const id = artifactId('pnpm test', head, output)
+  const block = formatArtifact('pnpm test', output, 0, { id, commit: head })
   const fp = sourceFingerprint(dir, ['review.md', 'evidence.local.md'])
   if ('unverifiable' in fp) throw new Error(fp.unverifiable)
   publishRun(dir, {
@@ -44,13 +44,24 @@ function sealTests(dir: string): { id: string; block: string } {
     source: fp.fingerprint,
     excluded: ['evidence.local.md', 'review.md'],
     bundle: '# Evidence bundle\n\n' + block + '\n',
-    artifacts: [{ id, command: 'pnpm test', exitCode: 0, output: TESTS_OUTPUT }],
+    artifacts: [{ id, command: 'pnpm test', exitCode: 0, output }],
   })
   return { id, block }
 }
 
 const backedReview = (b: { id: string; block: string }) =>
   '# Review\n\n**Claim**: the suite ran 3 passing tests.\n**Grounding**: VERIFIED[' + b.id + ': exit=0, passed>=3]\n\n' + b.block + '\n'
+
+/** An Access Receipt that holds for `repo()` at its one commit, with `origin/main` put there to be the base. */
+function receiptFor(dir: string): string {
+  sh(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+  const head = sh(dir, 'rev-parse', 'HEAD')
+  return [
+    '**Branch**: work', '**HEAD SHA**: ' + head, '**Target branch**: main', '**Base SHA**: ' + head,
+    '**Files in diff**: 0', '**Files opened during review**: 0', '',
+    '| File | First non-blank line |', '|---|---|', '| `src/a.js` | `a` |', '', 'Read `src/a.js:1`.', '', '',
+  ].join('\n')
+}
 
 const gateJournal = (dir: string) => readJournal(join(stateDir(dir)!, 'journal.jsonl'))
 
@@ -188,7 +199,7 @@ describe('stop - the seal', () => {
     const dir = repo()
     start(dir)
     const sealed = sealTests(dir)
-    writeFileSync(join(dir, 'review.md'), backedReview(sealed))
+    writeFileSync(join(dir, 'review.md'), receiptFor(dir) + backedReview(sealed))
     expect(stop(dir)).toMatchObject({ action: 'allow', outcome: 'checked', level: 'pass' })
 
     writeFileSync(join(dir, 'src/a.js'), 'edited after the tests ran\n')
@@ -196,6 +207,41 @@ describe('stop - the seal', () => {
     const stale = stop(dir)
     expect(stale.action).toBe('block')
     if (stale.action === 'block') expect(stale.reason).toContain('src/a.js')
+  })
+
+  it('lets a review, and a final reply, keep citing an earlier run after a re-gather that changed nothing', () => {
+    const dir = repo()
+    start(dir)
+    const first = sealTests(dir)
+    // Gathered again "to be safe": the same files, another timing in the output, so a new id.
+    const second = sealTests(dir, 'ok, a little slower\n[SUMMARY tests: passed=3 failed=0 skipped=0 todo=0]')
+    expect(second.id).not.toBe(first.id)
+    writeFileSync(join(dir, 'review.md'), receiptFor(dir) + backedReview(first))
+    const reply = '**Claim**: the suite ran 3 passing tests.\n**Grounding**: VERIFIED[' + first.id + ': exit=0, passed>=3]\n'
+    const decision = stop(dir, {}, { message: reply })
+    expect(decision).toMatchObject({ action: 'allow', outcome: 'checked', level: 'pass' })
+    expect(decision.findings.filter((f) => f.code === 'seal/earlier-run').map((f) => f.file).sort()).toEqual(['final message', 'review.md'])
+
+    // Once the code changes, that earlier run is of other files: stale, and blocked.
+    writeFileSync(join(dir, 'src/a.js'), 'edited after both gathers\n')
+    writeFileSync(join(dir, 'review.md'), receiptFor(dir) + backedReview(first) + '\n')
+    const stale = stop(dir)
+    expect(stale.action).toBe('block')
+    if (stale.action === 'block') expect(stale.reason).toContain('an earlier gather, and the code has changed since that run')
+  })
+
+  it('says a review with claims and no Access Receipt was not checked for its commit - unverifiable, not skipped', () => {
+    const dir = repo()
+    start(dir)
+    writeFileSync(join(dir, 'review.md'), backedReview(sealTests(dir)))
+    const decision = stop(dir)
+    expect(decision).toMatchObject({ action: 'allow', outcome: 'checked', level: 'unverifiable' })
+    const absent = decision.findings.filter((f) => f.code === 'receipt/absent')
+    expect(absent).toHaveLength(1)
+    expect(absent[0]!.fix).toContain('Suggested access receipt')
+    // Asked for the stricter trade, a check that was not made blocks.
+    writeFileSync(join(dir, 'review.md'), backedReview(sealTests(dir)) + '\n')
+    expect(stop(dir, { strict: true }).action).toBe('block')
   })
 
   it('blocks a block that was edited after it was gathered', () => {
@@ -282,6 +328,23 @@ describe('the gate journal', () => {
     expect(entries[0]!.findings![0]).toContain('the final message has no **Claim** line')
     expect(entries[1]!.findings![0]).toContain('there was no final message')
     expect(summariseGate(entries)).toMatchObject({ stops: 2, checkedStops: 0, nothingToCheck: 2, degradedAllows: 0 })
+  })
+
+  it('counts a result reported as prose on the stop\'s entry, and says and blocks nothing over it', () => {
+    const dir = repo()
+    start(dir)
+    const decision = stop(dir, {}, { message: 'Done. I ran the full test suite and all 12 tests pass. Lint is clean.' })
+    expect(decision).toMatchObject({ action: 'allow', outcome: 'nothing-to-check' })
+    expect('message' in decision && decision.message).toBeFalsy()
+    stop(dir, {}, { message: 'All done, see the diff.' })
+    const entries = gateJournal(dir)
+    expect(entries.map((e) => e.gate?.unclaimed)).toEqual([2, undefined])
+    expect(summariseGate(entries)).toMatchObject({ unclaimedStops: 1, realUnclaimed: 0, falseUnclaimed: 0 })
+    // Listed for a person to tag, by id, with the sentence - what DEC-0014's threshold is counted from.
+    expect(untaggedBlocks(entries, 'unclaimed').map((b) => b.finding)).toEqual([
+      expect.stringContaining('I ran the full test suite and all 12 tests pass.'),
+    ])
+    expect(untaggedBlocks(entries)).toEqual([])
   })
 
   it('maps outcomes onto the five levels without inventing a pass', () => {

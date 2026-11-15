@@ -34,6 +34,7 @@ export const CODES = {
   'claims/wrong-commit': 'the cited artifact was collected at a different commit than the review is about',
   'claims/bad-predicate': 'a predicate in a `VERIFIED[id: ...]` tag cannot be checked',
   'claims/outcome-mismatch': 'the cited artifact\'s exit code or summary contradicts what the claim says',
+  'claims/failing-run': 'the cited run exited non-zero, and nothing in the claim says it failed',
   'claims/predicate-unmet': 'the cited artifact does not satisfy a predicate the claim states',
   'claims/kind-mismatch': 'the claim names a kind of run - tests, lint, typecheck - and cites a run of another kind',
   'claims/count-mismatch': 'a count the claim states is not the count the cited run\'s work summary carries',
@@ -52,9 +53,11 @@ export const CODES = {
   'claims/vague-comparison': 'a comparison that says neither to what nor measured how',
   'claims/success-without-effect': 'a success word with no stated effect',
   'claims/sycophancy': 'agreement offered in place of evidence',
+  'claims/unclaimed-result': 'a sentence reports what a run showed outside any `**Claim**:` line, where nothing checks it',
   'claims/provenance-unchecked': 'the review cites artifact blocks, and neither a seal nor a bundle was given to hold them to',
 
   // receipt - was this review written against a real, correctly-based checkout
+  'receipt/absent': 'the review has claims and no Access Receipt, so which commit it is about went unchecked',
   'receipt/missing-field': 'the Access Receipt lacks a required field',
   'receipt/no-sample': 'the Access Receipt has no Sample integrity line',
   'receipt/malformed-head': 'the HEAD SHA is not a full 40-character commit id',
@@ -87,6 +90,8 @@ export const CODES = {
   'seal/not-gathered': 'the current run produced no artifact with this id',
   'seal/edited': 'the cited block differs from the one the run wrote',
   'seal/provenance': 'the cited block is the one the run wrote',
+  'seal/earlier-run': 'the cited block is the one an earlier kept run wrote, of the files as they are now',
+  'seal/disagreeing-runs': 'the cited run and the current run ran the same command over the same files and ended differently',
   'seal/unhashable': 'the working directory cannot be fingerprinted here',
   'seal/stale': 'the code changed after the evidence was gathered',
   'seal/partial-coverage': 'what was hashed is unchanged, but part of the tree could not be hashed',

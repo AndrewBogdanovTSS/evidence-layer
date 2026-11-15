@@ -1,21 +1,29 @@
 ---
 id: DEC-0010
-status: proposed
+status: accepted
 date: 2026-10-19
+decided: 2026-11-14
 supersedes: null
-invariants: []
-review_by: null
-decide_by: 2026-12-31
+invariants:
+  - A cited block the current run did not produce is accepted only from a kept run whose source fingerprint equals the current one, and is stale, naming the paths, from one whose fingerprint does not; enforced by `pnpm test`.
+  - Two runs of one command over the same files that ended differently are reported as flaky when the earlier one is cited, never passed in silence; enforced by `pnpm test`.
+  - A stop whose citations are all the current run's reads no other run and fingerprints the tree once; enforced by `pnpm test`.
+  - `restamp` writes only blocks copied from a sealed run's bundle, rewrites an id only in a grade tag, and never changes a claim's sentence or its predicates; enforced by `pnpm test`.
+review_by: 2027-11-14
 enforce_owner: Andrii Bohdanov
 ---
 
 # DEC-0010: what a stop checks, which runs a claim may cite, and what a fence label means
 
-Draft. Nothing here is implemented. It records the changes an independent
-review of the runtime gate and the gather path (at 159d5cc, 2026-10-19)
-proposed that alter the gate's semantics rather than fix a bug - C1, C3, C4
-and C5 in that review - so the choice is made once, on purpose. The review's
-bug fixes ship in 0.10.0 without waiting for this record.
+**Accepted on 2026-11-14 for C3 and C4, which ship in 0.20.0. C1 and C5 are
+not decided by this record** - see [the decision](#the-decision) below; what
+follows up to there is the draft as it was proposed, kept as written.
+
+It records the changes an independent review of the runtime gate and the
+gather path (at 159d5cc, 2026-10-19) proposed that alter the gate's semantics
+rather than fix a bug - C1, C3, C4 and C5 in that review - so the choice is
+made once, on purpose. The review's bug fixes shipped in 0.10.0 without
+waiting for this record.
 
 ## Context
 
@@ -165,16 +173,46 @@ Two smaller points for the same decision:
   `gate.repeatOf: <entry id>`, counted apart from degraded allows, so the
   journal shows how long a failing review was carried.
 
-## Invariants (once accepted)
+## The decision
 
-To be written with the decision. Candidates, each enforced by `pnpm test`:
+Decided by the maintainer on 2026-11-14, on the recommendation of
+[the roadmap](../plans/review-and-roadmap-2026-11.md) (item 1.8).
 
-- A review blocks only when it changed since its last check or is still
-  failing; staleness of an untouched review is reported rather than blocked
-  unless the policy says otherwise.
-- A cited block is accepted only from a kept run whose source fingerprint
-  equals the current one.
-- `restamp` writes only blocks copied from a sealed run, and never a claim
-  sentence.
-- A run is relabelled only when HEAD's tree, minus the run's exclusions,
-  equals the run's source and its coverage is complete.
+**C3 is accepted, as proposed, with three points settled in the building:**
+
+- An earlier run is read only when a text cites an id the current run did not
+  produce. A stop whose citations are all the current run's reads one run and
+  fingerprints the tree once, as before - `test/gate-cost.test.ts` holds it
+  to that - so C3 costs nothing where it is not used.
+- Freshness is judged per citation, against the run the block came from. The
+  current run's own freshness is asked only when some citation rests on it.
+- `seal/disagreeing-runs` compares the cited run with the *current* run's
+  artifact for the same command, and only when both saw the same files. It is
+  `flaky`: exit 3 from `claims --seal`, a block at the gate only under
+  `--strict`. Making it an error would block a genuinely flaky suite; leaving
+  it out would let the older, greener run be cited in silence.
+
+**C4 is accepted, as proposed, with one limit added:** `restamp` does not
+move the Access Receipt. A review restamped onto a run gathered at a later
+commit still names the earlier commit, and `claims/wrong-commit` says so. The
+receipt is the writer's statement of which commit the review is about;
+swapping it is C5's territory - relabelling evidence when a commit records
+content that did not change - and is not decided here.
+
+**C5 and C1 are not decided.** Each changes more than C3 and C4 did, and each
+now has something to be decided from that it did not have when this was
+drafted: the gate journals every stop (0.19.0), so how often an old review
+blocks an unrelated turn (C1) and how often gather-then-commit fails as
+`claims/wrong-commit` (C5) can be counted rather than argued. The roadmap
+sets C1's threshold at more than 1 in 10 blocks. Whichever is taken up gets a
+record of its own, superseding nothing here.
+
+The two smaller points - who tags the journal, and a journal entry for a
+silent repeat - are likewise left open.
+
+## Invariants
+
+Those of C3 and C4, in the frontmatter above. The draft's candidates for C1
+("a review blocks only when it changed since its last check...") and C5 ("a
+run is relabelled only when...") are not invariants of this record: nothing
+here implements them.

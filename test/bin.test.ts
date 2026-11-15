@@ -178,3 +178,18 @@ describe('the package as npm would hand it over', () => {
     expect(paths.some((p) => p.startsWith('examples/'))).toBe(false)
   })
 })
+
+// The surface is pinned so that growing it is a decision. Phase 0 of the
+// roadmap added seven exports in ten commits without anyone choosing to;
+// `docs/compatibility.md` says what an export costs once it is released.
+describe('the package\'s exports', () => {
+  it('are the ones test/fixtures/exports.json lists - add a name there on purpose, remove one with a release note', async () => {
+    const pinned = JSON.parse(readFileSync(join(root, 'test', 'fixtures', 'exports.json'), 'utf8')) as Record<string, string[] | string>
+    const actual = {
+      '.': Object.keys(await import('../src/index')).sort(),
+      './adapters/test-reports': Object.keys(await import('../src/adapters/test-reports')).sort(),
+      './adapters/node-default': Object.keys(await import('../src/adapters/node-default')).sort(),
+    }
+    for (const [entry, names] of Object.entries(actual)) expect(names, entry).toEqual(pinned[entry])
+  })
+})

@@ -197,6 +197,66 @@ jobs:
           claims: example/review.md
           bundle: example/evidence.local.md
 
+  # This repository's evidence, gathered by CI on every pull request.
+  #
+  # Until this job existed the package ran governance, check:docs and the
+  # ladder on itself, and never the first step of the thing it is for. The
+  # gather is CI's, at the pull request's head, so the bundle it uploads is
+  # the independent party's and not the author's: what a person reviewing the
+  # pull request can cite, and what an author's "tests pass" can be read
+  # against.
+  #
+  # It holds no review to that bundle, and says so in the summary. A review
+  # committed with the pull request cannot be held to it yet, for two reasons
+  # that are the package's own open questions rather than this workflow's: the
+  # ids CI's run gets are not the ids the author's run got - an id hashes the
+  # output, and test output carries timings - and a review that is part of a
+  # commit cannot name that commit in its receipt. `restamp` answers the first
+  # within one checkout; the second is DEC-0010's C5, undecided. The example
+  # project's workflow avoids both by writing the review in CI, from the
+  # bundle, which needs a model and a key (roadmap, item 1.10).
+  pr-evidence:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The pull request's head, not the merge commit GitHub makes for it:
+          # the bundle names the commit a reviewer reads. All of history, for
+          # the base branch the diff and the receipt are measured against.
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Gather
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: pnpm evidence --base "$BASE"
+      # Uploaded and summarised whether or not a step failed: a failing run is
+      # evidence too.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr-evidence
+          path: evidence.local.md
+          if-no-files-found: error
+          retention-days: 14
+      - name: Summary
+        if: always()
+        run: |
+          {
+            cat evidence.local.md
+            echo
+            echo "### Gathered by CI - no review was held to it"
+            echo
+            echo "This is the evidence for the pull request's head, gathered here rather than by its author."
+            echo "Nothing checked a review against it: that is not a review that passed."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # Separate job, one Node version: these check the repository, not the code's
   # behaviour on a given runtime, so running them three times says nothing new.
   governance:

@@ -52,7 +52,8 @@ describe('one stop', () => {
 
     calls.git = []
     const decision = decide({ kind: 'stop', cwd: dir, sessionId: 's', reentry: false, message: claim })
-    expect(decision).toMatchObject({ action: 'allow', level: 'pass' })
+    // Nothing failed; the review carries no Access Receipt, which is said rather than skipped.
+    expect(decision).toMatchObject({ action: 'allow', level: 'unverifiable' })
     const count = (...prefix: string[]) => calls.git.filter((a) => prefix.every((p, i) => a[i] === p)).length
     expect(count('write-tree')).toBe(1)
     expect(count('rev-parse', '--show-toplevel')).toBe(1)

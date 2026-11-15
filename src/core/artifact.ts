@@ -120,7 +120,11 @@ export function fencedLineNumbers(lines: string[]): Set<number> {
   return inside
 }
 
-/** `<kind>-<6 hex chars>`, e.g. `tests-a3f91c`. Kind is cosmetic; the hash is the address. */
+/**
+ * `<kind>-<6 hex chars>`, e.g. `tests-a3f91c`. The hash is the address. The
+ * kind says what sort of run it was, and since 0.20.0 the rules read it from
+ * here (`artifactKind`) rather than guessing it again from the command.
+ */
 export const ARTIFACT_ID_RE = /^[a-z]+-[0-9a-f]{6}$/
 
 /**
@@ -182,9 +186,26 @@ export function findArtifactBlocks(lines: string[]): ArtifactBlock[] {
 }
 
 /**
- * Classifies a command into the `<kind>` half of an artifact id. Cosmetic - it
- * exists so `tests-a3f91c` reads better than `cmd-a3f91c` - and falls back
- * honestly to `cmd` rather than guessing.
+ * The kind of run an artifact is: the kind half of its id when it has one,
+ * otherwise what its command looks like. The id is where the gatherer wrote
+ * down what it knew - that `npm run check` was the test step - and before
+ * 0.20.0 every rule threw that away and classified the command text again,
+ * so a test run under a command the patterns did not know was `cmd`, and
+ * none of the test rules applied to it.
+ */
+export function artifactKind(artifact: { command: string; id?: string }): string {
+  const declared = artifact.id?.slice(0, artifact.id.lastIndexOf('-'))
+  // `cmd` is the gatherer saying it did not know, so the command's text is
+  // still the best there is - and a later release may recognise a command an
+  // earlier one gathered as `cmd`.
+  return declared !== undefined && declared !== 'cmd' ? declared : classifyCommand(artifact.command)
+}
+
+/**
+ * Classifies a command into the `<kind>` half of an artifact id, from its
+ * text alone - what there is to go on for a block built by hand. It falls
+ * back honestly to `cmd` rather than guessing; a gatherer that knows which
+ * step it ran says so instead (`artifactId`'s `stepKind`).
  */
 export function classifyCommand(command: string): string {
   const invocation = invocationText(command)
@@ -338,10 +359,25 @@ export function workDone(summary: WorkSummary): number {
  * The full commit and the full output go into the hash so the id is globally
  * unambiguous; only a short, readable prefix of each is displayed or stored
  * next to it in the fence, because that is the part a human verifies by eye.
+ *
+ * `stepKind` is what the gatherer knows the run to be - `tests` for its test
+ * step - used for the kind half when the command's text says nothing.
  */
-export function artifactId(command: string, commit: string, output: string): string {
+export function artifactId(command: string, commit: string, output: string, stepKind?: string): string {
   const hash = createHash('sha256').update(command + '\0' + commit + '\0' + output).digest('hex')
-  return classifyCommand(command) + '-' + hash.slice(0, 6)
+  return commandKind(command, stepKind) + '-' + hash.slice(0, 6)
+}
+
+/**
+ * The kind an artifact gets: what the command is recognised as, and only
+ * when it is not recognised at all, the kind of the step that ran it. In
+ * that order on purpose. A project whose lint step runs its typechecker has
+ * one run, and it is a typecheck - named after the step it would be two
+ * artifacts with one output, and "lint reports no violations" over `tsc`.
+ */
+export function commandKind(command: string, stepKind?: string): string {
+  const recognised = classifyCommand(command)
+  return recognised === 'cmd' && stepKind !== undefined ? stepKind : recognised
 }
 
 /**

@@ -131,13 +131,14 @@ concrete near-miss.
 
 ## The commands
 
-One executable, seven commands - `journal` is the one command with
+One executable, eight commands - `journal` is the one command with
 subcommands, and `hook` and `init` are the runtime gate's (see
 [below](#in-an-agents-session-the-runtime-gate)):
 
 ```bash
 npx evidence-layer claims review.md          # is every claim backed by evidence?
 npx evidence-layer receipt review.md         # was this review written against this repo?
+npx evidence-layer restamp review.md         # after gathering again: move the review onto the new run
 npx evidence-layer ci-summary output.txt     # render captured output as a CI summary
 npx evidence-layer governance                # is anything actually running the checks?
 npx evidence-layer journal report            # what the checks have actually found
@@ -148,6 +149,7 @@ npx evidence-layer journal tag <id> real     # mark a finding real or false
 | --- | --- |
 | `claims` | "I verified this" - every `VERIFIED[id]` tag must address a real artifact collected at the commit under review; with `--seal`, one this checkout's gather wrote about this code, and with `--bundle`, one a given bundle carries |
 | `receipt` | "I reviewed this repository" - the review's Access Receipt must match the repository's own git output, and a cited file must be backed by that file's own verbatim first line |
+| `restamp` | nothing; after a gather it replaces the blocks a review carries from an earlier run with the current run's for the same step, rewrites the ids in the grade tags citing them, and checks the result as `claims --seal` does - never a sentence or a predicate |
 | `ci-summary` | nothing; it renders a captured run for a CI job summary, and reports `unverifiable` when it has nothing to read |
 | `governance` | "this is enforced" - every invariant a decision record declares must be reachable from a git hook or a CI workflow, and no governance exception may be past its expiry; on the way, it records every `Missed-By:` commit trailer into the journal (`--no-journal` to skip) |
 | `journal report` | "these checks are useful" - real findings, false findings and misses, counted over time rather than assumed |
@@ -170,6 +172,10 @@ non-blank line in a code span, `|` escaped as `\|`:
 |---|---|
 | `src/a.ts` | `import { b } from './b'` |
 ```
+
+The gatherer writes the receipt's fields into the bundle, read from git, so
+keeping one is leaving a block in place; `Files opened during review` starts
+at 0 until the writer says otherwise.
 
 The one-line form from 0.1.x (`` **Sample integrity**: `path` -> `line` ``) is
 still read, so existing reviews keep verifying.
@@ -226,8 +232,12 @@ says it is done.
 `claims` reads the outcome of every artifact a VERIFIED claim cites, and three
 rules are mechanical enough to check without reading the output for sense:
 
-- **A failing run backs no success claim.** "Tests pass" over `exit: 1` is an
-  error.
+- **A failing run backs only a claim that says it failed.** "Tests pass" over
+  `exit: 1` is an error, and so is "the new parser handles unicode" over it -
+  a sentence about something else, which a word list for success never
+  caught (`claims/failing-run`). The claim says it in the tag, with a
+  predicate a clean run would not satisfy (`exit=1`, `failed>=1` - the
+  skeleton writes them), or in words.
 - **A stopped run backs only "did not complete".** The exit line names why it
   stopped (`exit: 124 (timeout)`, `exit: 1 (overflow)`, `exit: 137 (killed
   SIGKILL)`), so "Typecheck reports errors" over a run the time limit killed is
@@ -246,7 +256,9 @@ mechanically:
 
 - **A claim cites a run of the kind it names.** "Lint reports no violations"
   over a typecheck block is the wrong block - `claims/kind-mismatch` - whatever
-  that typecheck showed. The kinds are `classifyCommand`'s: tests, lint,
+  that typecheck showed. The kind is the one in the block's id - the gatherer
+  writes down which step it ran, so `make check` as the test step is
+  `tests-...` whatever its text says: tests, lint,
   typecheck, lockfile, audit ("dependency audit", not a bare "audit" or
   "vulnerability", which are ordinary words in a security fix's claims). A
   claim that names none, or names several including the run's, is held to
@@ -354,6 +366,14 @@ git does not look (`reports/` in `.gitignore`), or the gather will say,
 correctly, that the tree changed while it ran. A directory of reports, as
 Surefire writes, is summed.
 
+What a step printed is redacted before it is hashed, sealed or written: the
+value of any environment variable whose name says it is a secret - a
+`_`-separated `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIALS`, or a trailing
+`_KEY` - becomes `[REDACTED:<NAME>]` wherever it appears in a command line or
+its output, and `gatherEvidence({ redact })` takes out the rest. It knows a
+secret by the name the environment gave it, as a CI runner's own log masking
+does, never by its shape.
+
 `runAsync` is the runner for those steps. A timeout kills the whole process
 tree - a process group on POSIX, `taskkill /T` on Windows - rather than only
 the direct child, and it reports within a grace period even when some process
@@ -385,13 +405,25 @@ and the bundle names the step and the path.
 npx evidence-layer claims review.md --seal
 ```
 
-adds two checks. Every cited block must be one the current run produced,
-unedited. And the code must still be what that run was gathered from: editing a
+adds two checks. Every cited block must be one a kept run produced, unedited -
+the current run, or an earlier one that saw the files as they are now
+(`seal/earlier-run`): gathering again "to be safe" mints new ids, since test
+output carries timings, and must not break every citation in the review. An
+earlier run of other files is `seal/stale`, and one that disagrees with the
+current run about the same command over the same files is said so, as `flaky`. And the code must still be what that run was gathered from: editing a
 file after gathering is an error naming the file, while committing content that
 did not change is not, and neither is writing the review itself. A pass says
 exactly what it covers - tracked and non-ignored files, not ignored ones,
 dependencies or the environment - and an untracked file too large to hash makes
 it `unverifiable`, never a pass.
+
+When the code did change, gather again and run
+`npx evidence-layer restamp review.md`: each block from the earlier run is
+replaced by the current run's block for the same step, the ids in the grade
+tags follow, and the result is checked as `--seal` checks it. Sentences and
+predicates stay as written - `passed>=71` over a run that passed 70 is still
+an error - so it cannot make a claim pass, only make the honest fix after an
+edit one command instead of every block copied again by hand.
 
 The seal is not an attestation. It lives where the same agent can write, so it
 catches the default failure, not someone rewriting it on purpose; CI, which
@@ -414,8 +446,11 @@ usage, never a pass.
 CI checks a review after a person can already read it. The gate runs the same
 checks at the moment the agent says it is done, so an unbacked "tests pass"
 stated as a claim is caught by the agent that wrote it. One stated as prose is
-not graded yet: the stop goes through, and is journalled as having had nothing
-to check, so it is counted rather than missing:
+not graded: the stop goes through, and the sentence is counted on the stop's
+journal entry - a warning, `claims/unclaimed-result`, when it is in a review
+file. Whether it should ever block is
+[DEC-0014](docs/decisions/0014-results-stated-as-prose.md)'s question, and
+waits on those counts:
 
 - **When the session starts**, it shows the agent the claim grammar as a
   filled-in example rather than a template of placeholders, lists the claims
@@ -462,9 +497,15 @@ npx evidence-layer init claude            # or --local for .claude/settings.loca
 ```
 
 writes the three hooks into `.claude/settings.json`, keeps every hook that is
-not its own, and replaces its own in place when run again. Or install the
-Claude Code plugin from this repository, which finds the package the project
-installed and says the gate is inactive when there is none:
+not its own, and replaces its own in place when run again. Beside it goes
+`.claude/evidence-layer-hook.mjs`, the launcher those hooks run - commit both.
+The launcher finds the package the project installed, and where there is none
+- a fresh clone, a cloud or CI session before its install step - it tells the
+agent the gate is inactive and how to change that, instead of the hook
+failing with "Cannot find module" and the session going on ungated, unsaid.
+Run `init` again after upgrading, to refresh it. Or install the Claude Code
+plugin from this repository, which runs the same launcher from its own
+directory:
 
 ```text
 /plugin marketplace add AndrewBogdanovTSS/evidence-layer
@@ -477,13 +518,15 @@ For Codex:
 npx evidence-layer init codex             # writes .codex/hooks.json
 ```
 
-merges the same three hooks into `.codex/hooks.json` the same way. Codex runs a
+merges the same three hooks into `.codex/hooks.json` the same way, with the
+same launcher beside it. Codex runs a
 project's hooks only once they are trusted, so approve them in `/hooks` - and
 again after `init` runs with different flags, since a changed command is a new
 hook to Codex. Codex gives a hook no project-directory variable, so the command
-finds the package from `git rev-parse --show-toplevel`, as Codex's
+finds the launcher from `git rev-parse --show-toplevel`, as Codex's
 documentation does; on Windows, where hooks run under `cmd.exe`, it uses
-`npx --no-install` instead. Codex edits files with `apply_patch`, so the
+`npx --no-install` instead - which, with nothing installed, still fails
+rather than explains. Codex edits files with `apply_patch`, so the
 pre-write guard reads every path the patch adds, updates, deletes or moves a
 file to.
 
@@ -704,7 +747,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **613 tests** across **42 files**, and that sentence is checked
+The suite is **664 tests** across **43 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
@@ -723,7 +766,10 @@ CI runs the suite on Node 22 and 24 and, in a separate job with no package
 manager and no install, takes the `dist/` the build job produced and runs it on
 bare `node` - 22.0.0, the oldest `engines` allows, as well as 22 and 24. If that
 job passes, "zero runtime dependencies" is a checked fact for everything the
-smoke script loads, rather than a sentence on this page. Two more jobs run the
+smoke script loads, rather than a sentence on this page. On every pull request CI
+gathers this repository's own evidence at the pull request's head and uploads
+the bundle - the independent party's copy; no review is held to it yet, and
+the job's summary says so. Two more jobs run the
 example project's CI handoff, which GitHub would not run from inside this
 repository: one gathers in a standalone copy and uploads the bundle, the other
 downloads it and holds a review to it with the action's `bundle:` input.
@@ -776,6 +822,8 @@ wrong during the first release of this package.
   invariants each record claims are enforced
 - [`docs/governance-exceptions.md`](docs/governance-exceptions.md) - how an
   exception gets an expiry date instead of becoming permanent
+- [`docs/compatibility.md`](docs/compatibility.md) - what a project may build
+  on before 1.0, and what a release says when it changes it
 - [`demo/`](demo) - the five demos the talk runs, in slide order, with the
   receipt fixtures and the stale-baseline refs they need
 - [`examples/plain-node-project/`](examples/plain-node-project) - a project set
