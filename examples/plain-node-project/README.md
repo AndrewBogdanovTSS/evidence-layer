@@ -74,6 +74,20 @@ fails with `seal/stale`, naming the file - evidence about yesterday's code does
 not back a claim about today's. [`test/example.test.ts`](../../test/example.test.ts)
 runs exactly this loop on a copy `npm run standalone` made.
 
+The honest way back is two commands, not every block copied again by hand:
+
+```bash
+npm run evidence -- --base HEAD           # a new run, of the code as it is now
+npx evidence-layer restamp review.md      # --dry-run first, to see what would move
+```
+
+`restamp` replaces the review's block with the new run's block for the same
+step, rewrites the id in the grade tag, and checks the result as `--seal`
+does. It never touches the sentence or the predicates: break a test instead of
+adding a comment, and the restamped review fails on `passed>=3`, as it should.
+Gather a third time without changing anything and the review still passes -
+the id it cites is from an earlier run, of the files as they are now.
+
 Start Claude Code or Codex in the copy and the runtime gate works on the copy:
 a `review.md` the session writes there, or the claims in its final message,
 are checked when the turn ends. Codex runs a project's hooks only once you
@@ -401,6 +415,9 @@ commands to your project's, and copy [`.github/workflows/ci.yml`](.github/workfl
 as [below](#in-ci-gather-review-verify) describes. A project whose
 tests are not `node --test` swaps `summariseNodeTest` for `summariseJUnit`,
 `summarisePytest` or `summariseVitest` from the same adapter.
+[`docs/using-it.md`](../../docs/using-it.md) is the whole order of work from
+there: what to do on each change, after an edit, when a check fails, and what
+to read in the journal every week.
 
 `governance` and `ci-summary` need no configuration. `claims` and `receipt`
 need a review written in the grammar the fixtures above demonstrate. Anything

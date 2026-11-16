@@ -848,6 +848,9 @@ wrong during the first release of this package.
 
 ## Docs
 
+- [`docs/using-it.md`](docs/using-it.md) - the order of work in a project of
+  your own: set up, each change, after an edit, when a check fails, and what
+  to read every week
 - [`docs/evidence-layer.md`](docs/evidence-layer.md) - the full tour, in the
   order the checks are meant to be run
 - [`docs/decisions/`](docs/decisions) - why each piece exists, with the
