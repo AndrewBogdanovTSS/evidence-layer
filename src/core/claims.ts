@@ -21,7 +21,10 @@
  *     that it is *the* block the claim is about. A warning until
  *     `BARE_VERIFIED_CUTOVER`, after which the next release makes it an error.
  *
- * DOCUMENTED must cite something. INFERRED must show its reasoning. Language
+ * DOCUMENTED must cite something, and when the caller lists the repository's
+ * files (`LintOptions.paths`), a file it cites in backticks must be one of them:
+ * a citation to a file that is not there is the cheapest DOCUMENTED to write
+ * and the one a reader cannot check by eye. INFERRED must show its reasoning. Language
  * that cannot be wrong - "more robust", "behaves identically", "it works" - has
  * to be marked UNVERIFIED or backed by a stated effect.
  *
@@ -588,6 +591,52 @@ export interface LintOptions extends OutcomeOptions {
    * outcome rules, and the same shotgun count. See `InlineClaim`.
    */
   inlineClaims?: InlineClaim[]
+  /**
+   * The files a DOCUMENTED citation in backticks may name, by their path from
+   * the repository root - `repositoryPaths` lists them. A function, called
+   * only when a DOCUMENTED claim cites a file, so a text that cites none costs
+   * no git process. Absent, a file citation is only required to be there, as
+   * before; returning `null` means the listing failed, and a claim that cites
+   * a file is then `unverifiable`, not a pass. URLs, § sections and issue ids are never
+   * resolved: that needs the network, and a check that sometimes reaches it
+   * gives two verdicts on one review.
+   */
+  paths?: () => ReadonlySet<string> | null
+  /** What `paths` lists, in the words a finding uses - `commit 1a2b3c4d5e` or `this checkout`. */
+  pathsSource?: string
+}
+
+// A file citation, captured without its backticks. The grammar CITATION_RE
+// accepts for the file form, so the two cannot disagree about what was cited.
+const FILE_CITATION_RE = /`([\w./@-]+\.[a-z]+)`/g
+
+/**
+ * Which file citations in a DOCUMENTED window name no file. A backticked token
+ * counts as a file citation when it has a `/`, or when its extension is one
+ * some file in the repository has - so `docs/notes.md` and `claims.ts` are
+ * held to the listing, while `Array.prototype` or `example.com` beside the tag
+ * are read as code, not as a citation that failed. A bare name resolves when
+ * any file has it as its last segment: a reader can find it, and requiring the
+ * full path would make the honest citation cost more than the vague tag.
+ */
+function resolveCitedFiles(window: string, list: (() => ReadonlySet<string> | null) | undefined): { missing: string[]; unchecked: string[] } | undefined {
+  if (list === undefined) return undefined
+  const cited = [...new Set([...window.matchAll(FILE_CITATION_RE)].map((m) => m[1]!.replace(/^\.\//, '')))]
+  if (cited.length === 0) return undefined
+  const paths = list()
+  // With no listing there are no extensions to tell code from a file by, so every token is one that went unchecked.
+  if (paths === null) return { missing: [], unchecked: cited }
+  const extensions = new Set<string>()
+  const basenames = new Set<string>()
+  for (const p of paths) {
+    const base = p.slice(p.lastIndexOf('/') + 1)
+    basenames.add(base)
+    const dot = base.lastIndexOf('.')
+    if (dot > 0) extensions.add(base.slice(dot))
+  }
+  const fileLike = cited.filter((p) => p.includes('/') || extensions.has(p.slice(p.lastIndexOf('.'))))
+  const missing = fileLike.filter((p) => !(p.includes('/') ? paths.has(p) : basenames.has(p)))
+  return { missing, unchecked: [] }
 }
 
 export function lintClaims(markdown: string, file: string, opts: LintOptions = {}): CodedFinding[] {
@@ -863,6 +912,29 @@ export function lintClaims(markdown: string, file: string, opts: LintOptions = {
     if (claim.grade === 'DOCUMENTED') {
       const window = claim.inline ? claim.text : lines.slice(gradeLine, Math.min(gradeLine + 2, lines.length)).join(' ')
       const ok = CITATION_RE.test(window)
+      const resolved = ok ? resolveCitedFiles(window, opts.paths) : undefined
+      if (resolved?.missing.length) {
+        findings.push({
+          level: 'error',
+          code: 'claims/cited-file-missing',
+          claim: claim.text,
+          detail:
+            'DOCUMENTED cites ' + resolved.missing.map((p) => '`' + p + '`').join(', ') + ', which ' +
+            (resolved.missing.length === 1 ? 'is' : 'are') + ' not a file in ' + (opts.pathsSource ?? 'this repository'),
+          fix: 'cite the file by its path from the repository root, as `git ls-files` names it - or mark the claim UNVERIFIED',
+          ...where,
+        })
+        return
+      }
+      if (resolved?.unchecked.length) {
+        findings.push({
+          level: 'unverifiable',
+          code: 'claims/cited-file-unchecked',
+          claim: claim.text,
+          detail: 'DOCUMENTED cites ' + resolved.unchecked.map((p) => '`' + p + '`').join(', ') + ', and the files of this repository could not be listed to check it',
+          ...where,
+        })
+      }
       findings.push({
         level: ok ? 'pass' : 'error',
         code: ok ? 'claims/documented' : 'claims/uncited',
@@ -1063,6 +1135,7 @@ const DOWNGRADED = new Set<string>([
   'claims/predicate-unmet',
   'claims/no-nearby-artifact',
   'claims/uncited',
+  'claims/cited-file-missing',
   'claims/short-chain',
   'seal/not-gathered',
   'seal/edited',

@@ -29,6 +29,7 @@
  * <head>`, never by ancestry: a stale local tip is still an ancestor of the
  * mainline, so an ancestry check waves it straight through.
  */
+import { dirname, resolve } from 'node:path'
 import type { CodedFinding } from './codes'
 import { gitCapture } from './proc'
 
@@ -435,4 +436,33 @@ export function checkCitations(markdown: string, headSha: string, repo: string):
     })
   }
   return findings
+}
+
+/**
+ * Every file a citation may name: the tree of `sha` when given - the commit a
+ * receipt says the review is about - otherwise this checkout as it stands,
+ * tracked and untracked but not ignored, since a reply in a session may cite a
+ * file written minutes ago. Each file by its path from the repository root,
+ * and also from `repo` and from every directory that holds `review`: a review
+ * of one package of a monorepo cites that package's files the way its reader
+ * opens them, wherever the check is run from. Not from any directory at all -
+ * then `index.js` would resolve in every repository that has one somewhere.
+ * `null` when git could not list them, which the caller reports as
+ * `unverifiable` rather than letting the citation through.
+ */
+export function repositoryPaths(repo: string, sha?: string, review?: string): Set<string> | null {
+  const here = gitCapture(['rev-parse', '--show-prefix'], repo)
+  const reviewDir = review !== undefined ? gitCapture(['rev-parse', '--show-prefix'], dirname(resolve(repo, review))) : ''
+  const listed =
+    sha !== undefined
+      ? gitCapture(['ls-tree', '-r', '--full-tree', '--name-only', '-z', sha], repo)
+      : gitCapture(['ls-files', '--cached', '--others', '--exclude-standard', '--full-name', '-z', '--', ':/'], repo)
+  if (here === null || listed === null) return null
+  // `a/b/` holds the review, so `a/b/` and `a/` are bases; a directory git could not place adds none.
+  const bases = new Set([here])
+  for (let d = reviewDir ?? ''; d !== ''; d = d.slice(0, d.slice(0, -1).lastIndexOf('/') + 1)) bases.add(d)
+  bases.delete('')
+  const paths = new Set(listed.split('\0').filter(Boolean))
+  for (const p of [...paths]) for (const base of bases) if (p.startsWith(base)) paths.add(p.slice(base.length))
+  return paths
 }

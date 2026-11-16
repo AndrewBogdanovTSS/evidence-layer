@@ -124,6 +124,7 @@
     "renderSummary",
     "repoRoot",
     "report",
+    "repositoryPaths",
     "restsOnCurrentRun",
     "run",
     "runAsync",

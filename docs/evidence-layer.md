@@ -690,6 +690,8 @@ pass and one naming each way it fails. Every code, and nothing else:
 | `claims/bare-verified` | a bare `VERIFIED` proves only that a block is nearby - an address would say which |
 | `claims/documented` | a `DOCUMENTED` claim cites its source |
 | `claims/uncited` | a `DOCUMENTED` claim cites nothing |
+| `claims/cited-file-missing` | a `DOCUMENTED` claim cites a file in backticks that is not in the repository |
+| `claims/cited-file-unchecked` | a `DOCUMENTED` claim cites a file, and the repository files could not be listed to check it |
 | `claims/inferred` | an `INFERRED` claim shows a chain of two or more steps |
 | `claims/short-chain` | an `INFERRED` claim shows fewer than two numbered steps |
 | `claims/reasoned` | an inline `INFERRED` claim carries its reason beside the tag |

@@ -18,7 +18,8 @@
  * Exit codes: 0 clean - 1 at least one error - 2 bad usage.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { EXIT, downgradeClaims, exitCodeFor, formatOf, gradeMix, help, lintClaims, parseArgs, parseReceipt, printFindings, usage } from '../index'
+import { resolve } from 'node:path'
+import { EXIT, downgradeClaims, exitCodeFor, formatOf, gradeMix, help, lintClaims, parseArgs, parseReceipt, printFindings, repositoryPaths, usage } from '../index'
 import { checkFreshness, checkProvenance, compareCited, readCurrentRun, readKeptRuns, restsOnCurrentRun, sourceFingerprint } from '../core/seal'
 import type { CurrentRun, FingerprintResult } from '../core/seal'
 import { checkBundle, readBundle } from '../core/bundle'
@@ -134,7 +135,14 @@ export function run(argv: string[]): void {
     const expectedHeadSha = typeof args.sha === 'string' ? args.sha : parseReceipt(markdown).headSha ?? bundle?.headSha
     // With a seal or a bundle there is a bundle to suggest runs from; without one, nothing local is read.
     const suggestFrom = current && 'run' in current ? current.run.bundle : bundle?.text
-    const findings: CodedFinding[] = lintClaims(markdown, path, { expectedHeadSha, suggestFrom })
+    // A cited file is held to the commit the review is about, or to the checkout when nothing names one.
+    let listed: ReadonlySet<string> | null | undefined
+    const findings: CodedFinding[] = lintClaims(markdown, path, {
+      expectedHeadSha,
+      suggestFrom,
+      paths: () => (listed === undefined ? (listed = repositoryPaths(repo, expectedHeadSha, resolve(path))) : listed),
+      pathsSource: expectedHeadSha !== undefined ? 'commit ' + expectedHeadSha.slice(0, 10) : 'this checkout',
+    })
     if (current === undefined && given === undefined) findings.push(...provenanceUnchecked(markdown, path))
     if (bundle) findings.push(...checkBundle(markdown, path, bundle))
     else if (given && 'broken' in given) {

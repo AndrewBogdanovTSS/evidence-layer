@@ -286,6 +286,18 @@ describe('stop - claims in the final message', () => {
     ).toBe('block')
   })
 
+  it('blocks a DOCUMENTED reply that cites a file the checkout does not have, and allows one it does', () => {
+    const dir = repo()
+    start(dir)
+    const cite = (file: string) => 'Done.\n\n**Claim**: the gate reads the file.\n**Grounding**: DOCUMENTED in `' + file + '`'
+    const blocked = stop(dir, {}, { message: cite('src/gone.js') })
+    expect(blocked.action).toBe('block')
+    expect(JSON.stringify(blocked)).toContain('src/gone.js')
+    // Untracked, written in the session: a reply may cite it.
+    writeFileSync(join(dir, 'src/new.js'), 'n\n')
+    expect(stop(dir, {}, { message: cite('src/new.js'), sessionId: 's2' })).toMatchObject({ action: 'allow' })
+  })
+
   it('does not grade ordinary prose, or a Claim line inside a code example', () => {
     const dir = repo()
     start(dir)
