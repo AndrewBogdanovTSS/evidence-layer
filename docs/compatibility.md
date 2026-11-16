@@ -34,6 +34,12 @@ A minor release may do any of these. When it does, its notes open with
   checks `schema` is never surprised.
 - **Remove a CLI flag or an export** that a previous minor release marked
   deprecated in its notes.
+- **Change what a project wires in**: the GitHub Action's inputs (`claims`,
+  `bundle`, `sha`, `receipt`, `governance`, `strict`, `version`) and outputs
+  (`exit-code`, `conclusion`), the `evidenceLayer.gather` key a project sets
+  in its `package.json`, and the launcher `init` writes beside the agent's
+  configuration. Run `init` again after upgrading; the notes say when a
+  release needs it.
 
 ## What may change in any release
 

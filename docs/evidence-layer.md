@@ -5,17 +5,24 @@ wrong, one that checks whether anything runs them, a runtime gate that runs
 them when an agent says it is done, and a journal that gives the whole layer a
 clock. The README lists them.
 
-None of the checking logic is specific to any one project. It is three layers:
+None of the checking logic is specific to any one project. It is four layers:
 a portable core under [`src/core/`](../src/core) that knows only markdown, git
-and `package.json`; one Node-specific adapter; and the consuming project's own
-config, which is not a schema file but the arguments its wrapper scripts pass
-in. This repository's [`scripts/`](../scripts) is the worked example of that
-third layer, and [`README.md`](../README.md) is the portability contract.
+and `package.json`; two adapters under [`src/adapters/`](../src/adapters), the
+only files allowed to know a stack - Node's test reporters in one, the report
+formats a test step leaves behind in the other; one file per agent host under
+[`src/hosts/`](../src/hosts), which speaks that host's hook protocol and
+nothing else; and the consuming project's own config, which is not a schema
+file but the arguments its wrapper scripts pass in. This repository's
+[`scripts/`](../scripts) is the worked example of that last layer, and
+[`README.md`](../README.md) is the portability contract.
 
 This page is the reasoning. The runnable version is
 [`examples/plain-node-project/README.md`](../examples/plain-node-project/README.md):
 a project with one function and three tests, where every check below can be
-watched firing against files you can read in a minute.
+watched firing against files you can read in a minute. And
+[`using-it.md`](using-it.md) is the order of work in a project of your own:
+what to set up once, what to do on each change, and what to do when a check
+fails.
 
 **The rule every check below is graded against**: the honest path has to be
 cheaper than the convenient one - fewer tokens, fewer separate decisions, less
@@ -144,6 +151,36 @@ Each step runs under a timeout, 300 seconds unless `timeoutMs` says otherwise -
 one number for every step, or one per step (`{ test: 900_000 }`). A step past
 it is recorded as stopped, never as a result.
 
+Exit 0 says a command ended, not that it checked anything: a linter whose
+every file was ignored and a suite whose every test was skipped both exit 0.
+So the gatherer ends a lint or test block with one work-summary line -
+`[SUMMARY tests: passed=71 failed=0 skipped=0 todo=0]` - when it is given a
+summariser for that step (`summaries: { test: summariseNodeTest() }`;
+`evidence-layer/adapters/test-reports` reads JUnit XML, pytest's closing line,
+vitest's and `node --test`'s totals). The line has one writer: the gatherer,
+after the step has finished, from the project's own report - never the tool
+being summarised, which is why only the last line of a block counts and a
+test that prints a summary-shaped line cannot write its own count
+([DEC-0008](decisions/0008-work-summaries-have-a-writer.md)). Those counts are
+what step 4's predicates and outcome rules read.
+
+An id says what kind of run it names - `tests-a3f91c`, `lint-...`,
+`types-...` - and the rules in step 4 take the kind from there. It comes from
+the command when the package recognises it, and from the step that ran it when
+it does not: the gatherer knew `make check` was the test step, and guessing
+again from the command's text would throw that away and switch the test rules
+off.
+
+What a step printed is redacted before any of this: the value of every
+environment variable whose name says it is a secret (`GITHUB_TOKEN`,
+`DB_PASSWORD`, a trailing `_KEY`) becomes `[REDACTED:<NAME>]` in the command
+line and the output, and `gatherEvidence({ redact })` takes out whatever a
+name does not give away. Before the id is computed, not after: a bundle goes
+into a CI artifact and, folded, into a pull request comment, and a hash of the
+unredacted text would be a small oracle for the secret. It knows a secret by
+its name, as a CI runner's log masking does, never by its shape - a pattern
+for "looks like a key" masks commit hashes and misses last month's format.
+
 The bundle header names the command that gathers it and the base it gathered
 against, and the seal records both. The runtime gate names them whenever it
 tells an agent to gather: `evidenceLayer.gather` in the project's package.json
@@ -180,6 +217,23 @@ needs a citation. INFERRED needs its reasoning. Language that cannot be wrong -
 explicit UNVERIFIED. One artifact backing more than two claims is a warning:
 sometimes legitimate, but usually a sign the review never gathered separate
 evidence for the rest.
+
+An address says which run; it does not say the run backs the sentence. Three
+outcome rules are mechanical enough to check without reading the output for
+sense:
+
+- **A failing run backs only a claim that says it failed**
+  (`claims/failing-run`). "Tests pass" over `exit: 1` is an error, and so is
+  "the new parser handles unicode" over it - a sentence about something else,
+  which a word list for success never caught. The claim admits the failure in
+  its tag, with a predicate a clean run would not satisfy (`exit=1`,
+  `failed>=1`), or in words.
+- **A stopped run backs only "did not complete".** The exit line names why a
+  run stopped - `exit: 124 (timeout)` - and a run the time limit killed
+  reported nothing, so it backs "reports errors" no better than "passes".
+- **A run that checked nothing backs no success claim.** A work summary
+  showing zero work, or any errors or failures, contradicts a success claim
+  over it.
 
 An addressed tag can also say which numbers on the artifact the claim rests
 on: `VERIFIED[tests-a3f91c: exit=0, passed>=71, failed=0]`. The outcome rules
@@ -228,6 +282,18 @@ cites inside the cell, and an INFERRED cell carries its reason beside the tag
 (`[INFERRED: fewer unique URLs -> more cache reuse]`) - one clause is what a
 cell can honestly hold, so that is the bar, not a numbered chain.
 
+And a result can be stated as no claim at all. A sentence that names a kind of
+run and reads as its outcome - "all 12 tests pass", "lint is clean", "ran 71
+tests" - outside any `**Claim**:` line is `claims/unclaimed-result`: a warning
+on its line, with the fix of stating it as a claim. Without it, the writer who
+volunteers a claim can be failed and the writer who says the same thing as a
+sentence cannot, which makes the convenient path the only one with no risk. A
+sentence that names no kind of run ("it works now"), or that asks, plans or
+instructs ("make sure the tests pass"), is not one. It is a pattern over
+English prose and will be wrong in both directions, so it is observed, not
+enforced: whether it ever does more is
+[DEC-0014](decisions/0014-results-stated-as-prose.md)'s question.
+
 Try it on the fixtures:
 
 ```bash
@@ -260,12 +326,20 @@ new ids even when nothing changed, and must not break every citation. After a
 real change, `evidence-layer restamp <review.md>` moves the review onto the
 new run: blocks replaced from the current bundle, ids rewritten in the grade
 tags, never a sentence or a predicate
-([DEC-0010](decisions/0010-gate-scope-and-run-identity.md)). `--bundle <file>` holds it to a bundle file
+([DEC-0010](decisions/0010-gate-scope-and-run-identity.md)). It then checks
+its own output as `--seal` does, so `passed>=71` over a run that passed 70 is
+still an error: it cannot make a claim pass, only make the honest fix after an
+edit one command. It does not move the Access Receipt - which commit a review
+is about is the writer's to say - and `--dry-run` writes nothing.
+`--bundle <file>` holds the review to a bundle file
 instead - in CI, the one a gather job uploaded, wherever the review was then
 written: every cited block must be, canonically, the one the bundle carries
 under its id. Without one of the two, `claims` cannot tell a gathered block
 from one typed by hand under an invented id: the id hashes the full output and
-the block shows a trimmed one, so the id cannot be recomputed from it. A
+the block shows a trimmed one, so the id cannot be recomputed from it. It says
+so rather than passing in silence - one `claims/provenance-unchecked` finding,
+`unverifiable`, which `--strict` fails: a check that did not run is not a
+check that passed. A
 bundle is as trustworthy as where it came from - CI's own artifact, not one
 committed beside the review - and carries no fingerprint of the source, so
 pass `--sha` with the commit under review; without it, the review's receipt
@@ -282,20 +356,20 @@ fixtures above, none of which needed them - is unchanged.
 
 ### 5. `pnpm check:receipt <review.md>` - was this written against this repo?
 
-v2: one verbatim quote is now required **per file the review's claims actually
-cite**, not one overall. A single quote used to prove *a* file was opened; on
-a thirty-file diff that is the cheapest file to quote, not the ones the review
-is about - a fixture in the origin project demonstrated the gap by accident
-before this rule existed to name it. `pnpm evidence` pre-fills one quote per
-changed file, so deleting the ones a review does not need is the whole edit.
-
-
 A review states where it read from, in a fixed block above any verdict: the
-commit, the baseline, how many files the diff touched, how many were opened, and
-(per the v2 note above) one verbatim quote per file a claim cites. The number
-of files is counted against `git diff <base>...<head>`
-(`receipt/diff-count-mismatch`) - compared only with the number opened, as it
-was before 0.19.0, an undercount passed "every file was opened".
+commit, the baseline, how many files the diff touched, how many were opened,
+and one verbatim quote per file a claim cites. The number of files is counted
+against `git diff <base>...<head>` (`receipt/diff-count-mismatch`) - compared
+only with the number opened, an undercount would pass as "every file was
+opened".
+
+The quote is required **per file the review's claims actually cite**, not one
+overall. A single quote proves *a* file was opened; on a thirty-file diff that
+is the cheapest file to quote, not the ones the review is about - a fixture in
+the origin project demonstrated the gap by accident before this rule existed
+to name it. `pnpm evidence` pre-fills one quote per changed file, so deleting
+the ones a review does not need is the whole edit. That makes the quotes
+evidence of the checkout, not of reading: the gatherer read the file.
 
 The check that matters most is the baseline. `git diff base...head` is only as
 honest as `base`, and a local branch reference goes stale in silence: it still
@@ -309,13 +383,15 @@ So the baseline is checked by **equality** against
 still an ancestor of the mainline, so an ancestry check waves it straight
 through.
 
-The gatherer writes the receipt (since 0.20.0 - before that it was typed by
-hand, and the sentence below this one said otherwise): the branch, the head,
-the target, the merge-base and the size of the diff, read from git, under
-*Suggested access receipt* in the bundle. `Files opened during review` starts
-at 0, which is true until the writer says what they opened. A review with
-claims and no receipt is `receipt/absent` at the runtime gate - `unverifiable`,
-since which commit it describes was not checked.
+The gatherer writes the receipt: the branch, the head, the target, the
+merge-base and the size of the diff, read from git, under *Suggested access
+receipt* in the bundle. Typed by hand - two 40-character SHAs among its
+fields - it was the most expensive honest step in the layer, and reviews left
+it out for exactly that reason. `Files opened during review` starts at 0,
+which is true until the writer says what they opened. A review with claims and
+no receipt is `receipt/absent` at the runtime gate - `unverifiable`, since
+which commit it describes was not checked - and its fix is the bundle's own
+suggested receipt.
 
 There are no checked-in fixtures for this one, and that is not an oversight: a
 receipt names commits, so a fixture would either pin this repository's history
@@ -399,7 +475,7 @@ path is *not* supposed to be cheap: filling in a row is fast, but the issuer's
 name and expiry print on every run, so silently extending an exception by
 never revisiting it was never an available option.
 
-### 6b. `flaky` - the fourth outcome
+### 6b. `flaky` - the outcome that is not a regression
 
 A check that fails at a commit where it has already recorded a pass is not
 making the same claim as a check that finds a regression - nothing about the
@@ -418,6 +494,14 @@ lesser one, because determinism is a property the project declares about
 itself. If you write one of those (step 2), do not let it return the flaky
 exit code. `exitCodeFor` will not invent one; a check reports `flaky` only
 because its author decided it could be.
+
+`claims --seal` has one flaky finding of its own. A review that cites an
+earlier run, while the current run of the same command over the same files
+ended differently, is `seal/disagreeing-runs` and exits 3: two runs saw the
+same code and disagree, which is what the word means. As an error it would
+block a suite that really is flaky; left out, it would let the older, greener
+run be cited in silence. Cite the current run, or find out which result
+holds.
 
 ### 6c. `journal.jsonl` - the layer's own clock
 
@@ -445,7 +529,22 @@ a commit the target never contains.
 pnpm journal:report                    # per-check real/false/untagged counts, open misses
 pnpm journal:tag <id> real|false       # tag a finding at fix time, not later
 pnpm journal:tag <id> --caught yes|no  # could an existing check have caught this miss
+pnpm journal:report --include-gate     # and the runtime gate's journal, in this checkout
+pnpm journal:tag <id> real|false --gate # tag one of its blocks, or a result it saw stated as prose
 ```
+
+`--include-gate` is where the layer says whether it is being used at all: of
+the stops the gate saw, how many checked something. A stop with no changed
+review and no `**Claim**:` line in the final reply had nothing to check, and
+is counted as that - never as a pass - which is where a result stated as
+prose lands. It lists each block nobody has tagged, and each stop that
+reported a result outside a claim, by id. The id is never in the reason the
+agent reads: the blocked party does not grade its own blocks, so tagging is a
+person's job.
+
+Every commit that fixes a bug answers the question, so that silence is not
+read as "no review missed it": `Missed-By: none` is the answer for a bug no
+review let through, read as an answer and recorded as nothing.
 
 Recording started the day [`docs/decisions/archive/0002-evidence-layer-v2.md`](decisions/archive/0002-evidence-layer-v2.md)
 was ratified - none of it can be reconstructed retroactively, which is why the
@@ -477,14 +576,55 @@ be true and useless.
 A `proposed` record is held the same way to `decide_by`: the date by which
 it is accepted, rejected or withdrawn. Without one it is
 `decisions/bad-decide-date`, and past it `decisions/undecided`, both errors -
-before 0.19.0 a proposal was reported as a pass every run, however long it
-had been open.
+a proposal reported as a pass on every run can stay open indefinitely, which
+is the drift a review date exists to prevent.
+
+### 7. `evidence-layer hook` - the same checks, when the agent says it is done
+
+Everything above runs when someone runs it, and step 3 is the one an agent
+skips on its own, because it is off the path. CI catches that after a person
+can already read the summary. The runtime gate moves the check to the moment
+the agent stops, so an unbacked claim goes back to the writer that made it,
+with the fix, before anyone else reads it.
+
+```bash
+npx evidence-layer init claude --dry-run   # the hooks it would write, and nothing written
+```
+
+Three hooks, one per event. **At session start** it shows the claim grammar as
+a filled-in example, lists the claims the sealed run for this commit backs,
+ready to paste, and records which review files exist, so it later checks only
+what this session wrote. **Before a file write** it refuses a write into its
+own ledger - a guard against accidents, not a sandbox. **At stop** it runs
+`claims`, `receipt` and the seal's two checks over every review file the
+session changed and over the `**Claim**:` lines of the final reply, whose ids
+resolve against the sealed bundle.
+
+Two budgets keep it from becoming a trap, because a gate that traps people
+gets switched off. Inside one retry episode it blocks at most twice, then lets
+the stop through with the errors attached; and it fails open - if it cannot
+run, the session goes on and is told why. `--keep-blocking` and
+`--fail-closed` are the stricter trade for each, and `--strict` is both, with
+`unverifiable` blocking too. A fresh clone with nothing installed is told the
+gate is inactive and how to change that, through the hook protocol, rather
+than the hook failing where nobody reads it.
+
+`hook` always exits 0 and answers in the host's own protocol: both hosts read
+an exit code as a decision, and this package's `2`, bad usage, is their
+"block". Every decision goes into the gate's journal (6c) - including each
+allow that checked nothing, which is never recorded as a pass. The README has
+the wiring for Claude Code and Codex;
+[DEC-0005](decisions/0005-runtime-gate.md) has the reasoning.
 
 ## Machine-readable output
 
-`claims`, `receipt` and `governance` take `--format json`, and `--format
+`claims`, `receipt` and `governance` take `--format json`, `--format
 github` for a GitHub Actions step - annotations titled by code, then the text,
-then a job summary (see the README's section on the Action). With `json`,
+then a job summary (see the README's section on the Action) - and `--format
+azure` for an Azure Pipelines step: one logged issue per finding and a run
+summary, with every piece of review text defanged, since the agent obeys a
+`##vso[` anywhere in a line
+([DEC-0012](decisions/0012-azure-pipelines-output.md)). With `json`,
 stdout is one JSON document and nothing else - the same report `check:all`
 prints between its delimiters, schema 6 - and the exit code is the one the
 text mode would have given:
@@ -679,10 +819,12 @@ so plainly beats implying a guarantee it cannot give.
 - It does not stop someone determined to fake it. It removes the *default*
   failure, which is the one that actually happens.
 - It does not judge taste. "This will be hard to maintain" is a legitimate
-  review comment and always will be, untagged - prose outside a `**Claim**:`
-  line is never graded. It just must not be dressed as a check: the same
-  opinion behind a bare `VERIFIED` fails, because a tag is a promise regardless
-  of what it is attached to.
+  review comment and always will be, untagged - an opinion outside a
+  `**Claim**:` line is never graded. It just must not be dressed as a check:
+  the same opinion behind a bare `VERIFIED` fails, because a tag is a promise
+  regardless of what it is attached to. The one thing read outside a claim is
+  a sentence that reports a run's result - "all 12 tests pass" - which is
+  `claims/unclaimed-result`, a warning (step 4).
 - The reachability scan reads literal command strings, so a command assembled
   at runtime is invisible to it unless the invariant self-discloses the fact
   (`(runtime-composed trigger)`) and accepts `unverifiable` instead of a guess.
@@ -702,9 +844,9 @@ so plainly beats implying a guarantee it cannot give.
 3. No new dependencies. Tooling that needs its own runtime does not survive its
    first dependency review.
 4. Every script says, in its first comment, which claim it makes falsifiable.
-5. At least three outcomes: pass, fail, `unverifiable` - `flaky` is a fourth
-   where a check can plausibly flip without the code changing. Exit `2` is bad
-   usage and is never a pass.
+5. More outcomes than two: pass, warning, error and `unverifiable` at the
+   least - `flaky` is the fifth, where a check can plausibly flip without the
+   code changing. Exit `2` is bad usage and is never a pass.
 6. Warn-only first, and name the person who owns the flip before you need them.
 7. **The honest path must be cheaper than the convenient one** - the rule the
    other six are graded against, not a seventh alongside them. A feature that

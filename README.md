@@ -4,7 +4,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/how-it-works.svg">
-  <img src="docs/assets/how-it-works-light.svg" width="1040" alt="How evidence-layer works. 1, Gather: before the review is written, gatherEvidence() refuses unless the requested commit is checked out, runs the project's own commands, appends how much each one checked as a work summary, and writes evidence.local.md - artifact blocks addressed by a hash of command, commit and output, a claim skeleton with the ids and counts filled in, and a Sample integrity table - then seals the run in .git. 2, Write: the review keeps those blocks, so each claim cites VERIFIED[id: predicates] such as passed>=3, and adds an Access Receipt; a bare VERIFIED tag only earns a warning, an edited block fails as seal/edited, and the gate denies writes to the sealed run. 3, Verify: when the agent stops, and again in CI, claims checks every id resolves at this commit and its predicates hold, and with --seal that each block is the one the run wrote and the code has not changed since; receipt checks the receipt against git; each finding carries a code and one of five levels, becomes an annotation in CI, and the stop gate hands failures back to the agent to fix. 4, Over time: governance checks that invariants are enforced and prints a JSON block; the journal counts real, false and untagged findings per check, the gate's blocks and denies, and the misses that Missed-By trailers record.">
+  <img src="docs/assets/how-it-works-light.svg" width="1040" alt="How evidence-layer works. 1, Gather: before the review is written, gatherEvidence() refuses unless the requested commit is checked out, runs the project's own commands, appends how much each one checked as a work summary, and writes evidence.local.md - artifact blocks addressed by a hash of command, commit and output, a claim skeleton with the ids and counts filled in, an Access Receipt read from git, and a Sample integrity table - then seals the run in .git. 2, Write: the review keeps those blocks and that receipt, so each claim cites VERIFIED[id: predicates] such as passed>=3; a bare VERIFIED tag only earns a warning, an edited block fails as seal/edited, and the gate denies writes to the sealed run. 3, Verify: when the agent stops, and again in CI, claims checks every id resolves at this commit, its predicates hold, and a failing run backs only a claim that says it failed; with --seal that each block is one a kept run wrote and the code has not changed since, and with --bundle that it is the block CI gathered; receipt checks the receipt against git; each finding carries a code and one of five levels, becomes an annotation in CI, and the stop gate hands failures back to the agent to fix - or, after a code change, to gather again and restamp. 4, Over time: governance checks that invariants are enforced and prints a JSON block; the journal counts real, false and untagged findings per check, the gate's blocks and denies, the results stated as prose, and the misses that Missed-By trailers record.">
 </picture>
 
 Checks that turn a review's assertions into claims that could be proved wrong.
@@ -67,7 +67,7 @@ What this layer changes, concretely:
 - **Every claim carries an address.** `VERIFIED[tests-a3f91c]` names the exact
   artifact it rests on, and `claims` resolves that id, checks it was collected
   at the commit under review, and warns when one artifact is quietly backing
-  four unrelated claims. A bare tag any writer can satisfy for free carries no
+  more than two claims. A bare tag any writer can satisfy for free carries no
   information; an id is either in the document, at that commit, or it is not.
 - **The receipt proves the review was written against *this* repository.**
   Stale context windows, files renamed three commits ago, paths reconstructed
@@ -187,6 +187,24 @@ The colon-separated names these checks had before they were a package
 Gathering is deliberately **not** a subcommand. It runs whatever your project's
 own commands are, at your project's own gates and timeouts, so it is a library
 call in a script you own rather than a CLI flag pretending to know them.
+
+## The four grades
+
+A claim is a `**Claim**:` line with a `**Grounding**:` line under it, and the
+grounding opens with one of four grades. Each is held to something different:
+
+| grade | what it needs |
+| --- | --- |
+| `VERIFIED[id]` | an artifact block carrying that id, collected at the commit under review - and any predicates after the id must hold on it |
+| `DOCUMENTED` | a citation beside the tag: a URL, a `§` section, an issue id such as `#12`, or a file in backticks |
+| `INFERRED` | its reasoning: two or more numbered steps below it |
+| `UNVERIFIED` | nothing - it says nothing backs the claim, which is honest, not a failure |
+
+So a review whose every claim is `UNVERIFIED` passes, and its `3 checked - 0
+failed` reads exactly like a review with three verified claims. Every `claims`
+report therefore says how the claims are graded - `0 of 3 claims VERIFIED - 0
+DOCUMENTED, 0 INFERRED, 3 UNVERIFIED, 0 with no grade` - which is the line
+that tells the two apart.
 
 ## The loop, in a project with an agent in it
 
@@ -368,11 +386,13 @@ Surefire writes, is summed.
 
 What a step printed is redacted before it is hashed, sealed or written: the
 value of any environment variable whose name says it is a secret - a
-`_`-separated `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIALS`, or a trailing
-`_KEY` - becomes `[REDACTED:<NAME>]` wherever it appears in a command line or
-its output, and `gatherEvidence({ redact })` takes out the rest. It knows a
-secret by the name the environment gave it, as a CI runner's own log masking
-does, never by its shape.
+`_`-separated `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `PASSPHRASE` or
+`CREDENTIALS`, or a trailing `_KEY` - becomes `[REDACTED:<NAME>]` wherever it
+appears in a command line or its output, and `gatherEvidence({ redact })`
+takes out the rest. A value shorter than eight characters is left alone:
+`true` and `dev` are settings, and masking every `true` in a test log would
+redact the log. It knows a secret by the name the environment gave it, as a
+CI runner's own log masking does, never by its shape.
 
 `runAsync` is the runner for those steps. A timeout kills the whole process
 tree - a process group on POSIX, `taskkill /T` on Windows - rather than only
@@ -423,7 +443,10 @@ replaced by the current run's block for the same step, the ids in the grade
 tags follow, and the result is checked as `--seal` checks it. Sentences and
 predicates stay as written - `passed>=71` over a run that passed 70 is still
 an error - so it cannot make a claim pass, only make the honest fix after an
-edit one command instead of every block copied again by hand.
+edit one command instead of every block copied again by hand. It does not move
+the Access Receipt either: which commit a review is about is the writer's to
+say, so when the current run is of a later commit it tells you, and leaves the
+receipt as written. `--dry-run` writes nothing and reports the same.
 
 The seal is not an attestation. It lives where the same agent can write, so it
 catches the default failure, not someone rewriting it on purpose; CI, which
@@ -464,7 +487,10 @@ waits on those counts:
   whose ids resolve against the sealed bundle. Ordinary prose is not graded. An
   error blocks the stop, and the agent fixes its claims from the reason: one
   numbered item per failing claim with its problem and its fix, the `--fix`
-  command for a review file, and the claims the current run does back.
+  command for a review file, and the claims the current run does back. A
+  changed review with claims and no Access Receipt is `receipt/absent`,
+  `unverifiable` - said, not skipped: a message by default, a block under
+  `--strict`, and its fix is the receipt the bundle already suggests.
 
 Two budgets keep it from becoming a trap. A **retry episode** opens at the first
 stop with errors and closes at the first clean one; inside it the gate blocks
@@ -699,8 +725,11 @@ import { parseTestCount } from 'evidence-layer/adapters/node-default'
 import { summariseJUnit } from 'evidence-layer/adapters/test-reports'
 ```
 
-Everything the CLI does is exported. `src/core/` has no knowledge of any
-project's stack. The adapters are the files allowed to know one:
+Everything the CLI does is exported - most of it because the CLI is built
+from it, not because it was designed to be called.
+[`docs/compatibility.md`](docs/compatibility.md) names the exports that are
+held to the compatibility rules; any other may change in a minor release, with
+a note. `src/core/` has no knowledge of any project's stack. The adapters are the files allowed to know one:
 `src/adapters/node-default.ts` knows it is running on Node and how a handful of
 common test reporters print their totals, and `src/adapters/test-reports.ts`
 knows the JUnit XML, pytest, vitest and `node --test` formats a test step's
@@ -781,8 +810,11 @@ downloads it and holds a review to it with the action's `bundle:` input.
 - It does not stop someone determined to fake it. It removes the *default*
   failure, which is the one that actually happens.
 - It does not judge taste. "This will be hard to maintain" is a legitimate
-  review comment and always will be, untagged - prose outside a `**Claim**:`
-  line is never graded. It just must not be dressed as a check.
+  review comment and always will be, untagged - an opinion outside a
+  `**Claim**:` line is never graded. It just must not be dressed as a check:
+  a sentence there that reports a run's result ("all 12 tests pass") is
+  `claims/unclaimed-result` in a review file, a warning whose fix is to state
+  it as a claim.
 - The reachability scan reads literal command strings, so a command assembled at
   runtime is invisible to it unless the invariant self-discloses that fact and
   accepts `unverifiable` instead of a guess. Blind spots that are written down
@@ -816,6 +848,9 @@ wrong during the first release of this package.
 
 ## Docs
 
+- [`docs/using-it.md`](docs/using-it.md) - the order of work in a project of
+  your own: set up, each change, after an edit, when a check fails, and what
+  to read every week
 - [`docs/evidence-layer.md`](docs/evidence-layer.md) - the full tour, in the
   order the checks are meant to be run
 - [`docs/decisions/`](docs/decisions) - why each piece exists, with the

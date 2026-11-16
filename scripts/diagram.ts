@@ -173,10 +173,10 @@ function render(theme: Theme): string {
   card(16, 366, 228, 154)
   iconDoc(40, 394, C.blue)
   t(62, 399, 'evidence.local.md', { size: 13.5, font: MONO, weight: 700 })
-  pill(28, 414, 'artifact:tests-a3f91c@f8ae76a', C.amber, { size: 10.5 })
-  ;['claim skeleton, counts filled in', 'Sample integrity table', 'the run sealed in .git'].forEach((s, i) => {
-    tick(36, 454 + i * 22, C.blue)
-    t(50, 458 + i * 22, s, { size: 12 })
+  pill(28, 410, 'artifact:tests-a3f91c@f8ae76a', C.amber, { size: 10.5 })
+  ;['claim skeleton, counts filled in', 'Access Receipt, read from git', 'Sample integrity table', 'the run sealed in .git'].forEach((s, i) => {
+    tick(36, 446 + i * 19, C.blue)
+    t(50, 450 + i * 19, s, { size: 12 })
   })
 
   // Phase 2 - write
@@ -193,7 +193,7 @@ function render(theme: Theme): string {
   tick(296, 302)
   t(310, 306, 'honest: keep the block', { size: 12, weight: 600, fill: C.green })
   pill(288, 316, 'VERIFIED[tests-a3f91c: passed>=3]', C.amber, { size: 9.4, w: 204 })
-  t(298, 354, '+ its artifact block, as-is', { size: 11.5, fill: C.muted })
+  t(298, 354, '+ its block and the receipt, as-is', { size: 11.5, fill: C.muted })
   o.push(`<line x1="288" y1="372" x2="492" y2="372" stroke="${theme.edge}" stroke-opacity="${theme.dividerOpacity}"/>`)
   cross(296, 394)
   t(310, 398, 'shortcut: bare tag, no id', { size: 12, weight: 600, fill: C.red })
@@ -206,17 +206,17 @@ function render(theme: Theme): string {
   t(298, 510, 'and the gate denies writes to the run', { size: 11.5, fill: C.muted })
 
   // Phase 3 - verify
-  card(536, 112, 228, 170)
+  card(536, 112, 228, 178)
   t(552, 136, 'evidence-layer claims', { size: 13, font: MONO, weight: 700, fill: C.green })
-  ;['each id resolves to an artifact', 'its predicates hold', 'collected at this commit', '--seal: the block the run wrote', '--seal: code unchanged since', 'at most 2 claims per artifact'].forEach((s, i) => {
-    tick(558, 156 + i * 21)
-    t(572, 160 + i * 21, s, { size: 12 })
+  ;['each id resolves to an artifact', 'its predicates hold', 'collected at this commit', 'failing run: only "it failed"', '--seal: block from a kept run', '--seal: code unchanged since', '--bundle: the block CI gathered'].forEach((s, i) => {
+    tick(558, 156 + i * 20)
+    t(572, 160 + i * 20, s, { size: 12 })
   })
-  card(536, 292, 228, 100)
-  t(552, 314, 'evidence-layer receipt', { size: 13, font: MONO, weight: 700, fill: C.green })
+  card(536, 298, 228, 94)
+  t(552, 319, 'evidence-layer receipt', { size: 13, font: MONO, weight: 700, fill: C.green })
   ;['matches git’s own output', 'base = merge-base, not ancestry', 'quoted first lines match'].forEach((s, i) => {
-    tick(558, 333 + i * 21)
-    t(572, 337 + i * 21, s, { size: 12 })
+    tick(558, 337 + i * 19)
+    t(572, 341 + i * 19, s, { size: 12 })
   })
   vArrow(650, 392, 405, C.muted)
   card(536, 406, 228, 114, { stroke: C.green, strokeOpacity: 0.55 })
@@ -254,12 +254,13 @@ function render(theme: Theme): string {
   })
   cx = 810
   for (const [label, color] of [['real', C.green], ['false', C.amber], ['untagged', C.grey]]) {
-    o.push('<circle cx="' + (cx + 4) + '" cy="368" r="4" fill="' + color + '"/>')
-    t(cx + 12, 372, label, { size: 10.5, fill: C.muted })
+    o.push('<circle cx="' + (cx + 4) + '" cy="362" r="4" fill="' + color + '"/>')
+    t(cx + 12, 366, label, { size: 10.5, fill: C.muted })
     cx += label.length * 6.5 + 24
   }
-  t(810, 390, '+ open misses, recorded by governance', { size: 10, fill: C.muted })
-  t(810, 406, '+ gate blocks, real or false, and denies', { size: 10, fill: C.muted })
+  t(810, 382, '+ open misses, recorded by governance', { size: 10, fill: C.muted })
+  t(810, 396, '+ gate blocks, real or false, and denies', { size: 10, fill: C.muted })
+  t(810, 410, '+ results stated as prose, counted', { size: 10, fill: C.muted })
   card(796, 468, 228, 52)
   iconCommit(818, 486, C.red)
   t(838, 490, 'a later fix commit', { size: 12.5, weight: 600 })
@@ -274,7 +275,7 @@ function render(theme: Theme): string {
   elbow(504, 326, 520, 340, 535, C.green)
   t(520, 166, 'checks', { size: 11, fill: C.green, anchor: 'middle' })
   elbow(536, 478, 520, 466, 505, C.amber, { dash: true })
-  t(520, 536, 'the stop gate hands it back: fix, rerun', { size: 11, fill: C.amber, anchor: 'middle' })
+  t(520, 536, 'the stop gate hands it back: fix - or gather again, then restamp', { size: 11, fill: C.amber, anchor: 'middle' })
   elbow(764, 440, 780, 340, 795, C.violet)
   t(790, 446, 'the gate logs its decisions', { size: 10, fill: C.violet })
 
