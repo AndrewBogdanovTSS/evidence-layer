@@ -53,7 +53,7 @@ import { cliCommandFor, gatherCommandFor } from './gather-command'
 import { UNCLAIMED_PREFIX, appendEntry } from './journal'
 import { gitCapture } from './proc'
 import { decidePreWrite } from './protect'
-import { checkReceipt, parseReceipt } from './receipt'
+import { checkReceipt, parseReceipt, repositoryPaths } from './receipt'
 import { checkFreshness, checkProvenance, earlierRunFindings, freshnessMatters, readCurrentRun, readKeptRuns, repoRoot, restsOnCurrentRun, sameSource, sourceFingerprint, stateDir } from './seal'
 import type { CurrentRun, EarlierRuns, FingerprintResult, Run } from './seal'
 import { suggestedClaim } from './skeleton'
@@ -357,7 +357,13 @@ function checkReview(ctx: StopContext, path: string): CodedFinding[] {
   // The sealed bundle is where a review's fixes can point: its runs are the
   // ones the review may cite, once their blocks are copied in.
   const suggestFrom = 'run' in ctx.current ? ctx.current.run.bundle : undefined
-  const findings = lintClaims(markdown, path, { expectedHeadSha: receipt.headSha, suggestFrom })
+  // A file a DOCUMENTED claim cites must be in the commit the receipt names - the
+  // tree the review says it read - or, with no receipt, in the checkout as it is.
+  const findings = lintClaims(markdown, path, {
+    expectedHeadSha: receipt.headSha,
+    suggestFrom,
+    ...citablePaths(ctx.root, receipt.headSha, path),
+  })
   if (receipt.headSha !== undefined) findings.push(...checkReceipt(receipt, markdown, ctx.root))
   else if (hasClaims(markdown)) {
     // Said, not skipped. A review with no receipt used to lose the receipt
@@ -415,9 +421,22 @@ function checkMessage(ctx: StopContext, message: string): CodedFinding[] {
     prose: false,
     artifactSource: bundle,
     artifactSourceName: bundle !== undefined ? 'the current sealed run' : 'the final message, and no evidence run is sealed',
+    ...citablePaths(ctx.root),
   })
   findings.push(...sealFindings(ctx, message, 'final message', { fromBundle: true }))
   return findings
+}
+
+/**
+ * The files a DOCUMENTED citation may name, listed at most once and only when
+ * a claim cites one - a stop that cites no file costs no git process for it.
+ */
+function citablePaths(root: string, sha?: string, review?: string): { paths: () => ReadonlySet<string> | null; pathsSource: string } {
+  let listed: ReadonlySet<string> | null | undefined
+  return {
+    paths: () => (listed === undefined ? (listed = repositoryPaths(root, sha, review)) : listed),
+    pathsSource: sha !== undefined ? 'commit ' + sha.slice(0, 10) : 'this checkout',
+  }
 }
 
 /** Whether a text makes any `**Claim**:` line outside a fenced example. */
