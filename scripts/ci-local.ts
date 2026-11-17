@@ -170,8 +170,8 @@ async function main(): Promise<void> {
   }
   findings.push({
     level: 'unverifiable',
-    claim: 'the Node matrices (CI: test on 22 and 24, smoke on 22.0.0, 22 and 24) - one Node here',
-    detail: 'everything above ran on Node ' + process.versions.node,
+    claim: 'the Node and OS matrices (CI: test on 22, 24 and 26, and on Windows; smoke on 22.0.0, 22, 24 and 26) - one Node and one OS here',
+    detail: 'everything above ran on Node ' + process.versions.node + ', on ' + process.platform,
   })
   if (dirty) findings.push({ level: 'warning', claim: 'a clean checkout of the commit', detail: 'the working tree has uncommitted changes, so this ran on more than the commit CI would' })
 
