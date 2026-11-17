@@ -221,6 +221,22 @@ describe('a result reported outside any claim', () => {
     expect(unclaimedResults(sentence)).toEqual([])
   })
 
+  // Issue 18: a path in backticks named a kind of run and a success word on
+  // its own, and a sentence that only cited the file warned.
+  it.each([
+    'See `src/transformers/tests/clean.test.ts`.',
+    'See `src/transformers/tests/parser.test.ts`.',
+    'The cleanup is in `src/clean.ts`.',
+    'Run ``pnpm test -- clean`` to see `all 12 tests pass`.',
+  ])('does not read what is inside backticks: %s', (sentence) => {
+    expect(unclaimedResults(sentence + '\n')).toEqual([])
+  })
+
+  it('still reads the prose around a code span, and reports the sentence as written', () => {
+    const line = 'I ran `pnpm test` in `e.g. this`. All 12 tests pass in `src/clean.test.ts`.'
+    expect(unclaimedResults(line).map((u) => u.sentence)).toEqual(['All 12 tests pass in `src/clean.test.ts`.'])
+  })
+
   it('leaves a claim alone - its line, its grounding and its numbered chain - and anything fenced, tabled or quoted', () => {
     const md = [
       '**Claim**: All 12 tests pass.', '**Grounding**: INFERRED', '1. the tests pass locally', '2. lint is clean too', '',

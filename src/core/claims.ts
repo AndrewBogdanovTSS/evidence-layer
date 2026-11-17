@@ -1243,14 +1243,43 @@ export function unclaimedResults(markdown: string): UnclaimedResult[] {
     }
     if (CLAIM_RE.test(line)) inClaim = true
     if (inClaim || GRADE_RE.test(line) || NOT_PROSE_RE.test(line)) continue
-    for (const sentence of line.split(/(?<=[.!?;])\s+/)) {
-      const kinds = kindsNamed(sentence)
-      if (kinds.length === 0 || HYPOTHETICAL_RE.test(sentence) || NOT_A_REPORT_RE.test(sentence)) continue
-      if (!readsAsSuccess(sentence) && statedCounts(sentence).length === 0) continue
+    for (const { sentence, prose } of proseSentences(line)) {
+      const kinds = kindsNamed(prose)
+      if (kinds.length === 0 || HYPOTHETICAL_RE.test(prose) || NOT_A_REPORT_RE.test(prose)) continue
+      if (!readsAsSuccess(prose) && statedCounts(prose).length === 0) continue
       found.push({ line: i + 1, sentence: sentence.trim(), kinds })
     }
   }
   return found
+}
+
+// An inline code span, by CommonMark's rule: a run of backticks closed by a
+// run of the same length.
+const CODE_SPAN_RE = /(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g
+
+/**
+ * A line's sentences, each as written and as prose - its inline code spans
+ * blanked out. What is inside backticks is quoted - a path, a command, a
+ * name - and not the author's statement: `tests/clean.test.ts` names a kind
+ * of run and a success word without reporting either (issue 18). Blanking
+ * rather than deleting keeps the offsets, so a sentence is split where its
+ * prose ends and never at a full stop inside a span, and the sentence
+ * reported is the one the author wrote, backticks and all.
+ *
+ * The cost: "`pnpm test` passes" no longer reads as a result, since the
+ * only kind it names is quoted. A count of what is reported where nothing
+ * checks it would rather miss that than warn on every cited test file.
+ */
+function proseSentences(line: string): { sentence: string; prose: string }[] {
+  const prose = line.replace(CODE_SPAN_RE, (span) => ' '.repeat(span.length))
+  const out: { sentence: string; prose: string }[] = []
+  let start = 0
+  for (const boundary of prose.matchAll(/(?<=[.!?;])\s+/g)) {
+    out.push({ sentence: line.slice(start, boundary.index), prose: prose.slice(start, boundary.index) })
+    start = boundary.index + boundary[0].length
+  }
+  out.push({ sentence: line.slice(start), prose: prose.slice(start) })
+  return out
 }
 
 /**
