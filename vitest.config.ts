@@ -8,7 +8,8 @@ export default defineConfig({
     // process on Windows costs several times what it does on Linux: tests
     // that finish in two seconds in CI time out at the default five there,
     // which reads as a failure of the code. CI runs Linux, where the default
-    // still holds every test to it.
+    // still holds every test to it. A test that needs more than the default
+    // says so through `test/helpers/budget.ts`, which scales it the same way.
     ...(process.platform === 'win32' && { testTimeout: 60_000 }),
   },
 })

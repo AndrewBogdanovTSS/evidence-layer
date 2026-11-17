@@ -6,6 +6,7 @@ import { redactSecrets, secretValues } from '../src/core/redact'
 import { readCurrentRun } from '../src/core/seal'
 import { sh } from './helpers/git'
 import { gatherOneStep, gatherableRepo, printAndExit } from './helpers/gather'
+import { budget } from './helpers/budget'
 
 describe('planStepsDefault - the zero-config default', () => {
   it('plans lint, typecheck, a lockfile check and test with no options at all', () => {
@@ -93,7 +94,7 @@ describe('gatherEvidence - the zero-config plan in a project', () => {
     const bundle = readFileSync(out, 'utf8')
     expect(bundle).not.toMatch(/Lint reports|Typecheck reports/)
     expect(bundle).toContain('_Not run: no `lint` script in package.json._')
-  }, 30_000)
+  }, budget(30_000))
 })
 
 describe('gatherEvidence - what kind of run a step is', () => {
@@ -112,7 +113,7 @@ describe('gatherEvidence - what kind of run a step is', () => {
     })
     expect(result.steps[3]).toMatchObject({ name: 'test', id: expect.stringMatching(/^tests-[0-9a-f]{6}$/) })
     expect(readFileSync(out, 'utf8')).toContain('**Claim**: The test suite ran 4 passing tests and reports no failures.')
-  }, 30_000)
+  }, budget(30_000))
 })
 
 describe('gatherEvidence - how every step ended', () => {
@@ -131,7 +132,7 @@ describe('gatherEvidence - how every step ended', () => {
     expect(stopped.steps[0]).toMatchObject({ stopped: 'timeout' })
     expect(stepFailed(stopped.steps[0]!)).toBe(true)
     expect((await gatherOneStep(dir)).result.steps.some(stepFailed)).toBe(false)
-  }, 30_000)
+  }, budget(30_000))
 })
 
 describe('captured output is redacted before anything hashes or publishes it', () => {
@@ -177,5 +178,5 @@ describe('captured output is redacted before anything hashes or publishes it', (
     } finally {
       delete process.env.EL_GATHER_TEST_TOKEN
     }
-  }, 30_000)
+  }, budget(30_000))
 })

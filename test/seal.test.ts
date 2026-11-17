@@ -22,6 +22,7 @@ import {
 } from '../src/core/seal'
 import type { EarlierRuns, Run, SourceFingerprint } from '../src/core/seal'
 import { sh } from './helpers/git'
+import { budget } from './helpers/budget'
 
 function repo(files: Record<string, string> = { 'src/a.js': 'a\n' }, commit = true): string {
   const dir = mkdtempSync(join(tmpdir(), 'el-seal-'))
@@ -553,7 +554,7 @@ describe('gatherEvidence - what it calls the change', () => {
     const current = readCurrentRun(dir)
     expect('run' in current && current.run.seal).toMatchObject({ gatherCommand: 'make evidence', base: 'HEAD' })
     expect(readFileSync(out, 'utf8')).toContain('timed out before reporting a result')
-  }, 30_000)
+  }, budget(30_000))
 
   it('names the configured gather command, and prints each artifact block once', async () => {
     const dir = repo({ 'src/a.js': 'a\n', 'package.json': JSON.stringify({ scripts: { evidence: 'node gather.js' } }) })

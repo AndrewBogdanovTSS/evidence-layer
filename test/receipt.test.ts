@@ -5,6 +5,7 @@ import { gatherEvidence } from '../src/core/gather'
 import { checkDiffCount, checkReceipt, checkSamples, citedPaths, parseReceipt } from '../src/core/receipt'
 import { generateReceiptSkeleton } from '../src/core/skeleton'
 import { sh, tempRepo } from './helpers/git'
+import { budget } from './helpers/budget'
 
 const RECEIPT_ONE_SAMPLE = [
   '**Repo path**: /somewhere',
@@ -182,7 +183,7 @@ describe('the receipt the gatherer writes', () => {
     const findings = checkReceipt(receipt, bundle, dir)
     expect(findings.filter((f) => f.level === 'error')).toEqual([])
     expect(findings.find((f) => f.code === 'receipt/files-unopened')?.detail).toBe('0 opened of 2 in the diff')
-  }, 30_000)
+  }, budget(30_000))
 
   it('writes no field at all, and says why, when the base it was given is no branch on origin - half a receipt would be errors', () => {
     const text = generateReceiptSkeleton({ branch: 'work', headSha: 'a'.repeat(40), gatheredAgainst: 'HEAD~3' })

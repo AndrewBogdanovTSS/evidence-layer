@@ -15,6 +15,7 @@ import { publishRun, readKeptRuns, sourceFingerprint } from '../src/core/seal'
 import type { Run } from '../src/core/seal'
 import { gatherOneStep, gatherableRepo, printAndExit } from './helpers/gather'
 import { sh, tempRepo } from './helpers/git'
+import { budget } from './helpers/budget'
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const BIN = join(root, 'dist', 'bin', 'evidence-layer.mjs')
@@ -148,7 +149,7 @@ describe('evidence-layer restamp', () => {
     expect(cli('claims', review, '--seal', '--repo', dir).status).toBe(0)
     // Run again, there is nothing left to move, and it says so.
     expect(cli('restamp', review, '--repo', dir).stdout).toContain('nothing to move')
-  }, 60_000)
+  }, budget(60_000))
 
   it('says there is no run to move onto, rather than passing or calling it bad usage', () => {
     const dir = tempRepo('el-restamp-cli-', { 'a.js': 'a\n' })

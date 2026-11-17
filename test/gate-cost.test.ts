@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { budget } from './helpers/budget'
 
 const calls = vi.hoisted(() => ({ git: [] as string[][] }))
 
@@ -58,5 +59,5 @@ describe('one stop', () => {
     expect(count('write-tree')).toBe(1)
     expect(count('rev-parse', '--show-toplevel')).toBe(1)
     expect(count('rev-parse', '--git-path', 'evidence-layer')).toBe(1)
-  }, 30_000)
+  }, budget(30_000))
 })
