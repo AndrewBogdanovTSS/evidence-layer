@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runAsync } from '../src/core/proc'
+import { budget } from './helpers/budget'
 
-describe('runAsync', { timeout: 20_000 }, () => {
+describe('runAsync', { timeout: budget(20_000) }, () => {
   it('captures stdout, a zero exit code and how long it took', async () => {
     const res = await runAsync('node -e "console.log(1+1)"')
     expect(res.output).toBe('2')

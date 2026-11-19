@@ -20,6 +20,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { sh } from './helpers/git'
+import { budget } from './helpers/budget'
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const BIN = join(root, 'dist', 'bin', 'evidence-layer.mjs')
@@ -207,7 +208,7 @@ describe('npm run ci:local', () => {
     // Two full runs of the workflow's jobs on a fresh copy - a dozen processes. 1.6 s here
     // under the whole suite, and past vitest's 5 s once on a loaded runner: the gate tests'
     // budget, not the default.
-  }, 30_000)
+  }, budget(30_000))
 
   // POSIX only - the stand-in is a shell script.
   it.skipIf(process.platform === 'win32')('asks the model exactly what the workflow asks it, and fails a model step that wrote no review', () => {
@@ -231,7 +232,7 @@ describe('npm run ci:local', () => {
       '--allowedTools', 'Read,Glob,Grep,Write', '--disallowedTools', 'Bash,WebFetch,WebSearch',
       '--settings', '{"disableAllHooks": true}',
     ])
-  }, 30_000)
+  }, budget(30_000))
 
   it('refuses a workflow whose review step it cannot read, rather than asking the model something else', () => {
     const dir = pullRequest()
@@ -249,7 +250,7 @@ describe('npm run ci:local', () => {
     expect(azure.stdout).toContain('ci:local - the jobs of azure-pipelines.yml')
     expect(summary(azure.stdout)).toMatch(/evidence {4}required {2}pass\n {2}governance {2}required {2}pass\n {2}review {6}optional {2}pass/)
     expect(ciLocal(dir, ['--pipeline', 'jenkins']).status).toBe(2)
-  }, 30_000)
+  }, budget(30_000))
 
   // POSIX only - the stand-in is a shell script.
   it.skipIf(process.platform === 'win32')('asks the model what the Azure step asks it, REVIEW_MODEL or the step\'s default', () => {
@@ -271,7 +272,7 @@ describe('npm run ci:local', () => {
       '--settings', '{"disableAllHooks": true}',
     ])
     expect(asked({ REVIEW_MODEL: 'claude-sonnet-5-5' }).slice(2, 4)).toEqual(['--model', 'claude-sonnet-5-5'])
-  }, 30_000)
+  }, budget(30_000))
 
   it('refuses an Azure model step it cannot evaluate, rather than asking the model something else', () => {
     const dir = pullRequest()

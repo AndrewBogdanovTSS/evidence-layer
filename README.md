@@ -776,7 +776,7 @@ own checks and then checks that something actually runs them - an invariant no
 git hook or CI workflow reaches is a finding, because a rule with no trigger is
 decoration.
 
-The suite is **679 tests** across **45 files**, and that sentence is checked
+The suite is **686 tests** across **46 files**, and that sentence is checked
 too - `check:docs` runs the suite and compares. Change the number and watch it
 fail; a check nobody has seen fail is indistinguishable from a check that
 cannot fail.
@@ -791,9 +791,10 @@ pnpm ci:local       # CI's jobs on this machine, reported as CI would - what it 
 pnpm journal:report # what the checks have found here, over time
 ```
 
-CI runs the suite on Node 22 and 24 and, in a separate job with no package
-manager and no install, takes the `dist/` the build job produced and runs it on
-bare `node` - 22.0.0, the oldest `engines` allows, as well as 22 and 24. If that
+CI runs the suite on Node 22, 24 and 26, and on Windows with Node 24, and, in a
+separate job with no package manager and no install, takes the `dist/` the
+build job produced and runs it on bare `node` - 22.0.0, the oldest `engines`
+allows, as well as 22, 24 and 26. If that
 job passes, "zero runtime dependencies" is a checked fact for everything the
 smoke script loads, rather than a sentence on this page. On every pull request CI
 gathers this repository's own evidence at the pull request's head and uploads

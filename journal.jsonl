@@ -1,1 +1,2 @@
 {"id":"f63f6aa7","ts":"2026-11-14T14:20:31+00:00","check":"docs/plans/runtime-gate-revision-4.md","commit":"f63f6aa726f4db1aa2590ab5bc67921b0a558608","outcome":"miss","findings":["fix: a fresh clone is told the gate is inactive, instead of the hook failing"],"couldHaveCaught":null}
+{"id":"a0bbb32c","ts":"2026-11-19T22:52:23+00:00","check":"PR #15","commit":"a0bbb32c620a0aede16ac2afdaf8f2b4afb59b44","outcome":"miss","findings":["fix: what is inside backticks is not read as a stated result"],"couldHaveCaught":null}

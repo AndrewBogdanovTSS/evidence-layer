@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { runAsync } from '../src/core/proc'
+import { budget } from './helpers/budget'
 
 const IS_WINDOWS = process.platform === 'win32'
 const dir = mkdtempSync(join(tmpdir(), 'el-args-'))
@@ -12,7 +13,7 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 const argsSeen = async (program: string, args: string[]) => JSON.parse((await runAsync(program, { args })).output) as string[]
 
-describe('runAsync with an argument array', { timeout: 20_000 }, () => {
+describe('runAsync with an argument array', { timeout: budget(20_000) }, () => {
   it('passes each argument as exactly one argument, spaces and all', async () => {
     expect(await argsSeen('node', [print, 'a b', 'c', ''])).toEqual(['a b', 'c', ''])
   })

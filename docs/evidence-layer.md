@@ -289,7 +289,9 @@ on its line, with the fix of stating it as a claim. Without it, the writer who
 volunteers a claim can be failed and the writer who says the same thing as a
 sentence cannot, which makes the convenient path the only one with no risk. A
 sentence that names no kind of run ("it works now"), or that asks, plans or
-instructs ("make sure the tests pass"), is not one. It is a pattern over
+instructs ("make sure the tests pass"), is not one; nor is what is inside
+backticks, which is a quoted path or command (`tests/clean.test.ts`), not a
+statement. It is a pattern over
 English prose and will be wrong in both directions, so it is observed, not
 enforced: whether it ever does more is
 [DEC-0014](decisions/0014-results-stated-as-prose.md)'s question.

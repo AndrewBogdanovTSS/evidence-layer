@@ -9,6 +9,7 @@ import type { GateDecision, GateOptions } from '../src/core/gate'
 import { readJournal, summariseGate, untaggedBlocks } from '../src/core/journal'
 import { publishRun, sourceFingerprint, stateDir } from '../src/core/seal'
 import { sh } from './helpers/git'
+import { budget } from './helpers/budget'
 
 function repo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'el-gate-'))
@@ -494,7 +495,7 @@ describe('stop - what the agent is told', () => {
     await gatherEvidence({ repo: dir, base: 'HEAD', out: join(dir, 'evidence.local.md'), skip: ['lint', 'typecheck', 'lockfile', 'test'], gatherCommand: 'make evidence' })
     writeFileSync(join(dir, 'review.md'), UNBACKED)
     expect(stop(dir)).toMatchObject({ action: 'block', reason: expect.stringContaining('`make evidence` (base HEAD') })
-  }, 30_000)
+  }, budget(30_000))
 
   it('names the project\'s gather command at session start and in a block', () => {
     const dir = repo()
@@ -524,7 +525,7 @@ describe('stop - after the retries run out', () => {
     writeFileSync(join(dir, 'review.md'), UNBACKED + '\nmore words\n')
     expect(stop(dir)).toMatchObject({ outcome: 'retry-exhausted', message: expect.any(String) })
     expect(gateJournal(dir)).toHaveLength(4)
-  }, 30_000)
+  }, budget(30_000))
 
   it('speaks again when the findings change, though the review, the run and the tree did not', () => {
     const dir = repo()
@@ -540,7 +541,7 @@ describe('stop - after the retries run out', () => {
     expect(stop(dir)).not.toHaveProperty('message')
     sh(dir, 'update-ref', 'refs/remotes/origin/main', head)
     expect(stop(dir)).toMatchObject({ outcome: 'retry-exhausted', message: expect.any(String) })
-  }, 30_000)
+  }, budget(30_000))
 
   it('speaks again once the code a cited run describes changes', () => {
     const dir = repo()
@@ -557,7 +558,7 @@ describe('stop - after the retries run out', () => {
     writeFileSync(join(dir, 'src/a.js'), 'edited\n')
     const changed = stop(dir)
     expect(changed).toMatchObject({ outcome: 'retry-exhausted', message: expect.stringContaining('src/a.js') })
-  }, 30_000)
+  }, budget(30_000))
 })
 
 describe('stop - nothing to check while an episode is open', () => {
@@ -582,7 +583,7 @@ describe('stop - nothing to check while an episode is open', () => {
     start(quiet)
     expect(stop(quiet)).toMatchObject({ action: 'allow', outcome: 'nothing-to-check' })
     expect(gateJournal(quiet).map((e) => e.gate?.outcome)).toEqual(['nothing-to-check'])
-  }, 30_000)
+  }, budget(30_000))
 })
 
 describe('stop - final-message lookups', () => {

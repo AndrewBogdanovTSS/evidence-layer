@@ -54,14 +54,16 @@ interface Pkg {
 
 /**
  * Dependencies referenced only as a config flag to another tool, never by
- * name - `tsdown.config.ts` turns `arethetypeswrong` on as `attw: true`, an
- * abbreviation that never contains the package's actual name, so no text
- * search would find it. Checked against the flag actually being present in
+ * name - `tsdown.config.ts` turns `arethetypeswrong` on as `attw: { ... }`,
+ * an abbreviation that never contains the package's actual name, so no text
+ * search would find it. The flag is matched as the option's name alone: it
+ * was `attw: true` until the build set a level, and the exemption went stale
+ * on a change to its value that kept the dependency in use. Checked against the flag actually being present in
  * the named file, not an unconditional pass, so removing the flag makes the
  * dependency reportable again rather than silently exempt forever.
  */
 const KNOWN_INDIRECT: Record<string, { file: string; flag: string }> = {
-  '@arethetypeswrong/core': { file: 'tsdown.config.ts', flag: 'attw: true' },
+  '@arethetypeswrong/core': { file: 'tsdown.config.ts', flag: 'attw:' },
 }
 
 function checkDependency(name: string, repo: string, corpus: string): Finding {
